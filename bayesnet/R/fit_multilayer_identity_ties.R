@@ -9,21 +9,26 @@
 #' with columns `from`, `to`, and optional `weight`. If `NULL`, adjacent layers
 #' are connected in sequence.
 #' @param resolution_parameter Leiden resolution parameter.
+#' @param directed Logical; if `TRUE`, build directed graphs from adjacency matrices.
+#'   For `algorithm = "louvain"`, directed layers are collapsed to undirected
+#'   weighted graphs before community detection.
 #'
 #' @return A list with detected communities per layer and node-level interlayer ties.
 #' @export
 fit_multilayer_identity_ties <- function(layers,
                                          algorithm = c("louvain", "leiden"),
                                          layer_links = NULL,
-                                         resolution_parameter = 1) {
+                                         resolution_parameter = 1,
+                                         directed = FALSE) {
   algorithm <- match.arg(algorithm)
 
-  graph_layers <- prepare_multilayer_graphs(layers)
+  graph_layers <- prepare_multilayer_graphs(layers, directed = directed)
   links <- make_layer_links(length(graph_layers), layer_links)
   fit <- fit_layer_communities(
     graph_layers,
     algorithm = algorithm,
-    resolution_parameter = resolution_parameter
+    resolution_parameter = resolution_parameter,
+    directed = directed
   )
 
   n_nodes <- igraph::vcount(graph_layers[[1]])
@@ -49,7 +54,8 @@ fit_multilayer_identity_ties <- function(layers,
       algorithm = algorithm,
       layer_communities = fit,
       layer_links = links,
-      interlayer_ties = ties
+      interlayer_ties = ties,
+      directed = directed
     ),
     class = "multilayer_identity_fit"
   )

@@ -13,6 +13,7 @@
 #' @param layer_links Optional layer connectivity specification.
 #' @param min_similarity Minimum similarity threshold for overlap-based methods.
 #' @param seed Optional random seed.
+#' @param directed Logical; if `TRUE`, simulate directed adjacency matrices.
 #'
 #' @return A list containing simulated layers, true memberships, and fit results.
 #' @export
@@ -25,7 +26,8 @@ simulate_and_fit_multilayer <- function(n_nodes = 100,
                                         algorithm = c("louvain", "leiden"),
                                         layer_links = NULL,
                                         min_similarity = 0,
-                                        seed = NULL) {
+                                        seed = NULL,
+                                        directed = FALSE) {
   fit_type <- match.arg(fit_type)
   algorithm <- match.arg(algorithm)
 
@@ -38,12 +40,24 @@ simulate_and_fit_multilayer <- function(n_nodes = 100,
   layers <- lapply(seq_len(n_layers), function(layer_id) {
     mat <- matrix(0, nrow = n_nodes, ncol = n_nodes)
 
-    for (i in seq_len(n_nodes - 1)) {
-      for (j in seq((i + 1), n_nodes)) {
-        prob <- if (memberships[i] == memberships[j]) p_in else p_out
-        tie <- stats::rbinom(1, 1, prob)
-        mat[i, j] <- tie
-        mat[j, i] <- tie
+    if (directed) {
+      for (i in seq_len(n_nodes)) {
+        for (j in seq_len(n_nodes)) {
+          if (i == j) {
+            next
+          }
+          prob <- if (memberships[i] == memberships[j]) p_in else p_out
+          mat[i, j] <- stats::rbinom(1, 1, prob)
+        }
+      }
+    } else {
+      for (i in seq_len(n_nodes - 1)) {
+        for (j in seq((i + 1), n_nodes)) {
+          prob <- if (memberships[i] == memberships[j]) p_in else p_out
+          tie <- stats::rbinom(1, 1, prob)
+          mat[i, j] <- tie
+          mat[j, i] <- tie
+        }
       }
     }
 
@@ -56,24 +70,28 @@ simulate_and_fit_multilayer <- function(n_nodes = 100,
       layers,
       algorithm = algorithm,
       layer_links = layer_links,
-      min_similarity = min_similarity
+      min_similarity = min_similarity,
+      directed = directed
     ),
     overlap = fit_multilayer_overlap(
       layers,
       algorithm = algorithm,
       layer_links = layer_links,
-      min_similarity = min_similarity
+      min_similarity = min_similarity,
+      directed = directed
     ),
     identity = fit_multilayer_identity_ties(
       layers,
       algorithm = algorithm,
-      layer_links = layer_links
+      layer_links = layer_links,
+      directed = directed
     )
   )
 
   list(
     layers = layers,
     true_membership = memberships,
-    fit = fit
+    fit = fit,
+    directed = directed
   )
 }

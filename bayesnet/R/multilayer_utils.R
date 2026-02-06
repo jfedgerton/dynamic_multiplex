@@ -66,16 +66,22 @@ make_layer_links <- function(n_layers, layer_links = NULL) {
 
 #' @keywords internal
 fit_layer_communities <- function(graph_layers, algorithm = c("louvain", "leiden"),
-                                  resolution_parameter = 1) {
+                                  resolution_parameter = 1,
+                                  directed = FALSE) {
   algorithm <- match.arg(algorithm)
 
   lapply(graph_layers, function(g) {
+    g_input <- g
+
     if (algorithm == "louvain") {
+      if (directed && igraph::is_directed(g_input)) {
+        g <- igraph::as.undirected(g_input, mode = "collapse", edge.attr.comb = list(weight = "sum", "ignore"))
+      }
       cl <- igraph::cluster_louvain(g, weights = igraph::E(g)$weight)
     } else {
       cl <- igraph::cluster_leiden(
         g,
-        objective_function = "modularity",
+        objective_function = if (directed) "CPM" else "modularity",
         resolution_parameter = resolution_parameter,
         weights = igraph::E(g)$weight
       )
@@ -83,7 +89,7 @@ fit_layer_communities <- function(graph_layers, algorithm = c("louvain", "leiden
 
     list(
       membership = igraph::membership(cl),
-      modularity = igraph::modularity(g, igraph::membership(cl),
+      modularity = if (igraph::is_directed(g)) NA_real_ else igraph::modularity(g, igraph::membership(cl),
                                       weights = igraph::E(g)$weight),
       communities = split(seq_along(igraph::membership(cl)), igraph::membership(cl))
     )

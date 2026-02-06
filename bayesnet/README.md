@@ -8,14 +8,17 @@ Most multilayer workflows assume every network layer connects to every other lay
 
 ## Current prototype functions
 
+> Note: Louvain in `igraph` is undirected. When `directed = TRUE` and `algorithm = "louvain"`, layers are collapsed to undirected weighted graphs before clustering.
+
+
 - `fit_multilayer_jaccard()`
-  - Fits Louvain or Leiden communities on each layer.
+  - Fits Louvain or Leiden communities on each layer (supports directed layers).
   - Builds interlayer ties between communities using weighted Jaccard similarity across selected layer pairs.
 - `fit_multilayer_overlap()`
-  - Fits Louvain or Leiden communities on each layer.
+  - Fits Louvain or Leiden communities on each layer (supports directed layers).
   - Builds interlayer ties between communities using weighted overlap coefficient across selected layer pairs.
 - `fit_multilayer_identity_ties()`
-  - Fits Louvain or Leiden communities on each layer.
+  - Fits Louvain or Leiden communities on each layer (supports directed layers).
   - Builds interlayer ties only for the same node across selected adjacent layers.
 - `simulate_and_fit_multilayer()`
   - Simulates multiplex layers from a planted partition process and runs one of the three fitting strategies.
@@ -33,6 +36,7 @@ remotes::install_local(".")
 library(bayesnet)
 
 sim <- simulate_and_fit_multilayer(
+  directed = TRUE,
   n_nodes = 50,
   n_layers = 4,
   n_communities = 3,

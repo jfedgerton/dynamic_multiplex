@@ -16,8 +16,6 @@ Encoding: UTF-8
 LazyData: true
 Imports: 
     ergm,
-    fergm,
-    rstan,
     dplyr,
     network,
     igraph

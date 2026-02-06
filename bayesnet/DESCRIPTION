@@ -10,13 +10,12 @@ Authors@R:
            family = "Dawe",
            role = c("aut", "cre"),
            email = "dawer135@gmail.com")
-Description: Analysts can run a mixed effects hierarchical ERGM model. This can be used to evaluate the importance of in- and out-group behavior.
+Description: Tools for multilayer network modeling, including Louvain/Leiden community detection across layers and flexible interlayer tie construction using Jaccard, overlap, or node-identity rules.
 License: What license it uses
 Encoding: UTF-8
 LazyData: true
 Imports: 
     ergm,
-    fergm,
-    rstan,
     dplyr,
-    network
+    network,
+    igraph

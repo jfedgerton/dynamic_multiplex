@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "dynamic-multiplex"
+version = "0.0.0"
+description = "Community detection for identifying communities in evolving networked systems"
+readme = "README.md"
+requires-python = ">=3.10"
+authors = [
+  { name = "Jared Edgerton", email = "jared.edgerton@gmail.com" }
+]
+dependencies = [
+  "numpy>=1.24",
+  "pandas>=2.0",
+  "networkx>=3.0"
+]
+
+[project.optional-dependencies]
+louvain = ["python-louvain>=0.16"]
+leiden = ["python-igraph>=0.11", "leidenalg>=0.10"]
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]

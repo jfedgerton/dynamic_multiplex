@@ -62,3 +62,10 @@ fit_overlap = fit_multilayer_overlap(
     min_similarity=0.1,
 )
 ```
+
+## Testing
+
+```bash
+pip install -e ./python_code[dev,louvain]
+pytest
+```

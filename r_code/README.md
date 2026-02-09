@@ -23,11 +23,20 @@ Most multilayer workflows assume every network layer connects to every other lay
 - `simulate_and_fit_multilayer()`
   - Simulates multiplex layers from a planted partition process and runs one of the three fitting strategies.
 
-## Installation (development)
+## Installation
+
+Development install:
 
 ```r
 # install.packages("remotes")
 remotes::install_local(".")
+```
+
+GitHub install (recommended for collaborators):
+
+```r
+# install.packages("remotes")
+remotes::install_github("jarededgerton/bayesnet", subdir = "r_code")
 ```
 
 ## Quick example

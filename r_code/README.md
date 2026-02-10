@@ -23,11 +23,20 @@ Most multilayer workflows assume every network layer connects to every other lay
 - `simulate_and_fit_multilayer()`
   - Simulates multiplex layers from a planted partition process and runs one of the three fitting strategies.
 
-## Installation (development)
+## Installation
+
+Development install:
 
 ```r
 # install.packages("remotes")
 remotes::install_local(".")
+```
+
+GitHub install (recommended for collaborators):
+
+```r
+# install.packages("remotes")
+remotes::install_github("jarededgerton/bayesnet", subdir = "r_code")
 ```
 
 ## Quick example
@@ -67,3 +76,23 @@ fit_overlap <- fit_multilayer_overlap(
 - Add S3 print/summary/plot methods for fit objects.
 - Add benchmarking utilities against other multilayer tooling.
 - Add package tests and validation diagnostics.
+
+## Plotting options
+
+```r
+# 1) Static series of network panels
+plot_multilayer_series(sim$layers, fit = sim$fit, directed = TRUE, palette = "Dark2")
+
+# 2) GIF animation with colorblind-friendly community colors (`Set2`/`Dark2` from RColorBrewer)
+animate_multilayer_gif(
+  sim$layers,
+  fit = sim$fit,
+  output_file = "multilayer_communities.gif",
+  directed = TRUE,
+  fps = 2,
+  palette = "Set2"
+)
+
+# 3) Alluvial plot for community flow across temporal layers
+plot_multilayer_alluvial(sim$fit, max_nodes = 100, palette = "Dark2")
+```

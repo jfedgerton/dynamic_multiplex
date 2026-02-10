@@ -167,3 +167,39 @@ community_overlap_edges <- function(fit, layer_links, metric = c("jaccard", "ove
 
   do.call(rbind, edge_rows)
 }
+
+
+#' @keywords internal
+add_community_self_loops <- function(edge_df, fit, layer_links,
+                                     self_loop_multiplier = 1,
+                                     min_similarity = 0) {
+  loop_rows <- list()
+
+  for (i in seq_len(nrow(layer_links))) {
+    layer_idx <- layer_links$from[i]
+    layer_weight <- layer_links$weight[i]
+    comms <- fit[[layer_idx]]$communities
+
+    for (comm_idx in seq_along(comms)) {
+      weighted_sim <- 1 * layer_weight * self_loop_multiplier
+      if (weighted_sim >= min_similarity) {
+        loop_rows[[length(loop_rows) + 1]] <- data.frame(
+          from_layer = layer_idx,
+          to_layer = layer_idx,
+          from_community = comm_idx,
+          to_community = comm_idx,
+          similarity = 1,
+          layer_weight = layer_weight,
+          weighted_similarity = weighted_sim,
+          stringsAsFactors = FALSE
+        )
+      }
+    }
+  }
+
+  if (length(loop_rows) == 0) {
+    return(edge_df)
+  }
+
+  rbind(edge_df, do.call(rbind, loop_rows))
+}

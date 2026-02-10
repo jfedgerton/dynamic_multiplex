@@ -67,7 +67,9 @@ fit_overlap <- fit_multilayer_overlap(
   sim$layers,
   algorithm = "leiden",
   layer_links = custom_links,
-  min_similarity = 0.1
+  min_similarity = 0.1,
+  add_self_loops = TRUE,
+  self_loop_multiplier = 1
 )
 ```
 

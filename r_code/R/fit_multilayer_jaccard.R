@@ -15,6 +15,10 @@
 #' @param directed Logical; if `TRUE`, build directed graphs from adjacency matrices.
 #'   For `algorithm = "louvain"`, directed layers are collapsed to undirected
 #'   weighted graphs before community detection.
+#' @param add_self_loops Logical; if `TRUE`, add intra-layer community self-loop ties
+#'   after similarity computation to mimic aggregation behavior.
+#' @param self_loop_multiplier Numeric multiplier applied to self-loop weighted ties.
+#'   The default `1` yields self-loop weighted similarity of `layer_weight`.
 #'
 #' @return A list with detected communities per layer and interlayer ties.
 #' @export
@@ -23,7 +27,9 @@ fit_multilayer_jaccard <- function(layers,
                                    layer_links = NULL,
                                    min_similarity = 0,
                                    resolution_parameter = 1,
-                                   directed = FALSE) {
+                                   directed = FALSE,
+                                   add_self_loops = TRUE,
+                                   self_loop_multiplier = 1) {
   algorithm <- match.arg(algorithm)
 
   graph_layers <- prepare_multilayer_graphs(layers, directed = directed)
@@ -41,6 +47,16 @@ fit_multilayer_jaccard <- function(layers,
     metric = "jaccard",
     min_similarity = min_similarity
   )
+
+  if (isTRUE(add_self_loops)) {
+    interlayer_ties <- add_community_self_loops(
+      edge_df = interlayer_ties,
+      fit = fit,
+      layer_links = links,
+      self_loop_multiplier = self_loop_multiplier,
+      min_similarity = min_similarity
+    )
+  }
 
   structure(
     list(

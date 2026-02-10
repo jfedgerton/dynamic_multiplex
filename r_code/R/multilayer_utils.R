@@ -116,11 +116,66 @@ weighted_overlap <- function(a, b) {
   inter / min_size
 }
 
+
+#' @keywords internal
+weighted_jaccard_similarity <- function(a, b, weights_a, weights_b) {
+  nodes <- union(a, b)
+  if (length(nodes) == 0) {
+    return(0)
+  }
+
+  inter <- intersect(a, b)
+  inter_weight <- sum(vapply(inter, function(node) {
+    min(weights_a[[as.character(node)]], weights_b[[as.character(node)]])
+  }, numeric(1)))
+
+  union_weight <- sum(vapply(nodes, function(node) {
+    max(weights_a[[as.character(node)]], weights_b[[as.character(node)]])
+  }, numeric(1)))
+
+  if (union_weight == 0) {
+    return(0)
+  }
+  inter_weight / union_weight
+}
+
+#' @keywords internal
+weighted_overlap_similarity <- function(a, b, weights_a, weights_b) {
+  inter <- intersect(a, b)
+  inter_weight <- sum(vapply(inter, function(node) {
+    min(weights_a[[as.character(node)]], weights_b[[as.character(node)]])
+  }, numeric(1)))
+
+  a_weight <- sum(vapply(a, function(node) weights_a[[as.character(node)]], numeric(1)))
+  b_weight <- sum(vapply(b, function(node) weights_b[[as.character(node)]], numeric(1)))
+  min_weight <- min(a_weight, b_weight)
+
+  if (min_weight == 0) {
+    return(0)
+  }
+  inter_weight / min_weight
+}
+
+#' @keywords internal
+layer_node_strengths <- function(graph_layers, directed = FALSE) {
+  lapply(graph_layers, function(g) {
+    if (directed && igraph::is_directed(g)) {
+      strength_vals <- igraph::strength(g, mode = "all", loops = FALSE, weights = igraph::E(g)$weight)
+    } else {
+      strength_vals <- igraph::strength(g, mode = "all", loops = FALSE, weights = igraph::E(g)$weight)
+    }
+    names(strength_vals) <- as.character(seq_along(strength_vals))
+    strength_vals
+  })
+}
+
 #' @keywords internal
 community_overlap_edges <- function(fit, layer_links, metric = c("jaccard", "overlap"),
-                                    min_similarity = 0) {
+                                    min_similarity = 0,
+                                    node_weights_by_layer = NULL) {
   metric <- match.arg(metric)
   sim_fun <- if (metric == "jaccard") weighted_jaccard else weighted_overlap
+  weighted_sim_fun <- if (metric == "jaccard") weighted_jaccard_similarity else weighted_overlap_similarity
 
   edge_rows <- list()
 
@@ -134,7 +189,16 @@ community_overlap_edges <- function(fit, layer_links, metric = c("jaccard", "ove
 
     for (from_c in seq_along(from_comms)) {
       for (to_c in seq_along(to_comms)) {
-        sim <- sim_fun(from_comms[[from_c]], to_comms[[to_c]])
+        if (is.null(node_weights_by_layer)) {
+          sim <- sim_fun(from_comms[[from_c]], to_comms[[to_c]])
+        } else {
+          sim <- weighted_sim_fun(
+            from_comms[[from_c]],
+            to_comms[[to_c]],
+            node_weights_by_layer[[from_idx]],
+            node_weights_by_layer[[to_idx]]
+          )
+        }
         weighted_sim <- sim * layer_weight
 
         if (weighted_sim >= min_similarity) {

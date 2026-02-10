@@ -143,16 +143,53 @@ def weighted_overlap(a: list[int], b: list[int]) -> float:
     return 0.0 if min_size == 0 else inter / min_size
 
 
+def weighted_jaccard_similarity(a: list[int], b: list[int], weights_a: dict[int, float], weights_b: dict[int, float]) -> float:
+    nodes = set(a).union(b)
+    if not nodes:
+        return 0.0
+
+    inter = set(a).intersection(b)
+    inter_weight = sum(min(weights_a.get(node, 0.0), weights_b.get(node, 0.0)) for node in inter)
+    union_weight = sum(max(weights_a.get(node, 0.0), weights_b.get(node, 0.0)) for node in nodes)
+    return 0.0 if union_weight == 0 else inter_weight / union_weight
+
+
+def weighted_overlap_similarity(a: list[int], b: list[int], weights_a: dict[int, float], weights_b: dict[int, float]) -> float:
+    inter = set(a).intersection(b)
+    inter_weight = sum(min(weights_a.get(node, 0.0), weights_b.get(node, 0.0)) for node in inter)
+    a_weight = sum(weights_a.get(node, 0.0) for node in a)
+    b_weight = sum(weights_b.get(node, 0.0) for node in b)
+    min_weight = min(a_weight, b_weight)
+    return 0.0 if min_weight == 0 else inter_weight / min_weight
+
+
+def layer_node_strengths(graph_layers: list[nx.Graph | nx.DiGraph], directed: bool = False) -> list[dict[int, float]]:
+    strengths: list[dict[int, float]] = []
+    for graph in graph_layers:
+        if directed and isinstance(graph, nx.DiGraph):
+            node_strength = {
+                int(node) + 1: float(graph.in_degree(node, weight="weight") + graph.out_degree(node, weight="weight"))
+                for node in graph.nodes()
+            }
+        else:
+            node_strength = {int(node) + 1: float(graph.degree(node, weight="weight")) for node in graph.nodes()}
+        strengths.append(node_strength)
+
+    return strengths
+
+
 def community_overlap_edges(
     fit: list[LayerCommunityFit],
     layer_links: pd.DataFrame,
     metric: str = "jaccard",
     min_similarity: float = 0.0,
+    node_weights_by_layer: list[dict[int, float]] | None = None,
 ) -> pd.DataFrame:
     if metric not in {"jaccard", "overlap"}:
         raise ValueError("`metric` must be one of {'jaccard', 'overlap'}.")
 
     sim_fun = weighted_jaccard if metric == "jaccard" else weighted_overlap
+    weighted_sim_fun = weighted_jaccard_similarity if metric == "jaccard" else weighted_overlap_similarity
     rows: list[dict] = []
 
     for _, row in layer_links.iterrows():
@@ -165,7 +202,15 @@ def community_overlap_edges(
 
         for from_c, from_nodes in from_comms.items():
             for to_c, to_nodes in to_comms.items():
-                sim = sim_fun(from_nodes, to_nodes)
+                if node_weights_by_layer is None:
+                    sim = sim_fun(from_nodes, to_nodes)
+                else:
+                    sim = weighted_sim_fun(
+                        from_nodes,
+                        to_nodes,
+                        node_weights_by_layer[from_idx - 1],
+                        node_weights_by_layer[to_idx - 1],
+                    )
                 weighted_sim = sim * layer_weight
                 if weighted_sim >= min_similarity:
                     rows.append(

@@ -7,7 +7,6 @@ from .multilayer_utils import (
     make_layer_links,
     prepare_multilayer_graphs,
 )
-from .multilayer_utils import community_overlap_edges, fit_layer_communities, make_layer_links, prepare_multilayer_graphs
 
 
 def fit_multilayer_jaccard(

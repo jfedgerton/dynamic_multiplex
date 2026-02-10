@@ -5,6 +5,8 @@ import numpy as np
 from .fit_multilayer_identity_ties import fit_multilayer_identity_ties
 from .fit_multilayer_jaccard import fit_multilayer_jaccard
 from .fit_multilayer_overlap import fit_multilayer_overlap
+from .fit_multilayer_weighted_jaccard import fit_multilayer_weighted_jaccard
+from .fit_multilayer_weighted_overlap import fit_multilayer_weighted_overlap
 
 
 def simulate_and_fit_multilayer(
@@ -20,8 +22,8 @@ def simulate_and_fit_multilayer(
     seed: int | None = None,
     directed: bool = False,
 ):
-    if fit_type not in {"jaccard", "overlap", "identity"}:
-        raise ValueError("`fit_type` must be one of {'jaccard', 'overlap', 'identity'}.")
+    if fit_type not in {"jaccard", "overlap", "weighted_jaccard", "weighted_overlap", "identity"}:
+        raise ValueError("`fit_type` must be one of {'jaccard', 'overlap', 'weighted_jaccard', 'weighted_overlap', 'identity'}.")
 
     rng = np.random.default_rng(seed)
     memberships = rng.integers(1, n_communities + 1, size=n_nodes)
@@ -55,6 +57,22 @@ def simulate_and_fit_multilayer(
         )
     elif fit_type == "overlap":
         fit = fit_multilayer_overlap(
+            layers,
+            algorithm=algorithm,
+            layer_links=layer_links,
+            min_similarity=min_similarity,
+            directed=directed,
+        )
+    elif fit_type == "weighted_jaccard":
+        fit = fit_multilayer_weighted_jaccard(
+            layers,
+            algorithm=algorithm,
+            layer_links=layer_links,
+            min_similarity=min_similarity,
+            directed=directed,
+        )
+    elif fit_type == "weighted_overlap":
+        fit = fit_multilayer_weighted_overlap(
             layers,
             algorithm=algorithm,
             layer_links=layer_links,

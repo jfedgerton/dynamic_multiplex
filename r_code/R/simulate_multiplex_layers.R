@@ -22,7 +22,7 @@ simulate_and_fit_multilayer <- function(n_nodes = 100,
                                         n_communities = 4,
                                         p_in = 0.2,
                                         p_out = 0.05,
-                                        fit_type = c("jaccard", "overlap", "identity"),
+                                        fit_type = c("jaccard", "overlap", "weighted_jaccard", "weighted_overlap", "identity"),
                                         algorithm = c("louvain", "leiden"),
                                         layer_links = NULL,
                                         min_similarity = 0,
@@ -74,6 +74,20 @@ simulate_and_fit_multilayer <- function(n_nodes = 100,
       directed = directed
     ),
     overlap = fit_multilayer_overlap(
+      layers,
+      algorithm = algorithm,
+      layer_links = layer_links,
+      min_similarity = min_similarity,
+      directed = directed
+    ),
+    weighted_jaccard = fit_multilayer_weighted_jaccard(
+      layers,
+      algorithm = algorithm,
+      layer_links = layer_links,
+      min_similarity = min_similarity,
+      directed = directed
+    ),
+    weighted_overlap = fit_multilayer_weighted_overlap(
       layers,
       algorithm = algorithm,
       layer_links = layer_links,

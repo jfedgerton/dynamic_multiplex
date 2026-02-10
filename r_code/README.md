@@ -13,10 +13,16 @@ Most multilayer workflows assume every network layer connects to every other lay
 
 - `fit_multilayer_jaccard()`
   - Fits Louvain or Leiden communities on each layer (supports directed layers).
-  - Builds interlayer ties between communities using weighted Jaccard similarity across selected layer pairs.
+  - Builds interlayer ties between communities using Jaccard similarity across selected layer pairs.
 - `fit_multilayer_overlap()`
   - Fits Louvain or Leiden communities on each layer (supports directed layers).
-  - Builds interlayer ties between communities using weighted overlap coefficient across selected layer pairs.
+  - Builds interlayer ties between communities using overlap coefficient across selected layer pairs.
+- `fit_multilayer_weighted_jaccard()`
+  - Fits Louvain or Leiden communities on each layer (supports directed layers).
+  - Builds interlayer ties using node-strength weighted Jaccard similarity across selected layer pairs.
+- `fit_multilayer_weighted_overlap()`
+  - Fits Louvain or Leiden communities on each layer (supports directed layers).
+  - Builds interlayer ties using node-strength weighted overlap coefficient across selected layer pairs.
 - `fit_multilayer_identity_ties()`
   - Fits Louvain or Leiden communities on each layer (supports directed layers).
   - Builds interlayer ties only for the same node across selected adjacent layers.

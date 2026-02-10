@@ -4,6 +4,8 @@ from dynamic_multiplex import (
     fit_multilayer_identity_ties,
     fit_multilayer_jaccard,
     fit_multilayer_overlap,
+    fit_multilayer_weighted_jaccard,
+    fit_multilayer_weighted_overlap,
     simulate_and_fit_multilayer,
 )
 
@@ -57,3 +59,39 @@ def test_overlap_self_loop_multiplier_scales_weights():
 
     assert not loops.empty
     assert (loops["weighted_similarity"] == 2.0 * loops["layer_weight"]).all()
+
+
+def test_weighted_jaccard_uses_node_strength_weights():
+    layer1 = np.array([
+        [0, 10, 1],
+        [10, 0, 0],
+        [1, 0, 0],
+    ], dtype=float)
+    layer2 = np.array([
+        [0, 1, 10],
+        [1, 0, 0],
+        [10, 0, 0],
+    ], dtype=float)
+
+    out = fit_multilayer_weighted_jaccard([layer1, layer2], algorithm="louvain", add_self_loops=False)
+    ties = out["interlayer_ties"]
+
+    assert np.isclose(ties.iloc[0]["similarity"], 13 / 31)
+
+
+def test_weighted_overlap_uses_node_strength_weights():
+    layer1 = np.array([
+        [0, 10, 1],
+        [10, 0, 0],
+        [1, 0, 0],
+    ], dtype=float)
+    layer2 = np.array([
+        [0, 1, 10],
+        [1, 0, 0],
+        [10, 0, 0],
+    ], dtype=float)
+
+    out = fit_multilayer_weighted_overlap([layer1, layer2], algorithm="louvain", add_self_loops=False)
+    ties = out["interlayer_ties"]
+
+    assert np.isclose(ties.iloc[0]["similarity"], 13 / 22)

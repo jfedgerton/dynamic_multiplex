@@ -4,12 +4,13 @@ from .multilayer_utils import (
     add_community_self_loops,
     community_overlap_edges,
     fit_layer_communities,
+    layer_node_strengths,
     make_layer_links,
     prepare_multilayer_graphs,
 )
 
 
-def fit_multilayer_overlap(
+def fit_multilayer_weighted_jaccard(
     layers,
     algorithm: str = "louvain",
     layer_links=None,
@@ -28,11 +29,14 @@ def fit_multilayer_overlap(
         directed=directed,
     )
 
+    node_weights = layer_node_strengths(graph_layers, directed=directed)
+
     interlayer_ties = community_overlap_edges(
         fit=fit,
         layer_links=links,
-        metric="overlap",
+        metric="jaccard",
         min_similarity=min_similarity,
+        node_weights_by_layer=node_weights,
     )
 
     if add_self_loops:
@@ -50,4 +54,5 @@ def fit_multilayer_overlap(
         "layer_links": links,
         "interlayer_ties": interlayer_ties,
         "directed": directed,
+        "weighting": "node_strength",
     }

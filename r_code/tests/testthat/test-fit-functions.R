@@ -46,3 +46,46 @@ test_that("overlap self loop multiplier scales weighted similarity", {
   expect_gt(nrow(loops), 0)
   expect_true(all(loops$weighted_similarity == 2 * loops$layer_weight))
 })
+
+
+test_that("weighted jaccard uses node strength weighting", {
+  layer1 <- matrix(c(
+    0, 10, 1,
+    10, 0, 0,
+    1, 0, 0
+  ), nrow = 3, byrow = TRUE)
+  layer2 <- matrix(c(
+    0, 1, 10,
+    1, 0, 0,
+    10, 0, 0
+  ), nrow = 3, byrow = TRUE)
+
+  fit <- fit_multilayer_weighted_jaccard(
+    list(layer1, layer2),
+    algorithm = "louvain",
+    add_self_loops = FALSE
+  )
+
+  expect_equal(fit$interlayer_ties$similarity[1], 13 / 31)
+})
+
+test_that("weighted overlap uses node strength weighting", {
+  layer1 <- matrix(c(
+    0, 10, 1,
+    10, 0, 0,
+    1, 0, 0
+  ), nrow = 3, byrow = TRUE)
+  layer2 <- matrix(c(
+    0, 1, 10,
+    1, 0, 0,
+    10, 0, 0
+  ), nrow = 3, byrow = TRUE)
+
+  fit <- fit_multilayer_weighted_overlap(
+    list(layer1, layer2),
+    algorithm = "louvain",
+    add_self_loops = FALSE
+  )
+
+  expect_equal(fit$interlayer_ties$similarity[1], 13 / 22)
+})

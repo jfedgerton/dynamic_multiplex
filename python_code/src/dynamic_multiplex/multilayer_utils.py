@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Iterable
 
 import networkx as nx
 import numpy as np
@@ -56,14 +55,6 @@ def make_layer_links(n_layers: int, layer_links: list[dict] | pd.DataFrame | Non
         raise ValueError("`layer_links` indices must be between 1 and number of layers.")
 
     return links[["from", "to", "weight"]]
-
-
-def _communities_to_membership(communities: Iterable[set[int]]) -> dict[int, int]:
-    membership: dict[int, int] = {}
-    for idx, nodes in enumerate(communities, start=1):
-        for n in nodes:
-            membership[n + 1] = idx
-    return membership
 
 
 def fit_layer_communities(
@@ -236,14 +227,13 @@ def add_community_self_loops(
     min_similarity: float = 0.0,
 ) -> pd.DataFrame:
     rows: list[dict] = []
+    unique_layers = sorted(set(layer_links["from"].astype(int)) | set(layer_links["to"].astype(int)))
 
-    for _, row in layer_links.iterrows():
-        layer_idx = int(row["from"])
-        layer_weight = float(row["weight"])
+    for layer_idx in unique_layers:
         comms = fit[layer_idx - 1].communities
 
         for comm_idx in comms.keys():
-            weighted_sim = 1.0 * layer_weight * self_loop_multiplier
+            weighted_sim = 1.0 * self_loop_multiplier
             if weighted_sim >= min_similarity:
                 rows.append(
                     {
@@ -252,7 +242,7 @@ def add_community_self_loops(
                         "from_community": int(comm_idx),
                         "to_community": int(comm_idx),
                         "similarity": 1.0,
-                        "layer_weight": layer_weight,
+                        "layer_weight": 1.0,
                         "weighted_similarity": weighted_sim,
                     }
                 )

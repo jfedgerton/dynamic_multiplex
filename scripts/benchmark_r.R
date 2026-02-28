@@ -117,6 +117,20 @@ run_aggregated <- function(layers) {
   replicate(length(layers), mem, simplify = FALSE)
 }
 
+run_spectral_sbm <- function(layers, n_communities) {
+  # Spectral SBM: adjacency spectral embedding + k-means per layer.
+  # Uses the leading eigenvectors of the adjacency matrix (Rohe et al. 2011).
+  # Knows the true number of communities (informational advantage).
+  lapply(layers, function(mat) {
+    k <- min(n_communities, nrow(mat))
+    eig <- eigen(mat, symmetric = TRUE)
+    ord <- order(abs(eig$values), decreasing = TRUE)[seq_len(k)]
+    embedding <- eig$vectors[, ord, drop = FALSE]
+    km <- kmeans(embedding, centers = k, nstart = 10)
+    km$cluster
+  })
+}
+
 
 # ---------------------------------------------------------------------------
 # Main benchmark
@@ -130,7 +144,7 @@ configs <- expand.grid(
   stringsAsFactors = FALSE
 )
 
-methods <- list(
+base_methods <- list(
   DynMux_Jaccard    = function(L) run_dynmux(L, "jaccard"),
   DynMux_Overlap    = function(L) run_dynmux(L, "overlap"),
   DynMux_WtJaccard  = function(L) run_dynmux(L, "weighted_jaccard"),
@@ -146,10 +160,15 @@ results <- list()
 idx <- 0
 
 cat(sprintf("Running %d configs x %d reps x %d methods ...\n",
-            nrow(configs), n_reps, length(methods)))
+            nrow(configs), n_reps, length(base_methods) + 1L))
 
 for (cfg_i in seq_len(nrow(configs))) {
   cfg <- configs[cfg_i, ]
+  # SBM needs the true k; capture via local scope
+  k_true <- cfg$n_communities
+  methods <- c(base_methods, list(
+    SBM = function(L) run_spectral_sbm(L, k_true)
+  ))
 
   for (rep in seq_len(n_reps)) {
     seed <- cfg_i * 1000 + rep

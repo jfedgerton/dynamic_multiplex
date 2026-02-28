@@ -107,7 +107,21 @@ method_aggregated <- function(L) {
   replicate(length(L), mem, simplify = FALSE)
 }
 
-all_methods <- list(
+method_spectral_sbm <- function(L, n_communities) {
+  # Spectral SBM: adjacency spectral embedding + k-means per layer.
+  # Uses the leading eigenvectors of the adjacency matrix (Rohe et al. 2011).
+  # Knows the true number of communities (informational advantage).
+  lapply(L, function(mat) {
+    k <- min(n_communities, nrow(mat))
+    eig <- eigen(mat, symmetric = TRUE)
+    ord <- order(abs(eig$values), decreasing = TRUE)[seq_len(k)]
+    embedding <- eig$vectors[, ord, drop = FALSE]
+    km <- kmeans(embedding, centers = k, nstart = 10)
+    km$cluster
+  })
+}
+
+base_methods <- list(
   "DynMux (Jaccard)"          = method_dynmux_jaccard,
   "DynMux (Overlap)"          = method_dynmux_overlap,
   "DynMux (Wt. Jaccard)"     = method_dynmux_wt_jaccard,
@@ -153,10 +167,15 @@ results <- list()
 idx <- 0
 
 cat(sprintf("Monte Carlo: %d configs x %d reps x %d methods\n",
-            nrow(configs), n_reps, length(all_methods)))
+            nrow(configs), n_reps, length(base_methods) + 1L))
 
 for (cfg_i in seq_len(nrow(configs))) {
   cfg <- configs[cfg_i, ]
+  # SBM needs the true k; capture via local scope
+  k_true <- cfg$n_communities
+  all_methods <- c(base_methods, list(
+    "Spectral SBM" = function(L) method_spectral_sbm(L, k_true)
+  ))
   for (rep in seq_len(n_reps)) {
     seed <- cfg_i * 1000 + rep
     sim <- simulate_evolving(

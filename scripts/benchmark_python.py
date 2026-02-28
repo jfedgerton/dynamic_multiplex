@@ -173,6 +173,50 @@ def run_aggregated_louvain(layers):
     return [membership] * len(layers)
 
 
+def _simple_kmeans(X, k, max_iter=100, seed=42):
+    """Numpy-only k-means fallback when sklearn is unavailable."""
+    rng = np.random.default_rng(seed)
+    n = X.shape[0]
+    centres = X[rng.choice(n, k, replace=False)].copy()
+    labels = np.zeros(n, dtype=int)
+    for _ in range(max_iter):
+        dists = np.array([np.linalg.norm(X - c, axis=1) for c in centres])
+        new_labels = np.argmin(dists, axis=0)
+        if np.array_equal(labels, new_labels):
+            break
+        labels = new_labels
+        for j in range(k):
+            mask = labels == j
+            if mask.any():
+                centres[j] = X[mask].mean(axis=0)
+    return labels
+
+
+def run_spectral_sbm(layers, n_communities):
+    """Spectral SBM: adjacency spectral embedding + k-means per layer.
+
+    Uses the leading eigenvectors of the adjacency matrix (Rohe et al. 2011)
+    followed by k-means clustering.  Knows the true number of communities,
+    giving it an informational advantage over the other methods.
+    """
+    results = []
+    for mat in layers:
+        n = mat.shape[0]
+        k = min(n_communities, n)
+        eigenvalues, eigenvectors = np.linalg.eigh(mat)
+        idx = np.argsort(np.abs(eigenvalues))[-k:]
+        embedding = eigenvectors[:, idx]
+
+        try:
+            from sklearn.cluster import KMeans
+            labels = KMeans(n_clusters=k, n_init=10, random_state=42).fit_predict(embedding)
+        except ImportError:
+            labels = _simple_kmeans(embedding, k)
+
+        results.append({i + 1: int(labels[i]) + 1 for i in range(n)})
+    return results
+
+
 # ---------------------------------------------------------------------------
 # Evaluation
 # ---------------------------------------------------------------------------
@@ -200,7 +244,7 @@ def run_benchmark():
         [0.0, 0.05, 0.15],   # p_switch
     ))
 
-    methods = {
+    base_methods = {
         "DynMux_Jaccard": lambda L: run_dynamic_multiplex(L, "jaccard"),
         "DynMux_Overlap": lambda L: run_dynamic_multiplex(L, "overlap"),
         "DynMux_WtJaccard": lambda L: run_dynamic_multiplex(L, "weighted_jaccard"),
@@ -215,9 +259,11 @@ def run_benchmark():
     results = []
 
     total = len(configs) * n_reps
-    print(f"Running {total} simulation scenarios x {len(methods)} methods ...")
+    print(f"Running {total} simulation scenarios x {len(base_methods) + 1} methods ...")
 
     for idx, (n_nodes, n_layers, n_comms, p_switch) in enumerate(configs):
+        # SBM needs the true k; capture via default argument
+        methods = {**base_methods, "SBM": lambda L, k=n_comms: run_spectral_sbm(L, k)}
         for rep in range(n_reps):
             seed = idx * 1000 + rep
             layers, true_mem = simulate_evolving_networks(

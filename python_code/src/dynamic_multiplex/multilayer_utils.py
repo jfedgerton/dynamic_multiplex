@@ -227,13 +227,22 @@ def add_community_self_loops(
     min_similarity: float = 0.0,
 ) -> pd.DataFrame:
     rows: list[dict] = []
-    unique_layers = sorted(set(layer_links["from"].astype(int)) | set(layer_links["to"].astype(int)))
 
-    for layer_idx in unique_layers:
+    # Compute max layer_weight for each unique layer across all links
+    layer_weights: dict[int, float] = {}
+    for _, row in layer_links.iterrows():
+        from_idx = int(row["from"])
+        to_idx = int(row["to"])
+        w = float(row["weight"])
+        layer_weights[from_idx] = max(layer_weights.get(from_idx, 0.0), w)
+        layer_weights[to_idx] = max(layer_weights.get(to_idx, 0.0), w)
+
+    for layer_idx in sorted(layer_weights.keys()):
+        layer_weight = layer_weights[layer_idx]
         comms = fit[layer_idx - 1].communities
 
         for comm_idx in comms.keys():
-            weighted_sim = 1.0 * self_loop_multiplier
+            weighted_sim = 1.0 * layer_weight * self_loop_multiplier
             if weighted_sim >= min_similarity:
                 rows.append(
                     {
@@ -242,7 +251,7 @@ def add_community_self_loops(
                         "from_community": int(comm_idx),
                         "to_community": int(comm_idx),
                         "similarity": 1.0,
-                        "layer_weight": 1.0,
+                        "layer_weight": layer_weight,
                         "weighted_similarity": weighted_sim,
                     }
                 )

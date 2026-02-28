@@ -238,13 +238,21 @@ add_community_self_loops <- function(edge_df, fit, layer_links,
                                      self_loop_multiplier = 1,
                                      min_similarity = 0) {
   loop_rows <- list()
-  unique_layers <- sort(unique(c(layer_links$from, layer_links$to)))
 
-  for (layer_idx in unique_layers) {
+  # Compute max layer_weight for each unique layer across all links
+  all_layers <- sort(unique(c(layer_links$from, layer_links$to)))
+  layer_weights <- vapply(all_layers, function(idx) {
+    max(c(layer_links$weight[layer_links$from == idx],
+          layer_links$weight[layer_links$to == idx]))
+  }, numeric(1))
+  names(layer_weights) <- as.character(all_layers)
+
+  for (layer_idx in all_layers) {
+    layer_weight <- layer_weights[as.character(layer_idx)]
     comms <- fit[[layer_idx]]$communities
 
     for (comm_idx in seq_along(comms)) {
-      weighted_sim <- 1 * self_loop_multiplier
+      weighted_sim <- 1 * layer_weight * self_loop_multiplier
       if (weighted_sim >= min_similarity) {
         loop_rows[[length(loop_rows) + 1]] <- data.frame(
           from_layer = layer_idx,
@@ -252,7 +260,7 @@ add_community_self_loops <- function(edge_df, fit, layer_links,
           from_community = comm_idx,
           to_community = comm_idx,
           similarity = 1,
-          layer_weight = 1,
+          layer_weight = layer_weight,
           weighted_similarity = weighted_sim,
           stringsAsFactors = FALSE
         )

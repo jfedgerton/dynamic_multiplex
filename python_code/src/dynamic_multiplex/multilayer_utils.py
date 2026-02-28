@@ -106,7 +106,7 @@ def fit_layer_communities(
             if weights:
                 ig_graph.es["weight"] = weights
 
-            objective = leidenalg.CPMVertexPartition if directed else leidenalg.ModularityVertexPartition
+            objective = leidenalg.CPMVertexPartition if directed else leidenalg.RBConfigurationVertexPartition
             partition = leidenalg.find_partition(
                 ig_graph,
                 objective,

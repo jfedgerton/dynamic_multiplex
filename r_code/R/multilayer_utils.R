@@ -236,8 +236,12 @@ community_overlap_edges <- function(fit, layer_links, metric = c("jaccard", "ove
 #' @keywords internal
 add_community_self_loops <- function(edge_df, fit, layer_links,
                                      self_loop_multiplier = 1,
-                                     min_similarity = 0) {
+                                     min_similarity = 0,
+                                     directed = FALSE) {
   loop_rows <- list()
+
+  # Undirected self-loops count each internal edge twice (A[i,j] + A[j,i])
+  self_sim <- if (directed) 1 else 2
 
   # Compute max layer_weight for each unique layer across all links
   all_layers <- sort(unique(c(layer_links$from, layer_links$to)))
@@ -252,14 +256,14 @@ add_community_self_loops <- function(edge_df, fit, layer_links,
     comms <- fit[[layer_idx]]$communities
 
     for (comm_idx in seq_along(comms)) {
-      weighted_sim <- 1 * layer_weight * self_loop_multiplier
+      weighted_sim <- self_sim * layer_weight * self_loop_multiplier
       if (weighted_sim >= min_similarity) {
         loop_rows[[length(loop_rows) + 1]] <- data.frame(
           from_layer = layer_idx,
           to_layer = layer_idx,
           from_community = comm_idx,
           to_community = comm_idx,
-          similarity = 1,
+          similarity = self_sim,
           layer_weight = layer_weight,
           weighted_similarity = weighted_sim,
           stringsAsFactors = FALSE

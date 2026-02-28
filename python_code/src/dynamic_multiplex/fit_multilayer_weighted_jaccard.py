@@ -46,6 +46,7 @@ def fit_multilayer_weighted_jaccard(
             layer_links=links,
             self_loop_multiplier=self_loop_multiplier,
             min_similarity=min_similarity,
+            directed=directed,
         )
 
     return {

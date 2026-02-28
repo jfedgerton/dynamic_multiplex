@@ -225,8 +225,12 @@ def add_community_self_loops(
     layer_links: pd.DataFrame,
     self_loop_multiplier: float = 1.0,
     min_similarity: float = 0.0,
+    directed: bool = False,
 ) -> pd.DataFrame:
     rows: list[dict] = []
+
+    # Undirected self-loops count each internal edge twice (A[i,j] + A[j,i])
+    self_sim = 1.0 if directed else 2.0
 
     # Compute max layer_weight for each unique layer across all links
     layer_weights: dict[int, float] = {}
@@ -242,7 +246,7 @@ def add_community_self_loops(
         comms = fit[layer_idx - 1].communities
 
         for comm_idx in comms.keys():
-            weighted_sim = 1.0 * layer_weight * self_loop_multiplier
+            weighted_sim = self_sim * layer_weight * self_loop_multiplier
             if weighted_sim >= min_similarity:
                 rows.append(
                     {
@@ -250,7 +254,7 @@ def add_community_self_loops(
                         "to_layer": layer_idx,
                         "from_community": int(comm_idx),
                         "to_community": int(comm_idx),
-                        "similarity": 1.0,
+                        "similarity": self_sim,
                         "layer_weight": layer_weight,
                         "weighted_similarity": weighted_sim,
                     }

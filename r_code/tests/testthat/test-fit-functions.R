@@ -16,7 +16,7 @@ test_that("identity ties contain one record per node per layer pair", {
   expect_true(all(c("from_layer", "to_layer", "node", "layer_weight") %in% names(fit$interlayer_ties)))
 })
 
-test_that("jaccard adds self loops with default weighted value", {
+test_that("jaccard undirected self loops use aggregation convention", {
   layers <- list(diag(6), diag(6), diag(6))
   fit <- fit_multilayer_jaccard(layers, algorithm = "louvain")
 
@@ -26,8 +26,9 @@ test_that("jaccard adds self loops with default weighted value", {
   ]
 
   expect_gt(nrow(loops), 0)
-  expect_true(all(loops$similarity == 1))
-  expect_true(all(loops$weighted_similarity == loops$layer_weight))
+  # Undirected self-loops use similarity=2 (Louvain aggregation convention)
+  expect_true(all(loops$similarity == 2))
+  expect_true(all(loops$weighted_similarity == 2 * loops$layer_weight))
 })
 
 test_that("overlap self loop multiplier scales weighted similarity", {
@@ -44,7 +45,8 @@ test_that("overlap self loop multiplier scales weighted similarity", {
   ]
 
   expect_gt(nrow(loops), 0)
-  expect_true(all(loops$weighted_similarity == 2 * loops$layer_weight))
+  # weighted_similarity = self_sim(2) * layer_weight * multiplier(2)
+  expect_true(all(loops$weighted_similarity == 4 * loops$layer_weight))
 })
 
 

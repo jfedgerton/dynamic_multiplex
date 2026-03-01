@@ -1,0 +1,227 @@
+==============================================================================
+ BRANCH AUDIT REPORT — claude/reset-claude-me-S0r0J
+ Generated: 2026-03-01
+ Base: master
+==============================================================================
+
+TABLE OF CONTENTS
+  1. Commit History
+  2. Files Changed Summary
+  3. Detailed Change-by-Change Description
+  4. Coding Flag Checks (14 automated checks)
+  5. Known Limitations / Items Not Verified
+
+==============================================================================
+1. COMMIT HISTORY (oldest → newest)
+==============================================================================
+
+  b16fe5f  Add fresh CLAUDE.md with project overview, build/test instructions,
+           and conventions
+  8508e84  Fix self-loop bug, add benchmarks and manuscript pipeline
+  b6da95f  Restore layer_weight scaling in community self-loops
+  e9e3465  Set undirected self-loop similarity to 2 per Louvain/Leiden
+           aggregation
+  7a4dc65  Fix Leiden objective function: use RBConfigurationVertexPartition
+           for undirected
+  caaeca4  Add spectral SBM as reference model in benchmarks
+
+==============================================================================
+2. FILES CHANGED SUMMARY (20 files, +1371 / -35 lines)
+==============================================================================
+
+  NEW FILES (7):
+    CLAUDE.md                                    +61 lines
+    manuscript/01_synthetic_experiments.R        +297 lines
+    manuscript/02_empirical_application.R        +290 lines
+    manuscript/run_pipeline.sh                    +67 lines
+    scripts/benchmark_python.py                  +318 lines
+    scripts/benchmark_r.R                        +228 lines
+    scripts/run_benchmarks.sh                     +44 lines
+
+  MODIFIED FILES (13):
+    python_code/src/dynamic_multiplex/
+      fit_multilayer_jaccard.py                   +1 line  (pass directed=)
+      fit_multilayer_overlap.py                   +1 line  (pass directed=)
+      fit_multilayer_weighted_jaccard.py          +1 line  (pass directed=)
+      fit_multilayer_weighted_overlap.py          +1 line  (pass directed=)
+      multilayer_utils.py                        +31/-16   (self-loop + Leiden fixes)
+
+    python_code/tests/
+      test_multilayer.py                         +10/-6    (updated expectations)
+
+    r_code/R/
+      fit_multilayer_jaccard.R                    +7/-3    (pass directed=)
+      fit_multilayer_overlap.R                    +7/-3    (pass directed=)
+      fit_multilayer_weighted_jaccard.R           +3/-1    (pass directed=)
+      fit_multilayer_weighted_overlap.R           +3/-1    (pass directed=)
+      multilayer_utils.R                         +23/-5    (self-loop + Leiden fixes)
+      plot_multilayer_visualizations.R            +3/-1    (minor)
+
+    r_code/tests/testthat/
+      test-fit-functions.R                       +10/-4    (updated expectations)
+
+==============================================================================
+3. DETAILED CHANGE-BY-CHANGE DESCRIPTION
+==============================================================================
+
+--- Bug Fix: Self-Loop Similarity for Undirected Networks ----
+  FILES: multilayer_utils.py (Python), multilayer_utils.R (R)
+
+  PROBLEM: Community self-loops were always assigned similarity = 1.0,
+  regardless of whether the network was directed or undirected. Louvain
+  and Leiden treat undirected edges as two directed half-edges internally
+  (A[i,j] + A[j,i]), so the self-loop should count 2.0 for undirected.
+
+  FIX: Added a `directed` parameter to `add_community_self_loops()`.
+  Set self_sim = 1.0 for directed, 2.0 for undirected. Both the raw
+  `similarity` and `weighted_similarity` fields now reflect this.
+
+  EVIDENCE: The same logic appears in both Python and R implementations
+  with identical semantics.
+
+--- Bug Fix: directed= Not Passed to add_community_self_loops ----
+  FILES: fit_multilayer_jaccard.py, fit_multilayer_overlap.py,
+         fit_multilayer_weighted_jaccard.py, fit_multilayer_weighted_overlap.py
+         (and R equivalents)
+
+  PROBLEM: The four fit functions did not forward their `directed`
+  argument to `add_community_self_loops()`, so self-loops always used
+  the default (False/undirected) behavior even for directed networks.
+
+  FIX: Added `directed=directed` to every call to
+  `add_community_self_loops()` in all four Python and all four R fit
+  functions.
+
+--- Bug Fix: Duplicate Self-Loops for Multi-Link Layers ----
+  FILES: multilayer_utils.py (Python), multilayer_utils.R (R)
+
+  PROBLEM: The old code iterated over each row in `layer_links` and
+  created self-loops per the "from" layer. If a layer appeared in
+  multiple links, it would get duplicate self-loop entries.
+
+  FIX: Replaced the per-row iteration with a two-pass approach:
+  (1) compute the max layer_weight for each unique layer across all
+  links, then (2) emit exactly one self-loop per (layer, community)
+  pair using that max weight.
+
+--- Bug Fix: Leiden Objective Function for Undirected Graphs ----
+  FILES: multilayer_utils.py (Python), multilayer_utils.R (R)
+
+  PROBLEM: Leiden used `ModularityVertexPartition` for undirected
+  graphs, which can behave unexpectedly with weighted multiplex
+  networks (resolution limit issues).
+
+  FIX: Changed to `RBConfigurationVertexPartition` for undirected
+  graphs (Reichardt-Bornholdt with configurable resolution). Directed
+  graphs still use `CPMVertexPartition`. The R equivalent uses
+  objective_function = "modularity" → unchanged (igraph's Leiden R
+  binding maps this correctly to the RB variant).
+
+--- Removed: _communities_to_membership helper ----
+  FILES: multilayer_utils.py (Python)
+
+  Removed unused `_communities_to_membership()` function. Confirmed via
+  full codebase search that no file references it.
+
+--- New: Benchmark Scripts ----
+  FILES: scripts/benchmark_python.py, scripts/benchmark_r.R,
+         scripts/run_benchmarks.sh
+
+  Added benchmark harness comparing dynamic_multiplex against:
+    1. Independent Louvain (no temporal coupling)
+    2. Full-coupling Louvain (all layer pairs)
+    3. Aggregated Louvain (collapse layers)
+    4. Spectral SBM (adjacency spectral embedding + k-means)
+
+  Evaluates NMI and ARI on planted-partition networks with evolving
+  community structure. Output goes to scripts/*_results.csv.
+
+--- New: Manuscript Pipeline ----
+  FILES: manuscript/01_synthetic_experiments.R,
+         manuscript/02_empirical_application.R,
+         manuscript/run_pipeline.sh
+
+  Added reproducible manuscript pipeline:
+    01: Monte Carlo synthetic experiments (same design as benchmarks)
+    02: Empirical application using peacesciencer alliance data
+  Outputs PDF figures and CSV tables to manuscript/output/.
+
+--- New: CLAUDE.md ----
+  FILE: CLAUDE.md
+
+  Project overview, build/test instructions, coding conventions,
+  dependency lists. Standard project documentation for AI assistants.
+
+==============================================================================
+4. CODING FLAG CHECKS (14 automated checks)
+==============================================================================
+
+  CHECK  1  [PASS]  AST verification: directed= kwarg is passed in
+            fit_multilayer_jaccard.py
+  CHECK  2  [PASS]  AST verification: directed= kwarg is passed in
+            fit_multilayer_overlap.py
+  CHECK  3  [PASS]  AST verification: directed= kwarg is passed in
+            fit_multilayer_weighted_jaccard.py
+  CHECK  4  [PASS]  AST verification: directed= kwarg is passed in
+            fit_multilayer_weighted_overlap.py
+  CHECK  5  [PASS]  add_community_self_loops() signature includes
+            `directed` parameter with default=False
+  CHECK  6  [PASS]  Leiden uses RBConfigurationVertexPartition for
+            undirected (CPMVertexPartition for directed) — verified at
+            multilayer_utils.py:109
+  CHECK  7  [PASS]  Static analysis: self_sim = 1.0 if directed else 2.0
+            (Python multilayer_utils.py:233)
+  CHECK  8  [PASS]  Static analysis: weighted_sim = self_sim *
+            layer_weight * self_loop_multiplier (Python)
+  CHECK  9  [PASS]  R/Python parity: self-loop logic is semantically
+            identical across both languages (6 sub-checks all passed)
+  CHECK 10  [PASS]  _communities_to_membership removed cleanly — no
+            dangling references in any Python file
+  CHECK 11  [PASS]  No secrets, credentials, API keys, or hardcoded
+            user paths found in any changed file
+  CHECK 12  [PASS]  All 7 changed Python files compile without syntax
+            errors (py_compile)
+  CHECK 13  [PASS]  All 6 changed R files have balanced braces and
+            parentheses (Rscript not available in this env; structural
+            check only)
+  CHECK 14  [PASS]  Test assertions match implementation:
+              - undirected self-loop similarity == 2.0          ✓
+              - weighted_similarity == 2.0 * layer_weight       ✓
+              - overlap multiplier=2 → 4.0 * layer_weight      ✓
+  CHECK 15  [PASS]  layer_weight deduplication: uses max() across all
+            links per layer, preventing duplicate self-loop rows
+  CHECK 16  [PASS]  R fit functions pass directed= to
+            add_community_self_loops (grep confirmed in all 4 R files)
+  CHECK 17  [PASS]  All 7 new files tracked in git (git diff
+            --name-status confirms Added status)
+
+  RESULT: 17/17 checks passed. No failures.
+
+==============================================================================
+5. KNOWN LIMITATIONS / ITEMS NOT VERIFIED IN THIS ENVIRONMENT
+==============================================================================
+
+  - python-louvain could not be installed in this CI-less environment,
+    so runtime execution of the full test suite was not performed here.
+    The checks above are static/structural. Run `pytest python_code/tests`
+    locally to confirm runtime behavior.
+
+  - Rscript is not available in this environment. R file checks are
+    limited to structural (brace/paren balance). Run
+    `Rscript -e "testthat::test_dir('r_code/tests/testthat')"` locally.
+
+  - Benchmark scripts (scripts/benchmark_python.py, scripts/benchmark_r.R)
+    were not executed. They require python-louvain and R igraph respectively.
+    Run `bash scripts/run_benchmarks.sh` locally.
+
+  - Manuscript pipeline (manuscript/run_pipeline.sh) was not executed.
+    Requires R with ggplot2, peacesciencer, etc. Run locally.
+
+  - The spectral SBM reference model (run_spectral_sbm) was verified
+    structurally but not executed. It uses numpy eigendecomposition +
+    k-means and receives the true number of communities as input
+    (informational advantage noted in docstring).
+
+==============================================================================
+ END OF REPORT
+==============================================================================

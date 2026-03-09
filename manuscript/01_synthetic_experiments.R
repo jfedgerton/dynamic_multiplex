@@ -121,6 +121,73 @@ method_spectral_sbm <- function(L, n_communities) {
   })
 }
 
+method_multislice_all_to_all <- function(L, omega = 1.0) {
+  # Multislice modularity (Mucha et al. 2010).
+  # Builds supra-adjacency with identity coupling between ALL layer pairs.
+  # The temporal problem: community structure at t=1 influences t=T.
+  n_nodes <- nrow(L[[1]])
+  n_layers <- length(L)
+  N <- n_nodes * n_layers
+
+  supra <- matrix(0, N, N)
+  for (t in seq_len(n_layers)) {
+    r0 <- (t - 1) * n_nodes
+    supra[(r0 + 1):(r0 + n_nodes), (r0 + 1):(r0 + n_nodes)] <- L[[t]]
+  }
+  for (t1 in seq_len(n_layers - 1)) {
+    for (t2 in (t1 + 1):n_layers) {
+      for (i in seq_len(n_nodes)) {
+        r1 <- (t1 - 1) * n_nodes + i
+        r2 <- (t2 - 1) * n_nodes + i
+        supra[r1, r2] <- omega
+        supra[r2, r1] <- omega
+      }
+    }
+  }
+
+  g <- igraph::graph_from_adjacency_matrix(supra, mode = "undirected",
+                                            weighted = TRUE, diag = FALSE)
+  cl <- igraph::cluster_louvain(g, weights = igraph::E(g)$weight)
+  supra_mem <- igraph::membership(cl)
+
+  lapply(seq_len(n_layers), function(t) {
+    r0 <- (t - 1) * n_nodes
+    supra_mem[(r0 + 1):(r0 + n_nodes)]
+  })
+}
+
+method_multislice_adjacent <- function(L, omega = 1.0) {
+  # Multislice with ADJACENT-ONLY coupling.
+  # Interlayer ties only connect t to t+1 (temporal locality).
+  n_nodes <- nrow(L[[1]])
+  n_layers <- length(L)
+  N <- n_nodes * n_layers
+
+  supra <- matrix(0, N, N)
+  for (t in seq_len(n_layers)) {
+    r0 <- (t - 1) * n_nodes
+    supra[(r0 + 1):(r0 + n_nodes), (r0 + 1):(r0 + n_nodes)] <- L[[t]]
+  }
+  for (t in seq_len(n_layers - 1)) {
+    for (i in seq_len(n_nodes)) {
+      r1 <- (t - 1) * n_nodes + i
+      r2 <- t * n_nodes + i
+      supra[r1, r2] <- omega
+      supra[r2, r1] <- omega
+    }
+  }
+
+  g <- igraph::graph_from_adjacency_matrix(supra, mode = "undirected",
+                                            weighted = TRUE, diag = FALSE)
+  cl <- igraph::cluster_louvain(g, weights = igraph::E(g)$weight)
+  supra_mem <- igraph::membership(cl)
+
+  lapply(seq_len(n_layers), function(t) {
+    r0 <- (t - 1) * n_nodes
+    supra_mem[(r0 + 1):(r0 + n_nodes)]
+  })
+}
+
 base_methods <- list(
   "DynMux (Jaccard)"          = method_dynmux_jaccard,
   "DynMux (Overlap)"          = method_dynmux_overlap,
@@ -129,7 +196,9 @@ base_methods <- list(
   "DynMux (Identity)"         = method_dynmux_identity,
   "Independent Louvain"       = method_independent,
   "Full Coupling"             = method_full_coupling,
-  "Aggregated Louvain"        = method_aggregated
+  "Aggregated Louvain"        = method_aggregated,
+  "Multislice (All-to-All)"   = method_multislice_all_to_all,
+  "Multislice (Adjacent)"     = method_multislice_adjacent
 )
 
 
@@ -155,8 +224,8 @@ compute_ari <- function(det, tru) {
 # ===========================================================================
 
 configs <- expand.grid(
-  n_nodes       = c(50, 100, 200),
-  n_layers      = c(3, 5, 10, 20),
+  n_nodes       = c(50, 100),
+  n_layers      = c(5, 10, 20),
   n_communities = c(3, 5),
   p_switch      = c(0.0, 0.02, 0.05, 0.10, 0.20),
   stringsAsFactors = FALSE
@@ -243,8 +312,10 @@ theme_paper <- theme_minimal(base_size = 12) +
 # Classify methods into groups for cleaner plotting
 df$method_group <- ifelse(
   grepl("DynMux", df$method), "Dynamic Multiplex",
+  ifelse(grepl("Multislice", df$method), "Multislice",
   ifelse(df$method == "Independent Louvain", "Independent",
-         ifelse(df$method == "Full Coupling", "Full Coupling", "Aggregated"))
+         ifelse(df$method == "Full Coupling", "Full Coupling",
+                ifelse(df$method == "Spectral SBM", "Spectral SBM", "Aggregated"))))
 )
 
 # Fig 1: NMI vs switching rate

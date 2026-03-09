@@ -8,6 +8,13 @@
 #   2. Independent Louvain (no temporal coupling)
 #   3. Full-coupling Louvain (all layer pairs connected)
 #   4. Aggregated Louvain (collapse layers into one network)
+#   5. Multislice Louvain -- all-to-all (Mucha et al. 2010)
+#   6. Multislice Louvain -- adjacent-only (supra-adjacency, adjacent coupling)
+#   7. Spectral SBM (knows true k, informational advantage)
+#
+# Extended simulation dimensions:
+#   - p_switch: community switching rate (temporal persistence)
+#   - n_layers: tests long-range pooling degradation
 #
 # Usage:
 #   Rscript scripts/benchmark_r.R
@@ -117,6 +124,81 @@ run_aggregated <- function(layers) {
   replicate(length(layers), mem, simplify = FALSE)
 }
 
+run_multislice_all_to_all <- function(layers, omega = 1.0) {
+  # Multislice modularity (Mucha et al. 2010).
+  # Builds supra-adjacency with identity coupling between ALL layer pairs.
+  # The temporal problem: community structure at t=1 influences t=T.
+  n_nodes <- nrow(layers[[1]])
+  n_layers <- length(layers)
+  N <- n_nodes * n_layers
+
+  supra <- matrix(0, N, N)
+
+  # Diagonal blocks: within-layer adjacency
+  for (t in seq_len(n_layers)) {
+    r0 <- (t - 1) * n_nodes
+    supra[(r0 + 1):(r0 + n_nodes), (r0 + 1):(r0 + n_nodes)] <- layers[[t]]
+  }
+
+  # Off-diagonal: identity coupling between ALL layer pairs
+  for (t1 in seq_len(n_layers - 1)) {
+    for (t2 in (t1 + 1):n_layers) {
+      for (i in seq_len(n_nodes)) {
+        r1 <- (t1 - 1) * n_nodes + i
+        r2 <- (t2 - 1) * n_nodes + i
+        supra[r1, r2] <- omega
+        supra[r2, r1] <- omega
+      }
+    }
+  }
+
+  g <- igraph::graph_from_adjacency_matrix(supra, mode = "undirected",
+                                            weighted = TRUE, diag = FALSE)
+  cl <- igraph::cluster_louvain(g, weights = igraph::E(g)$weight)
+  supra_mem <- igraph::membership(cl)
+
+  # Extract per-layer memberships
+  lapply(seq_len(n_layers), function(t) {
+    r0 <- (t - 1) * n_nodes
+    supra_mem[(r0 + 1):(r0 + n_nodes)]
+  })
+}
+
+run_multislice_adjacent <- function(layers, omega = 1.0) {
+  # Multislice with ADJACENT-ONLY coupling.
+  # Same supra-adjacency but interlayer ties only connect t to t+1.
+  n_nodes <- nrow(layers[[1]])
+  n_layers <- length(layers)
+  N <- n_nodes * n_layers
+
+  supra <- matrix(0, N, N)
+
+  for (t in seq_len(n_layers)) {
+    r0 <- (t - 1) * n_nodes
+    supra[(r0 + 1):(r0 + n_nodes), (r0 + 1):(r0 + n_nodes)] <- layers[[t]]
+  }
+
+  # Adjacent-only coupling
+  for (t in seq_len(n_layers - 1)) {
+    for (i in seq_len(n_nodes)) {
+      r1 <- (t - 1) * n_nodes + i
+      r2 <- t * n_nodes + i
+      supra[r1, r2] <- omega
+      supra[r2, r1] <- omega
+    }
+  }
+
+  g <- igraph::graph_from_adjacency_matrix(supra, mode = "undirected",
+                                            weighted = TRUE, diag = FALSE)
+  cl <- igraph::cluster_louvain(g, weights = igraph::E(g)$weight)
+  supra_mem <- igraph::membership(cl)
+
+  lapply(seq_len(n_layers), function(t) {
+    r0 <- (t - 1) * n_nodes
+    supra_mem[(r0 + 1):(r0 + n_nodes)]
+  })
+}
+
 run_spectral_sbm <- function(layers, n_communities) {
   # Spectral SBM: adjacency spectral embedding + k-means per layer.
   # Uses the leading eigenvectors of the adjacency matrix (Rohe et al. 2011).
@@ -136,23 +218,27 @@ run_spectral_sbm <- function(layers, n_communities) {
 # Main benchmark
 # ---------------------------------------------------------------------------
 
+# Extended configurations: more n_layers and p_switch values
+# to test the temporal pooling problem
 configs <- expand.grid(
-  n_nodes      = c(50, 100),
-  n_layers     = c(5, 10),
+  n_nodes       = c(50, 100),
+  n_layers      = c(5, 10, 20),
   n_communities = c(3, 5),
-  p_switch     = c(0.0, 0.05, 0.15),
+  p_switch      = c(0.0, 0.02, 0.05, 0.10, 0.20),
   stringsAsFactors = FALSE
 )
 
 base_methods <- list(
-  DynMux_Jaccard    = function(L) run_dynmux(L, "jaccard"),
-  DynMux_Overlap    = function(L) run_dynmux(L, "overlap"),
-  DynMux_WtJaccard  = function(L) run_dynmux(L, "weighted_jaccard"),
-  DynMux_WtOverlap  = function(L) run_dynmux(L, "weighted_overlap"),
-  DynMux_Identity   = function(L) run_dynmux(L, "identity"),
-  Independent       = run_independent,
-  FullCoupling      = run_full_coupling,
-  Aggregated        = run_aggregated
+  DynMux_Jaccard         = function(L) run_dynmux(L, "jaccard"),
+  DynMux_Overlap         = function(L) run_dynmux(L, "overlap"),
+  DynMux_WtJaccard       = function(L) run_dynmux(L, "weighted_jaccard"),
+  DynMux_WtOverlap       = function(L) run_dynmux(L, "weighted_overlap"),
+  DynMux_Identity        = function(L) run_dynmux(L, "identity"),
+  Independent            = run_independent,
+  FullCoupling           = run_full_coupling,
+  Aggregated             = run_aggregated,
+  Multislice_AllToAll     = run_multislice_all_to_all,
+  Multislice_Adjacent    = run_multislice_adjacent
 )
 
 n_reps <- 5

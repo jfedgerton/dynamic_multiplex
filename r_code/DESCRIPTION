@@ -1,12 +1,12 @@
 Package: dynamic_multiplex
 Title: Community detection for identifying communities in evolving networked systems
-Version: 0.0.0.9000
+Version: 1.0.0
 Authors@R: 
     person(given = "Jared",
            family = "Edgerton",
            role = c("aut", "cre"),
            email = "jared.edgerton@gmail.com")
-Description: Tools for multilayer network modeling, including Louvain/Leiden community detection across layers and flexible interlayer tie construction using Jaccard, overlap, or node-identity rules.
+Description: Multiplex temporal community detection with customizable interlayer coupling. Runs Louvain or Leiden community detection on each network layer and constructs interlayer ties using Jaccard similarity, overlap coefficient, node-strength weighted variants, or direct node identity links. Supports user-specified layer connectivity via the layer_links argument, enabling adjacent-only temporal coupling that avoids the long-range pooling problem in standard multislice approaches.
 License: MIT + file LICENSE
 Encoding: UTF-8
 LazyData: true

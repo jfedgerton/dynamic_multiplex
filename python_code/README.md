@@ -4,9 +4,9 @@
 
 ## Why this package
 
-Most multilayer workflows assume every network layer connects to every other layer. This package adds explicit control over *which layers influence which layers* via a `layer_links` argument (`from`, `to`, `weight`).
+Standard multislice approaches (Mucha et al. 2010) connect all layers to all layers, meaning community structure at distant time periods influences assignments everywhere. When applied to temporal data, this creates a pooling problem: the community configuration at 2010 affects the structure detected at 1950. `dynamic_multiplex` provides explicit control over *which layers influence which layers* via a `layer_links` argument (`from`, `to`, `weight`), defaulting to adjacent-only temporal coupling.
 
-## Current prototype functions
+## Functions
 
 - `fit_multilayer_jaccard()`
   - Fits Louvain or Leiden communities on each layer.

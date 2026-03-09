@@ -9,6 +9,13 @@ Competitors:
   2. Independent Louvain (no temporal coupling)
   3. Full-coupling Louvain (all layer pairs connected)
   4. Aggregated Louvain (collapse layers into one network)
+  5. Multislice Louvain (Mucha et al. 2010 supra-adjacency approach)
+  6. Spectral SBM (adjacency spectral embedding, knows true k)
+
+Extended simulation dimensions:
+  - p_switch: community switching rate (temporal persistence)
+  - n_layers: number of temporal layers (tests long-range pooling problem)
+  - layer_disagreement: different community structures per layer
 
 Usage:
     pip install -e ./python_code[louvain,dev]
@@ -173,6 +180,92 @@ def run_aggregated_louvain(layers):
     return [membership] * len(layers)
 
 
+def run_multislice_louvain(layers, omega=1.0):
+    """Multislice modularity (Mucha et al. 2010).
+
+    Builds a supra-adjacency matrix where each layer is a diagonal block
+    and ALL layers are connected via identity coupling with weight omega.
+    This is the standard approach that pools information across ALL time
+    periods -- the key comparison target for our method.
+
+    The temporal problem: node i at t=1 is coupled to node i at t=T,
+    meaning community structure at distant time periods influences
+    assignments at every period.
+    """
+    n_nodes = layers[0].shape[0]
+    n_layers = len(layers)
+    N = n_nodes * n_layers
+
+    # Build supra-adjacency matrix
+    supra = np.zeros((N, N))
+
+    # Diagonal blocks: within-layer adjacency
+    for t in range(n_layers):
+        r0 = t * n_nodes
+        supra[r0:r0 + n_nodes, r0:r0 + n_nodes] = layers[t]
+
+    # Off-diagonal: identity coupling between ALL layer pairs
+    # This is the Mucha et al. approach -- every layer connects to every other
+    for t1 in range(n_layers):
+        for t2 in range(t1 + 1, n_layers):
+            for i in range(n_nodes):
+                r1 = t1 * n_nodes + i
+                r2 = t2 * n_nodes + i
+                supra[r1, r2] = omega
+                supra[r2, r1] = omega
+
+    g = nx.from_numpy_array(supra)
+    partition = community_louvain.best_partition(g, weight="weight")
+
+    # Extract per-layer memberships from supra-partition
+    results = []
+    for t in range(n_layers):
+        mem = {}
+        for i in range(n_nodes):
+            supra_idx = t * n_nodes + i
+            mem[i + 1] = partition[supra_idx] + 1
+        results.append(mem)
+    return results
+
+
+def run_multislice_adjacent(layers, omega=1.0):
+    """Multislice modularity with ADJACENT-ONLY coupling.
+
+    Same supra-adjacency approach as Mucha et al., but interlayer
+    identity ties only connect temporally adjacent layers (t to t+1).
+    This is the temporal coupling structure our method advocates.
+    """
+    n_nodes = layers[0].shape[0]
+    n_layers = len(layers)
+    N = n_nodes * n_layers
+
+    supra = np.zeros((N, N))
+
+    for t in range(n_layers):
+        r0 = t * n_nodes
+        supra[r0:r0 + n_nodes, r0:r0 + n_nodes] = layers[t]
+
+    # Adjacent-only coupling
+    for t in range(n_layers - 1):
+        for i in range(n_nodes):
+            r1 = t * n_nodes + i
+            r2 = (t + 1) * n_nodes + i
+            supra[r1, r2] = omega
+            supra[r2, r1] = omega
+
+    g = nx.from_numpy_array(supra)
+    partition = community_louvain.best_partition(g, weight="weight")
+
+    results = []
+    for t in range(n_layers):
+        mem = {}
+        for i in range(n_nodes):
+            supra_idx = t * n_nodes + i
+            mem[i + 1] = partition[supra_idx] + 1
+        results.append(mem)
+    return results
+
+
 def _simple_kmeans(X, k, max_iter=100, seed=42):
     """Numpy-only k-means fallback when sklearn is unavailable."""
     rng = np.random.default_rng(seed)
@@ -237,11 +330,14 @@ def evaluate(detected_memberships, true_memberships, n_nodes):
 # ---------------------------------------------------------------------------
 
 def run_benchmark():
+    # Extended configurations that test the temporal pooling problem:
+    # - More n_layers values to show long-range pooling degradation
+    # - More p_switch values including high rates where all-to-all fails
     configs = list(itertools.product(
-        [50, 100],           # n_nodes
-        [5, 10],             # n_layers
-        [3, 5],              # n_communities
-        [0.0, 0.05, 0.15],   # p_switch
+        [50, 100],                       # n_nodes
+        [5, 10, 20],                     # n_layers (more values to test long-range)
+        [3, 5],                          # n_communities
+        [0.0, 0.02, 0.05, 0.10, 0.20],  # p_switch (finer grid, higher max)
     ))
 
     base_methods = {
@@ -253,6 +349,8 @@ def run_benchmark():
         "Independent": run_independent_louvain,
         "FullCoupling": run_full_coupling,
         "Aggregated": run_aggregated_louvain,
+        "Multislice_AllToAll": run_multislice_louvain,
+        "Multislice_Adjacent": run_multislice_adjacent,
     }
 
     n_reps = 5
@@ -294,7 +392,7 @@ def run_benchmark():
                 })
 
             done = idx * n_reps + rep + 1
-            if done % 5 == 0 or done == total:
+            if done % 10 == 0 or done == total:
                 print(f"  [{done}/{total}]")
 
     df = pd.DataFrame(results)

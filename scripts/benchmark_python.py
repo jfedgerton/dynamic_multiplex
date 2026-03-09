@@ -1,0 +1,416 @@
+"""
+Benchmark dynamic_multiplex against competing temporal community detection approaches.
+
+Compares accuracy (NMI, ARI) and runtime on synthetic planted-partition
+networks with evolving community structure.
+
+Competitors:
+  1. dynamic_multiplex (adjacent-layer coupling) -- our method
+  2. Independent Louvain (no temporal coupling)
+  3. Full-coupling Louvain (all layer pairs connected)
+  4. Aggregated Louvain (collapse layers into one network)
+  5. Multislice Louvain (Mucha et al. 2010 supra-adjacency approach)
+  6. Spectral SBM (adjacency spectral embedding, knows true k)
+
+Extended simulation dimensions:
+  - p_switch: community switching rate (temporal persistence)
+  - n_layers: number of temporal layers (tests long-range pooling problem)
+  - layer_disagreement: different community structures per layer
+
+Usage:
+    pip install -e ./python_code[louvain,dev]
+    pip install scikit-learn
+    python scripts/benchmark_python.py
+"""
+
+from __future__ import annotations
+
+import itertools
+import time
+from collections import defaultdict
+from math import log
+
+import numpy as np
+import pandas as pd
+
+try:
+    from sklearn.metrics import adjusted_rand_score, normalized_mutual_info_score
+except ImportError:
+    # Fallback NMI/ARI implementations
+    def _entropy(labels):
+        n = len(labels)
+        if n == 0:
+            return 0.0
+        counts = defaultdict(int)
+        for lb in labels:
+            counts[lb] += 1
+        return -sum((c / n) * log(c / n) for c in counts.values())
+
+    def normalized_mutual_info_score(a, b):
+        n = len(a)
+        if n == 0:
+            return 0.0
+        joint = defaultdict(int)
+        ca, cb = defaultdict(int), defaultdict(int)
+        for x, y in zip(a, b):
+            joint[(x, y)] += 1
+            ca[x] += 1
+            cb[y] += 1
+        mi = 0.0
+        for (x, y), nxy in joint.items():
+            mi += (nxy / n) * log((nxy * n) / (ca[x] * cb[y]))
+        ha, hb = _entropy(a), _entropy(b)
+        denom = (ha + hb) / 2
+        return mi / denom if denom > 0 else 0.0
+
+    def adjusted_rand_score(a, b):
+        n = len(a)
+        cont = defaultdict(int)
+        ra, rb = defaultdict(int), defaultdict(int)
+        for x, y in zip(a, b):
+            cont[(x, y)] += 1
+            ra[x] += 1
+            rb[y] += 1
+        comb2 = lambda k: k * (k - 1) / 2
+        index = sum(comb2(v) for v in cont.values())
+        sum_a = sum(comb2(v) for v in ra.values())
+        sum_b = sum(comb2(v) for v in rb.values())
+        expected = sum_a * sum_b / comb2(n) if comb2(n) > 0 else 0
+        max_idx = (sum_a + sum_b) / 2
+        denom = max_idx - expected
+        return (index - expected) / denom if denom > 0 else 0.0
+
+
+import community as community_louvain
+import networkx as nx
+
+from dynamic_multiplex import (
+    fit_multilayer_jaccard,
+    fit_multilayer_overlap,
+    fit_multilayer_weighted_jaccard,
+    fit_multilayer_weighted_overlap,
+    fit_multilayer_identity_ties,
+)
+
+
+# ---------------------------------------------------------------------------
+# Simulation
+# ---------------------------------------------------------------------------
+
+def simulate_evolving_networks(
+    n_nodes: int,
+    n_layers: int,
+    n_communities: int,
+    p_in: float = 0.3,
+    p_out: float = 0.05,
+    p_switch: float = 0.05,
+    seed: int | None = None,
+):
+    """Generate temporal networks with slowly evolving planted partition."""
+    rng = np.random.default_rng(seed)
+
+    memberships = [rng.integers(1, n_communities + 1, size=n_nodes)]
+    for _ in range(1, n_layers):
+        prev = memberships[-1].copy()
+        switch_mask = rng.random(n_nodes) < p_switch
+        prev[switch_mask] = rng.integers(1, n_communities + 1, size=switch_mask.sum())
+        memberships.append(prev)
+
+    layers = []
+    for t in range(n_layers):
+        mat = np.zeros((n_nodes, n_nodes))
+        for i in range(n_nodes - 1):
+            for j in range(i + 1, n_nodes):
+                prob = p_in if memberships[t][i] == memberships[t][j] else p_out
+                tie = rng.binomial(1, prob)
+                mat[i, j] = tie
+                mat[j, i] = tie
+        layers.append(mat)
+
+    return layers, memberships
+
+
+# ---------------------------------------------------------------------------
+# Competing methods
+# ---------------------------------------------------------------------------
+
+def _memberships_from_fit(fit_result, n_layers):
+    """Extract membership dicts from a dynamic_multiplex fit."""
+    return [fit_result["layer_communities"][i].membership for i in range(n_layers)]
+
+
+def run_dynamic_multiplex(layers, fit_type="jaccard"):
+    """Our method: adjacent-layer coupling."""
+    fit_fn = {
+        "jaccard": fit_multilayer_jaccard,
+        "overlap": fit_multilayer_overlap,
+        "weighted_jaccard": fit_multilayer_weighted_jaccard,
+        "weighted_overlap": fit_multilayer_weighted_overlap,
+        "identity": fit_multilayer_identity_ties,
+    }[fit_type]
+    fit = fit_fn(layers, algorithm="louvain")
+    return _memberships_from_fit(fit, len(layers))
+
+
+def run_independent_louvain(layers):
+    """Baseline: Louvain on each layer independently (no temporal coupling)."""
+    results = []
+    for mat in layers:
+        g = nx.from_numpy_array(mat)
+        partition = community_louvain.best_partition(g)
+        results.append({k + 1: v + 1 for k, v in partition.items()})
+    return results
+
+
+def run_full_coupling(layers):
+    """All-to-all layer coupling via Jaccard."""
+    n = len(layers)
+    links = [{"from": i + 1, "to": j + 1, "weight": 1.0}
+             for i in range(n) for j in range(i + 1, n)]
+    fit = fit_multilayer_jaccard(layers, algorithm="louvain", layer_links=links)
+    return _memberships_from_fit(fit, n)
+
+
+def run_aggregated_louvain(layers):
+    """Collapse all layers into a single network."""
+    agg = sum(layers)
+    g = nx.from_numpy_array(agg)
+    partition = community_louvain.best_partition(g)
+    membership = {k + 1: v + 1 for k, v in partition.items()}
+    return [membership] * len(layers)
+
+
+def run_multislice_louvain(layers, omega=1.0):
+    """Multislice modularity (Mucha et al. 2010).
+
+    Builds a supra-adjacency matrix where each layer is a diagonal block
+    and ALL layers are connected via identity coupling with weight omega.
+    This is the standard approach that pools information across ALL time
+    periods -- the key comparison target for our method.
+
+    The temporal problem: node i at t=1 is coupled to node i at t=T,
+    meaning community structure at distant time periods influences
+    assignments at every period.
+    """
+    n_nodes = layers[0].shape[0]
+    n_layers = len(layers)
+    N = n_nodes * n_layers
+
+    # Build supra-adjacency matrix
+    supra = np.zeros((N, N))
+
+    # Diagonal blocks: within-layer adjacency
+    for t in range(n_layers):
+        r0 = t * n_nodes
+        supra[r0:r0 + n_nodes, r0:r0 + n_nodes] = layers[t]
+
+    # Off-diagonal: identity coupling between ALL layer pairs
+    # This is the Mucha et al. approach -- every layer connects to every other
+    for t1 in range(n_layers):
+        for t2 in range(t1 + 1, n_layers):
+            for i in range(n_nodes):
+                r1 = t1 * n_nodes + i
+                r2 = t2 * n_nodes + i
+                supra[r1, r2] = omega
+                supra[r2, r1] = omega
+
+    g = nx.from_numpy_array(supra)
+    partition = community_louvain.best_partition(g, weight="weight")
+
+    # Extract per-layer memberships from supra-partition
+    results = []
+    for t in range(n_layers):
+        mem = {}
+        for i in range(n_nodes):
+            supra_idx = t * n_nodes + i
+            mem[i + 1] = partition[supra_idx] + 1
+        results.append(mem)
+    return results
+
+
+def run_multislice_adjacent(layers, omega=1.0):
+    """Multislice modularity with ADJACENT-ONLY coupling.
+
+    Same supra-adjacency approach as Mucha et al., but interlayer
+    identity ties only connect temporally adjacent layers (t to t+1).
+    This is the temporal coupling structure our method advocates.
+    """
+    n_nodes = layers[0].shape[0]
+    n_layers = len(layers)
+    N = n_nodes * n_layers
+
+    supra = np.zeros((N, N))
+
+    for t in range(n_layers):
+        r0 = t * n_nodes
+        supra[r0:r0 + n_nodes, r0:r0 + n_nodes] = layers[t]
+
+    # Adjacent-only coupling
+    for t in range(n_layers - 1):
+        for i in range(n_nodes):
+            r1 = t * n_nodes + i
+            r2 = (t + 1) * n_nodes + i
+            supra[r1, r2] = omega
+            supra[r2, r1] = omega
+
+    g = nx.from_numpy_array(supra)
+    partition = community_louvain.best_partition(g, weight="weight")
+
+    results = []
+    for t in range(n_layers):
+        mem = {}
+        for i in range(n_nodes):
+            supra_idx = t * n_nodes + i
+            mem[i + 1] = partition[supra_idx] + 1
+        results.append(mem)
+    return results
+
+
+def _simple_kmeans(X, k, max_iter=100, seed=42):
+    """Numpy-only k-means fallback when sklearn is unavailable."""
+    rng = np.random.default_rng(seed)
+    n = X.shape[0]
+    centres = X[rng.choice(n, k, replace=False)].copy()
+    labels = np.zeros(n, dtype=int)
+    for _ in range(max_iter):
+        dists = np.array([np.linalg.norm(X - c, axis=1) for c in centres])
+        new_labels = np.argmin(dists, axis=0)
+        if np.array_equal(labels, new_labels):
+            break
+        labels = new_labels
+        for j in range(k):
+            mask = labels == j
+            if mask.any():
+                centres[j] = X[mask].mean(axis=0)
+    return labels
+
+
+def run_spectral_sbm(layers, n_communities):
+    """Spectral SBM: adjacency spectral embedding + k-means per layer.
+
+    Uses the leading eigenvectors of the adjacency matrix (Rohe et al. 2011)
+    followed by k-means clustering.  Knows the true number of communities,
+    giving it an informational advantage over the other methods.
+    """
+    results = []
+    for mat in layers:
+        n = mat.shape[0]
+        k = min(n_communities, n)
+        eigenvalues, eigenvectors = np.linalg.eigh(mat)
+        idx = np.argsort(np.abs(eigenvalues))[-k:]
+        embedding = eigenvectors[:, idx]
+
+        try:
+            from sklearn.cluster import KMeans
+            labels = KMeans(n_clusters=k, n_init=10, random_state=42).fit_predict(embedding)
+        except ImportError:
+            labels = _simple_kmeans(embedding, k)
+
+        results.append({i + 1: int(labels[i]) + 1 for i in range(n)})
+    return results
+
+
+# ---------------------------------------------------------------------------
+# Evaluation
+# ---------------------------------------------------------------------------
+
+def evaluate(detected_memberships, true_memberships, n_nodes):
+    """Compute mean NMI and ARI across layers."""
+    nmis, aris = [], []
+    for det, true in zip(detected_memberships, true_memberships):
+        det_vec = [det.get(i + 1, 0) for i in range(n_nodes)]
+        true_vec = list(true)
+        nmis.append(normalized_mutual_info_score(true_vec, det_vec))
+        aris.append(adjusted_rand_score(true_vec, det_vec))
+    return float(np.mean(nmis)), float(np.mean(aris))
+
+
+# ---------------------------------------------------------------------------
+# Main benchmark
+# ---------------------------------------------------------------------------
+
+def run_benchmark():
+    # Extended configurations that test the temporal pooling problem:
+    # - More n_layers values to show long-range pooling degradation
+    # - More p_switch values including high rates where all-to-all fails
+    configs = list(itertools.product(
+        [50, 100],                       # n_nodes
+        [5, 10, 20],                     # n_layers (more values to test long-range)
+        [3, 5],                          # n_communities
+        [0.0, 0.02, 0.05, 0.10, 0.20],  # p_switch (finer grid, higher max)
+    ))
+
+    base_methods = {
+        "DynMux_Jaccard": lambda L: run_dynamic_multiplex(L, "jaccard"),
+        "DynMux_Overlap": lambda L: run_dynamic_multiplex(L, "overlap"),
+        "DynMux_WtJaccard": lambda L: run_dynamic_multiplex(L, "weighted_jaccard"),
+        "DynMux_WtOverlap": lambda L: run_dynamic_multiplex(L, "weighted_overlap"),
+        "DynMux_Identity": lambda L: run_dynamic_multiplex(L, "identity"),
+        "Independent": run_independent_louvain,
+        "FullCoupling": run_full_coupling,
+        "Aggregated": run_aggregated_louvain,
+        "Multislice_AllToAll": run_multislice_louvain,
+        "Multislice_Adjacent": run_multislice_adjacent,
+    }
+
+    n_reps = 5
+    results = []
+
+    total = len(configs) * n_reps
+    print(f"Running {total} simulation scenarios x {len(base_methods) + 1} methods ...")
+
+    for idx, (n_nodes, n_layers, n_comms, p_switch) in enumerate(configs):
+        # SBM needs the true k; capture via default argument
+        methods = {**base_methods, "SBM": lambda L, k=n_comms: run_spectral_sbm(L, k)}
+        for rep in range(n_reps):
+            seed = idx * 1000 + rep
+            layers, true_mem = simulate_evolving_networks(
+                n_nodes=n_nodes, n_layers=n_layers, n_communities=n_comms,
+                p_in=0.3, p_out=0.05, p_switch=p_switch, seed=seed,
+            )
+
+            for method_name, method_fn in methods.items():
+                t0 = time.perf_counter()
+                try:
+                    detected = method_fn(layers)
+                except Exception as e:
+                    print(f"  SKIP {method_name}: {e}")
+                    continue
+                elapsed = time.perf_counter() - t0
+                nmi, ari = evaluate(detected, true_mem, n_nodes)
+
+                results.append({
+                    "n_nodes": n_nodes,
+                    "n_layers": n_layers,
+                    "n_communities": n_comms,
+                    "p_switch": p_switch,
+                    "rep": rep,
+                    "method": method_name,
+                    "nmi": round(nmi, 4),
+                    "ari": round(ari, 4),
+                    "runtime_s": round(elapsed, 4),
+                })
+
+            done = idx * n_reps + rep + 1
+            if done % 10 == 0 or done == total:
+                print(f"  [{done}/{total}]")
+
+    df = pd.DataFrame(results)
+    outpath = "scripts/benchmark_python_results.csv"
+    df.to_csv(outpath, index=False)
+    print(f"\nResults saved to {outpath}")
+
+    # Summary table
+    summary = (
+        df.groupby(["method", "p_switch"])
+        .agg(mean_nmi=("nmi", "mean"), mean_ari=("ari", "mean"),
+             mean_runtime=("runtime_s", "mean"))
+        .round(3)
+        .reset_index()
+    )
+    print("\n=== Summary (mean across configs and reps) ===")
+    print(summary.to_string(index=False))
+
+
+if __name__ == "__main__":
+    run_benchmark()

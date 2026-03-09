@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Iterable
 
 import networkx as nx
 import numpy as np
@@ -58,14 +57,6 @@ def make_layer_links(n_layers: int, layer_links: list[dict] | pd.DataFrame | Non
     return links[["from", "to", "weight"]]
 
 
-def _communities_to_membership(communities: Iterable[set[int]]) -> dict[int, int]:
-    membership: dict[int, int] = {}
-    for idx, nodes in enumerate(communities, start=1):
-        for n in nodes:
-            membership[n + 1] = idx
-    return membership
-
-
 def fit_layer_communities(
     graph_layers: list[nx.Graph | nx.DiGraph],
     algorithm: str = "louvain",
@@ -92,7 +83,7 @@ def fit_layer_communities(
                 communities.setdefault(comm, []).append(node_zero + 1)
 
             mod = None
-            if not directed:
+            if not directed and g_input.number_of_edges() > 0:
                 sets = [set(n - 1 for n in nodes) for nodes in communities.values()]
                 mod = nx.algorithms.community.modularity(g_input, sets, weight="weight")
 
@@ -115,7 +106,7 @@ def fit_layer_communities(
             if weights:
                 ig_graph.es["weight"] = weights
 
-            objective = leidenalg.CPMVertexPartition if directed else leidenalg.ModularityVertexPartition
+            objective = leidenalg.CPMVertexPartition if directed else leidenalg.RBConfigurationVertexPartition
             partition = leidenalg.find_partition(
                 ig_graph,
                 objective,
@@ -125,7 +116,7 @@ def fit_layer_communities(
             membership = {idx + 1: comm + 1 for idx, comm in enumerate(partition.membership)}
             comms = {i + 1: [node + 1 for node in sorted(nodes)] for i, nodes in enumerate(partition)}
 
-            mod = None if directed else ig_graph.modularity(partition.membership, weights=weights if weights else None)
+            mod = None if directed or ig_graph.ecount() == 0 else ig_graph.modularity(partition.membership, weights=weights if weights else None)
             fits.append(LayerCommunityFit(membership=membership, modularity=mod, communities=comms))
 
     return fits
@@ -234,16 +225,28 @@ def add_community_self_loops(
     layer_links: pd.DataFrame,
     self_loop_multiplier: float = 1.0,
     min_similarity: float = 0.0,
+    directed: bool = False,
 ) -> pd.DataFrame:
     rows: list[dict] = []
 
+    # Undirected self-loops count each internal edge twice (A[i,j] + A[j,i])
+    self_sim = 1.0 if directed else 2.0
+
+    # Compute max layer_weight for each unique layer across all links
+    layer_weights: dict[int, float] = {}
     for _, row in layer_links.iterrows():
-        layer_idx = int(row["from"])
-        layer_weight = float(row["weight"])
+        from_idx = int(row["from"])
+        to_idx = int(row["to"])
+        w = float(row["weight"])
+        layer_weights[from_idx] = max(layer_weights.get(from_idx, 0.0), w)
+        layer_weights[to_idx] = max(layer_weights.get(to_idx, 0.0), w)
+
+    for layer_idx in sorted(layer_weights.keys()):
+        layer_weight = layer_weights[layer_idx]
         comms = fit[layer_idx - 1].communities
 
         for comm_idx in comms.keys():
-            weighted_sim = 1.0 * layer_weight * self_loop_multiplier
+            weighted_sim = self_sim * layer_weight * self_loop_multiplier
             if weighted_sim >= min_similarity:
                 rows.append(
                     {
@@ -251,7 +254,7 @@ def add_community_self_loops(
                         "to_layer": layer_idx,
                         "from_community": int(comm_idx),
                         "to_community": int(comm_idx),
-                        "similarity": 1.0,
+                        "similarity": self_sim,
                         "layer_weight": layer_weight,
                         "weighted_similarity": weighted_sim,
                     }

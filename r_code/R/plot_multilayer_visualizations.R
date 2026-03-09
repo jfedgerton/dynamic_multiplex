@@ -206,7 +206,8 @@ plot_multilayer_alluvial <- function(fit, max_nodes = NULL, palette = "Dark2") {
 }
 
 .build_layer_plot_data <- function(g, membership, layer_idx, layout) {
-  coords <- do.call(layout, list(g))
+  layout_fn <- if (is.function(layout)) layout else get(layout, envir = asNamespace("igraph"))
+  coords <- layout_fn(g)
   nodes <- data.frame(
     node = seq_len(igraph::vcount(g)),
     x = coords[, 1],

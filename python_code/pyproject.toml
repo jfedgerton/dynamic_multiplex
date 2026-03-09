@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "dynamic-multiplex"
-version = "0.0.0"
-description = "Community detection for identifying communities in evolving networked systems"
+version = "1.0.0"
+description = "Multiplex temporal community detection with customizable interlayer coupling"
 readme = "README.md"
 requires-python = ">=3.10"
 authors = [

@@ -18,7 +18,9 @@
 #' @param add_self_loops Logical; if `TRUE`, add intra-layer community self-loop ties
 #'   after similarity computation to mimic aggregation behavior.
 #' @param self_loop_multiplier Numeric multiplier applied to self-loop weighted ties.
-#'   The default `1` yields self-loop weighted similarity of `layer_weight`.
+#'   The default `1` yields self-loop weighted similarity of
+#'   `2 * layer_weight` for undirected or `1 * layer_weight` for directed
+#'   networks, following the Louvain/Leiden community aggregation convention.
 #'
 #' @return A list with detected communities per layer and interlayer ties.
 #' @export
@@ -54,7 +56,8 @@ fit_multilayer_jaccard <- function(layers,
       fit = fit,
       layer_links = links,
       self_loop_multiplier = self_loop_multiplier,
-      min_similarity = min_similarity
+      min_similarity = min_similarity,
+      directed = directed
     )
   }
 

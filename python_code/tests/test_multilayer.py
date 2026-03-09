@@ -40,15 +40,16 @@ def test_custom_layer_links_are_respected():
     assert int(links.iloc[0]["to"]) == 3
 
 
-def test_jaccard_self_loops_default_to_layer_weight():
+def test_jaccard_self_loops_undirected():
     layers = [np.eye(6), np.eye(6), np.eye(6)]
     out = fit_multilayer_jaccard(layers, algorithm="louvain")
     ties = out["interlayer_ties"]
     loops = ties[(ties["from_layer"] == ties["to_layer"]) & (ties["from_community"] == ties["to_community"])]
 
     assert not loops.empty
-    assert (loops["similarity"] == 1.0).all()
-    assert (loops["weighted_similarity"] == loops["layer_weight"]).all()
+    # Undirected self-loops use similarity=2 (Louvain aggregation convention)
+    assert (loops["similarity"] == 2.0).all()
+    assert (loops["weighted_similarity"] == 2.0 * loops["layer_weight"]).all()
 
 
 def test_overlap_self_loop_multiplier_scales_weights():
@@ -58,7 +59,8 @@ def test_overlap_self_loop_multiplier_scales_weights():
     loops = ties[(ties["from_layer"] == ties["to_layer"]) & (ties["from_community"] == ties["to_community"])]
 
     assert not loops.empty
-    assert (loops["weighted_similarity"] == 2.0 * loops["layer_weight"]).all()
+    # weighted_similarity = self_sim(2) * layer_weight * multiplier(2)
+    assert (loops["weighted_similarity"] == 4.0 * loops["layer_weight"]).all()
 
 
 def test_weighted_jaccard_uses_node_strength_weights():

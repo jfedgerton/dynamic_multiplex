@@ -83,7 +83,7 @@ def fit_layer_communities(
                 communities.setdefault(comm, []).append(node_zero + 1)
 
             mod = None
-            if not directed:
+            if not directed and g_input.number_of_edges() > 0:
                 sets = [set(n - 1 for n in nodes) for nodes in communities.values()]
                 mod = nx.algorithms.community.modularity(g_input, sets, weight="weight")
 
@@ -116,7 +116,7 @@ def fit_layer_communities(
             membership = {idx + 1: comm + 1 for idx, comm in enumerate(partition.membership)}
             comms = {i + 1: [node + 1 for node in sorted(nodes)] for i, nodes in enumerate(partition)}
 
-            mod = None if directed else ig_graph.modularity(partition.membership, weights=weights if weights else None)
+            mod = None if directed or ig_graph.ecount() == 0 else ig_graph.modularity(partition.membership, weights=weights if weights else None)
             fits.append(LayerCommunityFit(membership=membership, modularity=mod, communities=comms))
 
     return fits

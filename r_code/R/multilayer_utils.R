@@ -77,7 +77,8 @@ fit_layer_communities <- function(graph_layers, algorithm = c("louvain", "leiden
       if (directed && igraph::is_directed(g_input)) {
         g <- igraph::as.undirected(g_input, mode = "collapse", edge.attr.comb = list(weight = "sum", "ignore"))
       }
-      cl <- igraph::cluster_louvain(g, weights = igraph::E(g)$weight)
+      cl <- igraph::cluster_louvain(g, weights = igraph::E(g)$weight,
+                                       resolution = resolution_parameter)
     } else {
       cl <- igraph::cluster_leiden(
         g,
@@ -89,7 +90,7 @@ fit_layer_communities <- function(graph_layers, algorithm = c("louvain", "leiden
 
     list(
       membership = igraph::membership(cl),
-      modularity = if (igraph::is_directed(g)) NA_real_ else igraph::modularity(g, igraph::membership(cl),
+      modularity = if (igraph::is_directed(g_input)) NA_real_ else igraph::modularity(g, igraph::membership(cl),
                                       weights = igraph::E(g)$weight),
       communities = split(seq_along(igraph::membership(cl)), igraph::membership(cl))
     )
@@ -159,11 +160,7 @@ weighted_overlap_similarity <- function(a, b, weights_a, weights_b) {
 #' @keywords internal
 layer_node_strengths <- function(graph_layers, directed = FALSE) {
   lapply(graph_layers, function(g) {
-    if (directed && igraph::is_directed(g)) {
-      strength_vals <- igraph::strength(g, mode = "all", loops = FALSE, weights = igraph::E(g)$weight)
-    } else {
-      strength_vals <- igraph::strength(g, mode = "all", loops = FALSE, weights = igraph::E(g)$weight)
-    }
+    strength_vals <- igraph::strength(g, mode = "all", loops = FALSE, weights = igraph::E(g)$weight)
     names(strength_vals) <- as.character(seq_along(strength_vals))
     strength_vals
   })
@@ -187,14 +184,19 @@ community_overlap_edges <- function(fit, layer_links, metric = c("jaccard", "ove
     from_comms <- fit[[from_idx]]$communities
     to_comms <- fit[[to_idx]]$communities
 
-    for (from_c in seq_along(from_comms)) {
-      for (to_c in seq_along(to_comms)) {
+    from_ids <- as.integer(names(from_comms))
+    to_ids <- as.integer(names(to_comms))
+
+    for (from_c in from_ids) {
+      for (to_c in to_ids) {
+        from_c_str <- as.character(from_c)
+        to_c_str <- as.character(to_c)
         if (is.null(node_weights_by_layer)) {
-          sim <- sim_fun(from_comms[[from_c]], to_comms[[to_c]])
+          sim <- sim_fun(from_comms[[from_c_str]], to_comms[[to_c_str]])
         } else {
           sim <- weighted_sim_fun(
-            from_comms[[from_c]],
-            to_comms[[to_c]],
+            from_comms[[from_c_str]],
+            to_comms[[to_c_str]],
             node_weights_by_layer[[from_idx]],
             node_weights_by_layer[[to_idx]]
           )
@@ -255,7 +257,7 @@ add_community_self_loops <- function(edge_df, fit, layer_links,
     layer_weight <- layer_weights[as.character(layer_idx)]
     comms <- fit[[layer_idx]]$communities
 
-    for (comm_idx in seq_along(comms)) {
+    for (comm_idx in as.integer(names(comms))) {
       weighted_sim <- self_sim * layer_weight * self_loop_multiplier
       if (weighted_sim >= min_similarity) {
         loop_rows[[length(loop_rows) + 1]] <- data.frame(

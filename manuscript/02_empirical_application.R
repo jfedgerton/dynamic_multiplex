@@ -498,5 +498,90 @@ if (has_alluvial) {
   cat("Skipping alluvial plots (install ggalluvial and RColorBrewer).\n")
 }
 
+# ===========================================================================
+# 8. Bootstrap confidence intervals for empirical fits
+# ===========================================================================
+
+cat("\n=== Bootstrap CIs for empirical data ===\n")
+
+boot_empirical_records <- list()
+bi <- 0
+
+for (net_name in names(networks)) {
+  cat(sprintf("  Bootstrap %s (n_boot=50) ...\n", net_name))
+  boot <- bootstrap_multilayer(
+    networks[[net_name]]$layers,
+    fit_type = "jaccard",
+    algorithm = ALGORITHM,
+    n_boot = 50,
+    seed = 123
+  )
+  ci <- community_ci(boot, alpha = 0.05)
+
+  ci$modularity_ci$network <- net_name
+  ci$community_count_ci$network <- net_name
+  ci$mean_node_stability$network <- net_name
+  ci$modularity_ci$year <- YEAR_RANGE
+  ci$community_count_ci$year <- YEAR_RANGE
+  ci$mean_node_stability$year <- YEAR_RANGE
+
+  bi <- bi + 1
+  boot_empirical_records[[bi]] <- list(
+    modularity = ci$modularity_ci,
+    count = ci$community_count_ci,
+    stability = ci$mean_node_stability
+  )
+}
+
+boot_mod_df <- do.call(rbind, lapply(boot_empirical_records, `[[`, "modularity"))
+boot_count_df <- do.call(rbind, lapply(boot_empirical_records, `[[`, "count"))
+boot_stab_df <- do.call(rbind, lapply(boot_empirical_records, `[[`, "stability"))
+
+write.csv(boot_mod_df, file.path(outdir, "empirical_bootstrap_modularity_ci.csv"),
+          row.names = FALSE)
+write.csv(boot_count_df, file.path(outdir, "empirical_bootstrap_count_ci.csv"),
+          row.names = FALSE)
+write.csv(boot_stab_df, file.path(outdir, "empirical_bootstrap_stability.csv"),
+          row.names = FALSE)
+
+# Fig: Modularity CIs over time by network
+p_boot_mod <- ggplot(boot_mod_df, aes(x = year, y = estimate,
+                                        color = network, fill = network)) +
+  geom_line(linewidth = 0.8) +
+  geom_ribbon(aes(ymin = lower, ymax = upper), alpha = 0.2, color = NA) +
+  labs(x = "Year", y = "Modularity",
+       color = "Network", fill = "Network",
+       title = "Bootstrap 95% CI for modularity over time") +
+  theme_paper
+ggsave(file.path(outdir, "fig_empirical_bootstrap_modularity.pdf"),
+       p_boot_mod, width = 8, height = 4.5)
+
+# Fig: Community count CIs over time
+p_boot_count <- ggplot(boot_count_df, aes(x = year, y = estimate,
+                                            color = network, fill = network)) +
+  geom_line(linewidth = 0.8) +
+  geom_ribbon(aes(ymin = lower, ymax = upper), alpha = 0.2, color = NA) +
+  labs(x = "Year", y = "Number of communities",
+       color = "Network", fill = "Network",
+       title = "Bootstrap 95% CI for community count over time") +
+  theme_paper
+ggsave(file.path(outdir, "fig_empirical_bootstrap_count.pdf"),
+       p_boot_count, width = 8, height = 4.5)
+
+# Fig: Mean stability over time
+p_boot_stab <- ggplot(boot_stab_df, aes(x = year, y = mean_stability,
+                                          color = network, linetype = network)) +
+  geom_line(linewidth = 0.8) +
+  geom_point(size = 1.5) +
+  labs(x = "Year", y = "Mean node stability",
+       color = "Network", linetype = "Network",
+       title = "Bootstrap node stability over time") +
+  ylim(0, 1) +
+  theme_paper
+ggsave(file.path(outdir, "fig_empirical_bootstrap_stability.pdf"),
+       p_boot_stab, width = 8, height = 4.5)
+
+cat("Empirical bootstrap results and figures saved.\n")
+
 cat("\nEmpirical application complete.\n")
 cat(sprintf("Outputs in: %s/\n", outdir))

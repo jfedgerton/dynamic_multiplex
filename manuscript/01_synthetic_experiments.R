@@ -365,4 +365,61 @@ p4 <- ggplot(agg4, aes(x = factor(n_nodes), y = runtime_s, fill = method)) +
 ggsave(file.path(outdir, "fig_runtime_comparison.pdf"), p4, width = 9, height = 5)
 
 cat("Figures saved to manuscript/output/\n")
+
+
+# ===========================================================================
+# 7. Bootstrap confidence intervals
+# ===========================================================================
+
+cat("\n=== Bootstrap Confidence Intervals ===\n")
+
+# Run bootstrap on a representative scenario
+boot_sim <- simulate_evolving(
+  n_nodes = 50, n_layers = 5, n_communities = 3,
+  p_switch = 0.05, seed = 42
+)
+
+cat("Running bootstrap (n_boot=100) ...\n")
+boot_result <- bootstrap_multilayer(
+  boot_sim$layers, fit_type = "jaccard", algorithm = "louvain",
+  n_boot = 100, seed = 42
+)
+boot_ci <- community_ci(boot_result, alpha = 0.05)
+
+write.csv(boot_ci$modularity_ci,
+          file.path(outdir, "bootstrap_modularity_ci.csv"), row.names = FALSE)
+write.csv(boot_ci$community_count_ci,
+          file.path(outdir, "bootstrap_count_ci.csv"), row.names = FALSE)
+write.csv(boot_ci$mean_node_stability,
+          file.path(outdir, "bootstrap_stability.csv"), row.names = FALSE)
+
+cat("Bootstrap CI tables saved.\n")
+
+# Fig: Node stability across layers
+stab_df <- data.frame(
+  layer = rep(seq_along(boot_ci$node_stability),
+              vapply(boot_ci$node_stability, length, integer(1))),
+  stability = unlist(boot_ci$node_stability)
+)
+
+p_stab <- ggplot(stab_df, aes(x = factor(layer), y = stability)) +
+  geom_boxplot(fill = "steelblue", alpha = 0.6) +
+  labs(x = "Layer", y = "Node stability",
+       title = "Bootstrap node stability by layer (Jaccard, p_switch=0.05)") +
+  theme_paper
+ggsave(file.path(outdir, "fig_bootstrap_node_stability.pdf"),
+       p_stab, width = 6, height = 4)
+
+# Fig: Modularity CIs
+p_mod_ci <- ggplot(boot_ci$modularity_ci,
+                    aes(x = layer, y = estimate)) +
+  geom_point(size = 3) +
+  geom_errorbar(aes(ymin = lower, ymax = upper), width = 0.2) +
+  labs(x = "Layer", y = "Modularity",
+       title = "Bootstrap 95% CI for modularity") +
+  theme_paper
+ggsave(file.path(outdir, "fig_bootstrap_modularity_ci.pdf"),
+       p_mod_ci, width = 6, height = 4)
+
+cat("Bootstrap figures saved.\n")
 cat("Done.\n")

@@ -312,3 +312,35 @@ summary_df <- summary_df[order(summary_df$p_switch, -summary_df$nmi), ]
 
 cat("\n=== Summary (mean across configs and reps) ===\n")
 print(summary_df, row.names = FALSE)
+
+
+# ---------------------------------------------------------------------------
+# Bootstrap CI demo
+# ---------------------------------------------------------------------------
+
+cat("\n=== Bootstrap CI Demo ===\n")
+sim_boot <- simulate_evolving_networks(
+  n_nodes = 50, n_layers = 5, n_communities = 3,
+  p_in = 0.3, p_out = 0.05, p_switch = 0.05, seed = 42
+)
+
+cat("Running bootstrap (n_boot=50) ...\n")
+boot <- bootstrap_multilayer(
+  sim_boot$layers, fit_type = "jaccard", algorithm = "louvain",
+  n_boot = 50, seed = 42
+)
+ci <- community_ci(boot, alpha = 0.05)
+
+cat("\nModularity 95% CIs:\n")
+print(ci$modularity_ci, row.names = FALSE)
+
+cat("\nCommunity count 95% CIs:\n")
+print(ci$community_count_ci, row.names = FALSE)
+
+cat("\nMean node stability per layer:\n")
+print(ci$mean_node_stability, row.names = FALSE)
+
+write.csv(ci$modularity_ci, "scripts/bootstrap_modularity_ci_r.csv", row.names = FALSE)
+write.csv(ci$community_count_ci, "scripts/bootstrap_count_ci_r.csv", row.names = FALSE)
+write.csv(ci$mean_node_stability, "scripts/bootstrap_stability_r.csv", row.names = FALSE)
+cat("\nBootstrap results saved to scripts/bootstrap_*_r.csv\n")

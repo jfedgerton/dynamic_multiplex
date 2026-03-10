@@ -85,6 +85,8 @@ import community as community_louvain
 import networkx as nx
 
 from dynamic_multiplex import (
+    bootstrap_multilayer,
+    community_ci,
     fit_multilayer_jaccard,
     fit_multilayer_overlap,
     fit_multilayer_weighted_jaccard,
@@ -412,5 +414,37 @@ def run_benchmark():
     print(summary.to_string(index=False))
 
 
+def run_bootstrap_demo():
+    """Demonstrate bootstrap CI on a single scenario."""
+    print("\n=== Bootstrap CI Demo ===")
+    layers, true_mem = simulate_evolving_networks(
+        n_nodes=50, n_layers=5, n_communities=3,
+        p_in=0.3, p_out=0.05, p_switch=0.05, seed=42,
+    )
+
+    print("Running bootstrap (n_boot=50) ...")
+    boot = bootstrap_multilayer(
+        layers, fit_type="jaccard", algorithm="louvain",
+        n_boot=50, seed=42,
+    )
+    ci = community_ci(boot, alpha=0.05)
+
+    print("\nModularity 95% CIs:")
+    print(ci["modularity_ci"].to_string(index=False))
+
+    print("\nCommunity count 95% CIs:")
+    print(ci["community_count_ci"].to_string(index=False))
+
+    print("\nMean node stability per layer:")
+    print(ci["mean_node_stability"].to_string(index=False))
+
+    # Save bootstrap results
+    ci["modularity_ci"].to_csv("scripts/bootstrap_modularity_ci.csv", index=False)
+    ci["community_count_ci"].to_csv("scripts/bootstrap_count_ci.csv", index=False)
+    ci["mean_node_stability"].to_csv("scripts/bootstrap_stability.csv", index=False)
+    print("\nBootstrap results saved to scripts/bootstrap_*.csv")
+
+
 if __name__ == "__main__":
     run_benchmark()
+    run_bootstrap_demo()

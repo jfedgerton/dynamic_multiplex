@@ -4,7 +4,7 @@
 # approaches in R.
 #
 # Competitors:
-#   1. dynamic_multiplex (adjacent-layer coupling) -- our method
+#   1. dynamic_multiplex (per-layer detection + post-hoc adjacent interlayer ties) -- our method
 #   2. Independent Louvain (no temporal coupling)
 #   3. Full-coupling Louvain (all layer pairs connected)
 #   4. Aggregated Louvain (collapse layers into one network)

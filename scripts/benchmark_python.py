@@ -5,7 +5,7 @@ Compares accuracy (NMI, ARI) and runtime on synthetic planted-partition
 networks with evolving community structure.
 
 Competitors:
-  1. dynamic_multiplex (adjacent-layer coupling) -- our method
+  1. dynamic_multiplex (per-layer detection + post-hoc adjacent interlayer ties) -- our method
   2. Independent Louvain (no temporal coupling)
   3. Full-coupling Louvain (all layer pairs connected)
   4. Aggregated Louvain (collapse layers into one network)
@@ -142,7 +142,7 @@ def _memberships_from_fit(fit_result, n_layers):
 
 
 def run_dynamic_multiplex(layers, fit_type="jaccard"):
-    """Our method: adjacent-layer coupling."""
+    """Our method: per-layer detection + post-hoc adjacent-layer interlayer ties."""
     fit_fn = {
         "jaccard": fit_multilayer_jaccard,
         "overlap": fit_multilayer_overlap,
@@ -235,7 +235,9 @@ def run_multislice_adjacent(layers, omega=1.0):
 
     Same supra-adjacency approach as Mucha et al., but interlayer
     identity ties only connect temporally adjacent layers (t to t+1).
-    This is the temporal coupling structure our method advocates.
+    This uses the same adjacent-only temporal scope as our method,
+    but within a single joint optimization (coupled) rather than
+    two-stage (per-layer detection + post-hoc ties).
     """
     n_nodes = layers[0].shape[0]
     n_layers = len(layers)

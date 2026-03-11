@@ -47,6 +47,9 @@ def simulate_and_fit_multilayer(
                     mat[j, i] = tie
         layers.append(mat)
 
+    # Derive a sub-seed for community detection reproducibility
+    fit_seed = int(rng.integers(0, 2**31))
+
     if fit_type == "jaccard":
         fit = fit_multilayer_jaccard(
             layers,
@@ -54,6 +57,7 @@ def simulate_and_fit_multilayer(
             layer_links=layer_links,
             min_similarity=min_similarity,
             directed=directed,
+            seed=fit_seed,
         )
     elif fit_type == "overlap":
         fit = fit_multilayer_overlap(
@@ -62,6 +66,7 @@ def simulate_and_fit_multilayer(
             layer_links=layer_links,
             min_similarity=min_similarity,
             directed=directed,
+            seed=fit_seed,
         )
     elif fit_type == "weighted_jaccard":
         fit = fit_multilayer_weighted_jaccard(
@@ -70,6 +75,7 @@ def simulate_and_fit_multilayer(
             layer_links=layer_links,
             min_similarity=min_similarity,
             directed=directed,
+            seed=fit_seed,
         )
     elif fit_type == "weighted_overlap":
         fit = fit_multilayer_weighted_overlap(
@@ -78,6 +84,7 @@ def simulate_and_fit_multilayer(
             layer_links=layer_links,
             min_similarity=min_similarity,
             directed=directed,
+            seed=fit_seed,
         )
     else:
         fit = fit_multilayer_identity_ties(
@@ -85,6 +92,7 @@ def simulate_and_fit_multilayer(
             algorithm=algorithm,
             layer_links=layer_links,
             directed=directed,
+            seed=fit_seed,
         )
 
     return {

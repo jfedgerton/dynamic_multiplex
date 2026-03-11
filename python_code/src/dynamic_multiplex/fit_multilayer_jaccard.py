@@ -18,6 +18,7 @@ def fit_multilayer_jaccard(
     directed: bool = False,
     add_self_loops: bool = True,
     self_loop_multiplier: float = 1.0,
+    seed: int | None = None,
 ):
     graph_layers = prepare_multilayer_graphs(layers, directed=directed)
     links = make_layer_links(len(graph_layers), layer_links)
@@ -26,6 +27,7 @@ def fit_multilayer_jaccard(
         algorithm=algorithm,
         resolution_parameter=resolution_parameter,
         directed=directed,
+        seed=seed,
     )
 
     interlayer_ties = community_overlap_edges(

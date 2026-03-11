@@ -30,6 +30,15 @@ prepare_multilayer_graphs <- function(layers, directed = FALSE) {
     )
   })
 
+  # Validate shared node universe across all layers
+  n_nodes_per_layer <- vapply(graph_layers, igraph::vcount, integer(1))
+  if (length(unique(n_nodes_per_layer)) != 1) {
+    stop(
+      "All layers must share the same node set. Found layers with different node counts.",
+      call. = FALSE
+    )
+  }
+
   if (is.null(names(graph_layers))) {
     names(graph_layers) <- paste0("layer_", seq_along(graph_layers))
   }
@@ -67,8 +76,11 @@ make_layer_links <- function(n_layers, layer_links = NULL) {
 #' @keywords internal
 fit_layer_communities <- function(graph_layers, algorithm = c("louvain", "leiden"),
                                   resolution_parameter = 1,
-                                  directed = FALSE) {
+                                  directed = FALSE,
+                                  seed = NULL) {
   algorithm <- match.arg(algorithm)
+
+  if (!is.null(seed)) set.seed(seed)
 
   lapply(graph_layers, function(g) {
     g_input <- g

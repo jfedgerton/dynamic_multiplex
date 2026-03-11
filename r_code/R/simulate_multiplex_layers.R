@@ -64,6 +64,9 @@ simulate_and_fit_multilayer <- function(n_nodes = 100,
     mat
   })
 
+  # Derive a sub-seed for community detection reproducibility
+  fit_seed <- sample.int(.Machine$integer.max, 1L)
+
   fit <- switch(
     fit_type,
     jaccard = fit_multilayer_jaccard(
@@ -71,34 +74,39 @@ simulate_and_fit_multilayer <- function(n_nodes = 100,
       algorithm = algorithm,
       layer_links = layer_links,
       min_similarity = min_similarity,
-      directed = directed
+      directed = directed,
+      seed = fit_seed
     ),
     overlap = fit_multilayer_overlap(
       layers,
       algorithm = algorithm,
       layer_links = layer_links,
       min_similarity = min_similarity,
-      directed = directed
+      directed = directed,
+      seed = fit_seed
     ),
     weighted_jaccard = fit_multilayer_weighted_jaccard(
       layers,
       algorithm = algorithm,
       layer_links = layer_links,
       min_similarity = min_similarity,
-      directed = directed
+      directed = directed,
+      seed = fit_seed
     ),
     weighted_overlap = fit_multilayer_weighted_overlap(
       layers,
       algorithm = algorithm,
       layer_links = layer_links,
       min_similarity = min_similarity,
-      directed = directed
+      directed = directed,
+      seed = fit_seed
     ),
     identity = fit_multilayer_identity_ties(
       layers,
       algorithm = algorithm,
       layer_links = layer_links,
-      directed = directed
+      directed = directed,
+      seed = fit_seed
     )
   )
 

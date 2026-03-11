@@ -25,7 +25,8 @@ fit_multilayer_weighted_jaccard <- function(layers,
                                             resolution_parameter = 1,
                                             directed = FALSE,
                                             add_self_loops = TRUE,
-                                            self_loop_multiplier = 1) {
+                                            self_loop_multiplier = 1,
+                                            seed = NULL) {
   algorithm <- match.arg(algorithm)
 
   graph_layers <- prepare_multilayer_graphs(layers, directed = directed)
@@ -34,7 +35,8 @@ fit_multilayer_weighted_jaccard <- function(layers,
     graph_layers,
     algorithm = algorithm,
     resolution_parameter = resolution_parameter,
-    directed = directed
+    directed = directed,
+    seed = seed
   )
 
   node_weights <- layer_node_strengths(graph_layers, directed = directed)

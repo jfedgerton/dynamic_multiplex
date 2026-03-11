@@ -6,7 +6,7 @@ Authors@R:
            family = "Edgerton",
            role = c("aut", "cre"),
            email = "jared.edgerton@gmail.com")
-Description: Multiplex temporal community detection with customizable interlayer coupling. Runs Louvain or Leiden community detection on each network layer and constructs interlayer ties using Jaccard similarity, overlap coefficient, node-strength weighted variants, or direct node identity links. Supports user-specified layer connectivity via the layer_links argument, enabling adjacent-only temporal coupling that avoids the long-range pooling problem in standard multislice approaches.
+Description: Two-stage temporal community detection with customizable interlayer ties. Stage 1 runs Louvain or Leiden community detection independently on each network layer. Stage 2 constructs post-hoc interlayer ties between detected communities using Jaccard similarity, overlap coefficient, node-strength weighted variants, or direct node identity links. Interlayer ties describe cross-layer relationships but do not influence per-layer community assignments. Supports user-specified layer connectivity via the layer_links argument, defaulting to adjacent-only temporal links that avoid the long-range pooling problem in standard multislice approaches.
 License: MIT + file LICENSE
 Encoding: UTF-8
 LazyData: true

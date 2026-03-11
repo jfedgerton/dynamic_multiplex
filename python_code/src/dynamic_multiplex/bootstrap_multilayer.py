@@ -157,8 +157,10 @@ def bootstrap_multilayer(
             np.fill_diagonal(perturbed_mat, 0.0)
             perturbed.append(perturbed_mat)
 
+        # Derive a per-replicate seed for community detection reproducibility
+        boot_seed = int(rng.integers(0, 2**31))
         try:
-            boot_fit = fit_fn(perturbed, **fit_kwargs)
+            boot_fit = fit_fn(perturbed, seed=boot_seed, **fit_kwargs)
         except Exception:
             continue
 

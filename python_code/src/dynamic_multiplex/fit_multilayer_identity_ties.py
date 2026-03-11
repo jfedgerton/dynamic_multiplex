@@ -11,6 +11,7 @@ def fit_multilayer_identity_ties(
     layer_links=None,
     resolution_parameter: float = 1.0,
     directed: bool = False,
+    seed: int | None = None,
 ):
     graph_layers = prepare_multilayer_graphs(layers, directed=directed)
     links = make_layer_links(len(graph_layers), layer_links)
@@ -19,11 +20,10 @@ def fit_multilayer_identity_ties(
         algorithm=algorithm,
         resolution_parameter=resolution_parameter,
         directed=directed,
+        seed=seed,
     )
 
     n_nodes = graph_layers[0].number_of_nodes()
-    if not all(g.number_of_nodes() == n_nodes for g in graph_layers):
-        raise ValueError("All layers must have the same number of nodes for identity ties.")
 
     ties = []
     for _, row in links.iterrows():

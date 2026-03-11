@@ -31,7 +31,25 @@ def prepare_multilayer_graphs(layers: list, directed: bool = False) -> list[nx.G
     if not isinstance(layers, list) or len(layers) < 2:
         raise ValueError("`layers` must be a list with at least two network layers.")
 
-    return [_as_graph(layer, directed=directed) for layer in layers]
+    graphs = [_as_graph(layer, directed=directed) for layer in layers]
+
+    # Validate shared node universe across all layers
+    node_sets = [set(g.nodes()) for g in graphs]
+    if not all(ns == node_sets[0] for ns in node_sets[1:]):
+        raise ValueError(
+            "All layers must share the same node set. "
+            "Found layers with different nodes."
+        )
+
+    # Normalize node labels to 0..n-1 integers for safe internal processing.
+    # This eliminates assumptions about raw labels being numeric or contiguous.
+    reference_nodes = sorted(node_sets[0], key=lambda x: (type(x).__name__, x))
+    expected = list(range(len(reference_nodes)))
+    if reference_nodes != expected:
+        mapping = {node: i for i, node in enumerate(reference_nodes)}
+        graphs = [nx.relabel_nodes(g, mapping) for g in graphs]
+
+    return graphs
 
 
 def make_layer_links(n_layers: int, layer_links: list[dict] | pd.DataFrame | None = None) -> pd.DataFrame:
@@ -62,6 +80,7 @@ def fit_layer_communities(
     algorithm: str = "louvain",
     resolution_parameter: float = 1.0,
     directed: bool = False,
+    seed: int | None = None,
 ) -> list[LayerCommunityFit]:
     algorithm = algorithm.lower()
     if algorithm not in {"louvain", "leiden"}:
@@ -77,7 +96,10 @@ def fit_layer_communities(
                 raise ImportError("Install optional dependency `python-louvain` for Louvain support.") from exc
 
             g_input = g.to_undirected() if directed else g
-            partition = community_louvain.best_partition(g_input, weight="weight", resolution=resolution_parameter)
+            partition = community_louvain.best_partition(
+                g_input, weight="weight", resolution=resolution_parameter,
+                random_state=seed,
+            )
             communities = {}
             for node_zero, comm in partition.items():
                 communities.setdefault(comm, []).append(node_zero + 1)
@@ -112,6 +134,7 @@ def fit_layer_communities(
                 objective,
                 weights=weights if weights else None,
                 resolution_parameter=resolution_parameter,
+                seed=seed if seed is not None else None,
             )
             membership = {idx + 1: comm + 1 for idx, comm in enumerate(partition.membership)}
             comms = {i + 1: [node + 1 for node in sorted(nodes)] for i, nodes in enumerate(partition)}

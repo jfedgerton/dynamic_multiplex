@@ -109,8 +109,10 @@ bootstrap_multilayer <- function(layers,
       p_mat
     })
 
+    # Derive a per-replicate seed for community detection reproducibility
+    boot_seed <- sample.int(.Machine$integer.max, 1L)
     boot_fit <- tryCatch(
-      do.call(fit_fn, c(list(layers = perturbed), fit_args)),
+      do.call(fit_fn, c(list(layers = perturbed), fit_args, list(seed = boot_seed))),
       error = function(e) NULL
     )
 

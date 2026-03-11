@@ -19,7 +19,8 @@ fit_multilayer_identity_ties <- function(layers,
                                          algorithm = c("louvain", "leiden"),
                                          layer_links = NULL,
                                          resolution_parameter = 1,
-                                         directed = FALSE) {
+                                         directed = FALSE,
+                                         seed = NULL) {
   algorithm <- match.arg(algorithm)
 
   graph_layers <- prepare_multilayer_graphs(layers, directed = directed)
@@ -28,13 +29,11 @@ fit_multilayer_identity_ties <- function(layers,
     graph_layers,
     algorithm = algorithm,
     resolution_parameter = resolution_parameter,
-    directed = directed
+    directed = directed,
+    seed = seed
   )
 
   n_nodes <- igraph::vcount(graph_layers[[1]])
-  if (!all(vapply(graph_layers, igraph::vcount, integer(1)) == n_nodes)) {
-    stop("All layers must have the same number of nodes for identity ties.", call. = FALSE)
-  }
 
   ties <- do.call(
     rbind,

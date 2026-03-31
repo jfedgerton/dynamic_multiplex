@@ -1,4 +1,4 @@
-Package: dynamic_multiplex
+Package: dynamicmultiplex
 Title: Community detection for identifying communities in evolving networked systems
 Version: 1.0.0
 Authors@R: 

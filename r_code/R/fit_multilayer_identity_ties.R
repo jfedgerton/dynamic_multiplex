@@ -32,7 +32,7 @@ fit_multilayer_identity_ties <- function(layers,
   )
 
   n_nodes <- igraph::vcount(graph_layers[[1]])
-  if (!all(vapply(graph_layers, igraph::vcount, integer(1)) == n_nodes)) {
+  if (!all(vapply(graph_layers, igraph::vcount, numeric(1)) == n_nodes)) {
     stop("All layers must have the same number of nodes for identity ties.", call. = FALSE)
   }
 

@@ -2,7 +2,12 @@ from __future__ import annotations
 
 import pandas as pd
 
-from .multilayer_utils import fit_layer_communities, make_layer_links, prepare_multilayer_graphs
+from .multilayer_utils import (
+    _is_zero_indexed,
+    fit_layer_communities,
+    make_layer_links,
+    prepare_multilayer_graphs,
+)
 
 
 def fit_multilayer_identity_ties(
@@ -21,18 +26,21 @@ def fit_multilayer_identity_ties(
         directed=directed,
     )
 
-    n_nodes = graph_layers[0].number_of_nodes()
-    if not all(g.number_of_nodes() == n_nodes for g in graph_layers):
-        raise ValueError("All layers must have the same number of nodes for identity ties.")
-
     ties = []
     for _, row in links.iterrows():
-        for node in range(1, n_nodes + 1):
+        g_from = graph_layers[int(row["from"]) - 1]
+        g_to = graph_layers[int(row["to"]) - 1]
+
+        shared = sorted(set(g_from.nodes()) & set(g_to.nodes()))
+        both_zero = _is_zero_indexed(g_from) and _is_zero_indexed(g_to)
+
+        for node in shared:
+            node_id = node + 1 if both_zero else node
             ties.append(
                 {
                     "from_layer": int(row["from"]),
                     "to_layer": int(row["to"]),
-                    "node": node,
+                    "node": node_id,
                     "layer_weight": float(row["weight"]),
                 }
             )

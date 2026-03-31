@@ -30,6 +30,36 @@ def test_identity_ties_row_count_matches_nodes_times_links():
     assert out["interlayer_ties"].shape[0] == 12
 
 
+def test_identity_ties_variable_node_sets():
+    import networkx as nx
+
+    g1 = nx.Graph()
+    g1.add_nodes_from(["A", "B", "C"])
+    g1.add_edges_from([("A", "B"), ("A", "C"), ("B", "C")])
+
+    g2 = nx.Graph()
+    g2.add_nodes_from(["B", "C", "D"])
+    g2.add_edges_from([("B", "C"), ("B", "D"), ("C", "D")])
+
+    g3 = nx.Graph()
+    g3.add_nodes_from(["A", "C", "D"])
+    g3.add_edges_from([("A", "C"), ("A", "D"), ("C", "D")])
+
+    out = fit_multilayer_identity_ties([g1, g2, g3], algorithm="louvain")
+    ties = out["interlayer_ties"]
+
+    # Layer 1->2: shared = B, C (2 ties)
+    # Layer 2->3: shared = C, D (2 ties)
+    # Total: 4 ties
+    assert ties.shape[0] == 4
+
+    ties_12 = ties[(ties["from_layer"] == 1) & (ties["to_layer"] == 2)]
+    assert set(ties_12["node"]) == {"B", "C"}
+
+    ties_23 = ties[(ties["from_layer"] == 2) & (ties["to_layer"] == 3)]
+    assert set(ties_23["node"]) == {"C", "D"}
+
+
 def test_custom_layer_links_are_respected():
     layers = [np.eye(5), np.eye(5), np.eye(5), np.eye(5)]
     layer_links = [{"from": 1, "to": 3, "weight": 0.5}]

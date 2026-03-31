@@ -16,6 +16,35 @@ test_that("identity ties contain one record per node per layer pair", {
   expect_true(all(c("from_layer", "to_layer", "node", "layer_weight") %in% names(fit$interlayer_ties)))
 })
 
+test_that("identity ties handle variable node sets across layers", {
+  g1 <- igraph::make_empty_graph(n = 0, directed = FALSE)
+  g1 <- igraph::add_vertices(g1, 3, name = c("A", "B", "C"))
+  g1 <- igraph::add_edges(g1, c("A", "B", "A", "C", "B", "C"))
+
+  g2 <- igraph::make_empty_graph(n = 0, directed = FALSE)
+  g2 <- igraph::add_vertices(g2, 3, name = c("B", "C", "D"))
+  g2 <- igraph::add_edges(g2, c("B", "C", "B", "D", "C", "D"))
+
+  g3 <- igraph::make_empty_graph(n = 0, directed = FALSE)
+  g3 <- igraph::add_vertices(g3, 3, name = c("A", "C", "D"))
+  g3 <- igraph::add_edges(g3, c("A", "C", "A", "D", "C", "D"))
+
+  fit <- fit_multilayer_identity_ties(list(g1, g2, g3), algorithm = "louvain")
+
+  # Layer 1->2: shared = B, C (2 ties)
+  # Layer 2->3: shared = C, D (2 ties)
+  # Total: 4 ties
+  expect_equal(nrow(fit$interlayer_ties), 4)
+
+  ties_12 <- fit$interlayer_ties[fit$interlayer_ties$from_layer == 1 &
+                                   fit$interlayer_ties$to_layer == 2, ]
+  expect_true(setequal(ties_12$node, c("B", "C")))
+
+  ties_23 <- fit$interlayer_ties[fit$interlayer_ties$from_layer == 2 &
+                                   fit$interlayer_ties$to_layer == 3, ]
+  expect_true(setequal(ties_23$node, c("C", "D")))
+})
+
 test_that("jaccard undirected self loops use aggregation convention", {
   layers <- list(diag(6), diag(6), diag(6))
   fit <- fit_multilayer_jaccard(layers, algorithm = "louvain")

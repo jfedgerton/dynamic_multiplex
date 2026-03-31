@@ -14,6 +14,11 @@ class LayerCommunityFit:
     communities: dict[int, list[int]]
 
 
+def _is_zero_indexed(graph: nx.Graph) -> bool:
+    """Check if graph uses standard 0-indexed contiguous integer nodes."""
+    return set(graph.nodes()) == set(range(graph.number_of_nodes()))
+
+
 def _as_graph(layer, directed: bool) -> nx.Graph | nx.DiGraph:
     if isinstance(layer, (nx.Graph, nx.DiGraph)):
         return layer
@@ -70,6 +75,8 @@ def fit_layer_communities(
     fits: list[LayerCommunityFit] = []
 
     for g in graph_layers:
+        zero_indexed = _is_zero_indexed(g)
+
         if algorithm == "louvain":
             try:
                 import community as community_louvain
@@ -79,15 +86,20 @@ def fit_layer_communities(
             g_input = g.to_undirected() if directed else g
             partition = community_louvain.best_partition(g_input, weight="weight", resolution=resolution_parameter)
             communities = {}
-            for node_zero, comm in partition.items():
-                communities.setdefault(comm, []).append(node_zero + 1)
+            for node, comm in partition.items():
+                node_id = node + 1 if zero_indexed else node
+                communities.setdefault(comm, []).append(node_id)
 
             mod = None
             if not directed and g_input.number_of_edges() > 0:
-                sets = [set(n - 1 for n in nodes) for nodes in communities.values()]
+                sets = [set(n - 1 if zero_indexed else n for n in nodes) for nodes in communities.values()]
                 mod = nx.algorithms.community.modularity(g_input, sets, weight="weight")
 
-            fits.append(LayerCommunityFit(membership={k + 1: v + 1 for k, v in partition.items()}, modularity=mod, communities={k + 1: v for k, v in communities.items()}))
+            membership = {
+                (node + 1 if zero_indexed else node): comm + 1
+                for node, comm in partition.items()
+            }
+            fits.append(LayerCommunityFit(membership=membership, modularity=mod, communities={k + 1: v for k, v in communities.items()}))
         else:
             try:
                 import igraph as ig
@@ -96,8 +108,11 @@ def fit_layer_communities(
                 raise ImportError("Install optional dependencies `python-igraph` and `leidenalg` for Leiden support.") from exc
 
             g_input = g
-            edges = [(u, v) for u, v in g_input.edges()]
-            weights = [g_input[u][v].get("weight", 1.0) for u, v in edges]
+            node_list = sorted(g_input.nodes())
+            node_to_idx = {n: i for i, n in enumerate(node_list)}
+
+            edges = [(node_to_idx[u], node_to_idx[v]) for u, v in g_input.edges()]
+            weights = [g_input[u][v].get("weight", 1.0) for u, v in g_input.edges()]
             ig_graph = ig.Graph(
                 n=g_input.number_of_nodes(),
                 edges=edges,
@@ -113,8 +128,16 @@ def fit_layer_communities(
                 weights=weights if weights else None,
                 resolution_parameter=resolution_parameter,
             )
-            membership = {idx + 1: comm + 1 for idx, comm in enumerate(partition.membership)}
-            comms = {i + 1: [node + 1 for node in sorted(nodes)] for i, nodes in enumerate(partition)}
+
+            membership = {}
+            comms = {}
+            for idx, comm in enumerate(partition.membership):
+                node = node_list[idx]
+                node_id = node + 1 if zero_indexed else node
+                membership[node_id] = comm + 1
+                comms.setdefault(comm + 1, []).append(node_id)
+            for k in comms:
+                comms[k] = sorted(comms[k])
 
             mod = None if directed or ig_graph.ecount() == 0 else ig_graph.modularity(partition.membership, weights=weights if weights else None)
             fits.append(LayerCommunityFit(membership=membership, modularity=mod, communities=comms))
@@ -154,16 +177,20 @@ def weighted_overlap_similarity(a: list[int], b: list[int], weights_a: dict[int,
     return 0.0 if min_weight == 0 else inter_weight / min_weight
 
 
-def layer_node_strengths(graph_layers: list[nx.Graph | nx.DiGraph], directed: bool = False) -> list[dict[int, float]]:
-    strengths: list[dict[int, float]] = []
+def layer_node_strengths(graph_layers: list[nx.Graph | nx.DiGraph], directed: bool = False) -> list[dict]:
+    strengths: list[dict] = []
     for graph in graph_layers:
+        zero_indexed = _is_zero_indexed(graph)
         if directed and isinstance(graph, nx.DiGraph):
             node_strength = {
-                int(node) + 1: float(graph.in_degree(node, weight="weight") + graph.out_degree(node, weight="weight"))
+                (node + 1 if zero_indexed else node): float(graph.in_degree(node, weight="weight") + graph.out_degree(node, weight="weight"))
                 for node in graph.nodes()
             }
         else:
-            node_strength = {int(node) + 1: float(graph.degree(node, weight="weight")) for node in graph.nodes()}
+            node_strength = {
+                (node + 1 if zero_indexed else node): float(graph.degree(node, weight="weight"))
+                for node in graph.nodes()
+            }
         strengths.append(node_strength)
 
     return strengths

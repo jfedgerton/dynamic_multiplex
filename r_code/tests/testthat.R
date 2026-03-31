@@ -1,4 +1,4 @@
 library(testthat)
-library(dynamic_multiplex)
+library(dynamicmultiplex)
 
-test_check("dynamic_multiplex")
+test_check("dynamicmultiplex")

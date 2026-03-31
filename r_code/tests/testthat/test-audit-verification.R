@@ -14,26 +14,26 @@
 
 test_that("jaccard on known sets matches manual computation", {
   # {1,2,3} vs {2,3,4}: intersection=2, union=4 => 0.5
-  sim <- dynamic_multiplex:::weighted_jaccard(c(1, 2, 3), c(2, 3, 4))
+  sim <- dynamicmultiplex:::weighted_jaccard(c(1, 2, 3), c(2, 3, 4))
   expect_equal(sim, 2 / 4)
 })
 
 test_that("overlap on known sets matches manual computation", {
   # {1,2,3} vs {2,3,4}: intersection=2, min_size=3 => 2/3
-  sim <- dynamic_multiplex:::weighted_overlap(c(1, 2, 3), c(2, 3, 4))
+  sim <- dynamicmultiplex:::weighted_overlap(c(1, 2, 3), c(2, 3, 4))
   expect_equal(sim, 2 / 3)
 })
 
 test_that("jaccard of disjoint sets is 0", {
-  expect_equal(dynamic_multiplex:::weighted_jaccard(c(1, 2), c(3, 4)), 0)
+  expect_equal(dynamicmultiplex:::weighted_jaccard(c(1, 2), c(3, 4)), 0)
 })
 
 test_that("jaccard of identical sets is 1", {
-  expect_equal(dynamic_multiplex:::weighted_jaccard(c(1, 2, 3), c(1, 2, 3)), 1)
+  expect_equal(dynamicmultiplex:::weighted_jaccard(c(1, 2, 3), c(1, 2, 3)), 1)
 })
 
 test_that("overlap when A is subset of B is 1", {
-  expect_equal(dynamic_multiplex:::weighted_overlap(c(1, 2), c(1, 2, 3)), 1)
+  expect_equal(dynamicmultiplex:::weighted_overlap(c(1, 2), c(1, 2, 3)), 1)
 })
 
 test_that("weighted jaccard with known node strengths", {
@@ -43,7 +43,7 @@ test_that("weighted jaccard with known node strengths", {
   wb <- c("2" = 2, "3" = 4, "4" = 6)
   # intersection = {2,3}: min(3,2) + min(1,4) = 3
   # union = {1,2,3,4}: max(5,0) + max(3,2) + max(1,4) + max(0,6) = 18
-  sim <- dynamic_multiplex:::weighted_jaccard_similarity(a, b, wa, wb)
+  sim <- dynamicmultiplex:::weighted_jaccard_similarity(a, b, wa, wb)
   expect_equal(sim, 3 / 18)
 })
 
@@ -53,7 +53,7 @@ test_that("weighted overlap with known node strengths", {
   wa <- c("1" = 5, "2" = 3, "3" = 1)
   wb <- c("2" = 2, "3" = 4, "4" = 6)
   # intersection weight = 3, a_weight = 9, b_weight = 12, min = 9
-  sim <- dynamic_multiplex:::weighted_overlap_similarity(a, b, wa, wb)
+  sim <- dynamicmultiplex:::weighted_overlap_similarity(a, b, wa, wb)
   expect_equal(sim, 3 / 9)
 })
 
@@ -113,7 +113,7 @@ test_that("directed louvain returns NA modularity", {
 # -----------------------------------------------------------------------
 
 test_that("default layer links form chain topology", {
-  links <- dynamic_multiplex:::make_layer_links(5)
+  links <- dynamicmultiplex:::make_layer_links(5)
   expect_equal(links$from, 1:4)
   expect_equal(links$to, 2:5)
   expect_true(all(links$weight == 1))

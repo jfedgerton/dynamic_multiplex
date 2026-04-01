@@ -41,7 +41,8 @@ bootstrap_multilayer <- function(layers,
                                   min_similarity = 0,
                                   resolution_parameter = 1,
                                   directed = FALSE,
-                                  seed = NULL) {
+                                  seed = NULL,
+                                  objective = NULL) {
   fit_type <- match.arg(fit_type)
   algorithm <- match.arg(algorithm)
 
@@ -73,7 +74,8 @@ bootstrap_multilayer <- function(layers,
   fit_args <- list(
     algorithm = algorithm,
     layer_links = layer_links,
-    directed = directed
+    directed = directed,
+    objective = objective
   )
   if (fit_type != "identity") {
     fit_args$min_similarity <- min_similarity

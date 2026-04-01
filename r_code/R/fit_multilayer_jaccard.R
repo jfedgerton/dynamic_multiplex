@@ -31,7 +31,8 @@ fit_multilayer_jaccard <- function(layers,
                                    resolution_parameter = 1,
                                    directed = FALSE,
                                    add_self_loops = TRUE,
-                                   self_loop_multiplier = 1) {
+                                   self_loop_multiplier = 1,
+                                   objective = NULL) {
   algorithm <- match.arg(algorithm)
 
   graph_layers <- prepare_multilayer_graphs(layers, directed = directed)
@@ -40,7 +41,8 @@ fit_multilayer_jaccard <- function(layers,
     graph_layers,
     algorithm = algorithm,
     resolution_parameter = resolution_parameter,
-    directed = directed
+    directed = directed,
+    objective = objective
   )
 
   interlayer_ties <- community_overlap_edges(

@@ -146,3 +146,25 @@ test_that("negative weights rejected for undirected leiden", {
     "negative edge weights"
   )
 })
+
+test_that("negative weights accepted with cpm objective", {
+  layer <- matrix(c(
+    0, 1, -1,
+    1, 0, 1,
+    -1, 1, 0
+  ), nrow = 3, byrow = TRUE)
+
+  fit <- fit_multilayer_jaccard(list(layer, layer), algorithm = "leiden",
+                                 objective = "cpm")
+  expect_length(fit$layer_communities, 2)
+})
+
+test_that("louvain with cpm objective raises error", {
+  layer <- diag(4)
+
+  expect_error(
+    fit_multilayer_jaccard(list(layer, layer), algorithm = "louvain",
+                            objective = "cpm"),
+    "Louvain does not support the CPM objective"
+  )
+})

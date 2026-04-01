@@ -153,3 +153,27 @@ def test_negative_weights_rejected_leiden_undirected():
 
     with pytest.raises(ValueError, match="negative edge weights"):
         fit_multilayer_jaccard([layer, layer], algorithm="leiden")
+
+
+def test_negative_weights_accepted_with_cpm_objective():
+    import pytest
+
+    pytest.importorskip("igraph")
+    pytest.importorskip("leidenalg")
+
+    layer = np.array([
+        [0, 1, -1],
+        [1, 0, 1],
+        [-1, 1, 0],
+    ], dtype=float)
+
+    out = fit_multilayer_jaccard([layer, layer], algorithm="leiden", objective="cpm")
+    assert len(out["layer_communities"]) == 2
+
+
+def test_louvain_cpm_raises():
+    import pytest
+
+    layer = np.eye(4)
+    with pytest.raises(ValueError, match="Louvain does not support the CPM objective"):
+        fit_multilayer_jaccard([layer, layer], algorithm="louvain", objective="cpm")

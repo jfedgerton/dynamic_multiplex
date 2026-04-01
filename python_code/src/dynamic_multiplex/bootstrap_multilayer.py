@@ -68,6 +68,7 @@ def bootstrap_multilayer(
     resolution_parameter: float = 1.0,
     directed: bool = False,
     seed: int | None = None,
+    objective: str | None = None,
 ) -> BootstrapResult:
     """Bootstrap confidence intervals for multilayer community detection.
 
@@ -129,6 +130,7 @@ def bootstrap_multilayer(
         "algorithm": algorithm,
         "layer_links": layer_links,
         "directed": directed,
+        "objective": objective,
     }
     if fit_type != "identity":
         fit_kwargs["min_similarity"] = min_similarity

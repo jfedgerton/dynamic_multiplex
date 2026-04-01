@@ -67,23 +67,32 @@ def fit_layer_communities(
     algorithm: str = "louvain",
     resolution_parameter: float = 1.0,
     directed: bool = False,
+    objective: str | None = None,
 ) -> list[LayerCommunityFit]:
     algorithm = algorithm.lower()
     if algorithm not in {"louvain", "leiden"}:
         raise ValueError("`algorithm` must be one of {'louvain', 'leiden'}.")
 
+    if objective is not None:
+        objective = objective.lower()
+        if objective not in {"modularity", "cpm"}:
+            raise ValueError("`objective` must be one of {'modularity', 'cpm'}.")
+        if algorithm == "louvain" and objective == "cpm":
+            raise ValueError("Louvain does not support the CPM objective. Use algorithm='leiden'.")
+
+    # Resolve effective objective: explicit choice, or default based on direction
+    effective_objective = objective if objective is not None else ("cpm" if directed else "modularity")
+
     fits: list[LayerCommunityFit] = []
 
-    uses_modularity = algorithm == "louvain" or not directed
-
-    if uses_modularity:
+    if effective_objective == "modularity":
         for i, g in enumerate(graph_layers):
             weights = [d.get("weight", 1.0) for _, _, d in g.edges(data=True)]
             if any(w < 0 for w in weights):
                 raise ValueError(
                     f"Layer {i + 1} contains negative edge weights. "
-                    "Modularity-based methods (Louvain and undirected Leiden) do not support negative weights. "
-                    'Use algorithm="leiden" with directed=True to select the CPM objective, '
+                    "Modularity-based methods do not support negative weights. "
+                    'Use objective="cpm" to select the CPM objective, '
                     "which handles negative weights correctly."
                 )
 
@@ -104,7 +113,7 @@ def fit_layer_communities(
                 communities.setdefault(comm, []).append(node_id)
 
             mod = None
-            if not directed and g_input.number_of_edges() > 0:
+            if not directed and effective_objective != "cpm" and g_input.number_of_edges() > 0:
                 sets = [set(n - 1 if zero_indexed else n for n in nodes) for nodes in communities.values()]
                 mod = nx.algorithms.community.modularity(g_input, sets, weight="weight")
 
@@ -134,10 +143,10 @@ def fit_layer_communities(
             if weights:
                 ig_graph.es["weight"] = weights
 
-            objective = leidenalg.CPMVertexPartition if directed else leidenalg.RBConfigurationVertexPartition
+            partition_type = leidenalg.CPMVertexPartition if effective_objective == "cpm" else leidenalg.RBConfigurationVertexPartition
             partition = leidenalg.find_partition(
                 ig_graph,
-                objective,
+                partition_type,
                 weights=weights if weights else None,
                 resolution_parameter=resolution_parameter,
             )
@@ -152,7 +161,7 @@ def fit_layer_communities(
             for k in comms:
                 comms[k] = sorted(comms[k])
 
-            mod = None if directed or ig_graph.ecount() == 0 else ig_graph.modularity(partition.membership, weights=weights if weights else None)
+            mod = None if directed or effective_objective == "cpm" or ig_graph.ecount() == 0 else ig_graph.modularity(partition.membership, weights=weights if weights else None)
             fits.append(LayerCommunityFit(membership=membership, modularity=mod, communities=comms))
 
     return fits

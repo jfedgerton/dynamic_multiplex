@@ -67,18 +67,30 @@ make_layer_links <- function(n_layers, layer_links = NULL) {
 #' @keywords internal
 fit_layer_communities <- function(graph_layers, algorithm = c("louvain", "leiden"),
                                   resolution_parameter = 1,
-                                  directed = FALSE) {
+                                  directed = FALSE,
+                                  objective = NULL) {
   algorithm <- match.arg(algorithm)
 
-  uses_modularity <- algorithm == "louvain" || !directed
+  if (!is.null(objective)) {
+    objective <- tolower(objective)
+    if (!objective %in% c("modularity", "cpm")) {
+      stop("`objective` must be one of 'modularity' or 'cpm'.", call. = FALSE)
+    }
+    if (algorithm == "louvain" && objective == "cpm") {
+      stop("Louvain does not support the CPM objective. Use algorithm = 'leiden'.", call. = FALSE)
+    }
+  }
 
-  if (uses_modularity) {
+  # Resolve effective objective: explicit choice, or default based on direction
+  effective_objective <- if (!is.null(objective)) objective else if (directed) "cpm" else "modularity"
+
+  if (effective_objective == "modularity") {
     for (i in seq_along(graph_layers)) {
       w <- igraph::E(graph_layers[[i]])$weight
       if (!is.null(w) && any(w < 0)) {
         stop(
           sprintf(
-            "Layer %d contains negative edge weights. Modularity-based methods (Louvain and undirected Leiden) do not support negative weights. Use algorithm = \"leiden\" with directed = TRUE to select the CPM objective, which handles negative weights correctly.",
+            "Layer %d contains negative edge weights. Modularity-based methods do not support negative weights. Use objective = \"cpm\" to select the CPM objective, which handles negative weights correctly.",
             i
           ),
           call. = FALSE
@@ -99,7 +111,7 @@ fit_layer_communities <- function(graph_layers, algorithm = c("louvain", "leiden
     } else {
       cl <- igraph::cluster_leiden(
         g,
-        objective_function = if (directed) "CPM" else "modularity",
+        objective_function = if (effective_objective == "cpm") "CPM" else "modularity",
         resolution_parameter = resolution_parameter,
         weights = igraph::E(g)$weight
       )
@@ -107,7 +119,7 @@ fit_layer_communities <- function(graph_layers, algorithm = c("louvain", "leiden
 
     list(
       membership = igraph::membership(cl),
-      modularity = if (igraph::is_directed(g_input)) NA_real_ else igraph::modularity(g, igraph::membership(cl),
+      modularity = if (igraph::is_directed(g_input) || effective_objective == "cpm") NA_real_ else igraph::modularity(g, igraph::membership(cl),
                                       weights = igraph::E(g)$weight),
       communities = split(seq_along(igraph::membership(cl)), igraph::membership(cl))
     )

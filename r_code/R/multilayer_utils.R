@@ -70,6 +70,23 @@ fit_layer_communities <- function(graph_layers, algorithm = c("louvain", "leiden
                                   directed = FALSE) {
   algorithm <- match.arg(algorithm)
 
+  uses_modularity <- algorithm == "louvain" || !directed
+
+  if (uses_modularity) {
+    for (i in seq_along(graph_layers)) {
+      w <- igraph::E(graph_layers[[i]])$weight
+      if (!is.null(w) && any(w < 0)) {
+        stop(
+          sprintf(
+            "Layer %d contains negative edge weights. Modularity-based methods (Louvain and undirected Leiden) do not support negative weights. Use algorithm = \"leiden\" with directed = TRUE to select the CPM objective, which handles negative weights correctly.",
+            i
+          ),
+          call. = FALSE
+        )
+      }
+    }
+  }
+
   lapply(graph_layers, function(g) {
     g_input <- g
 

@@ -120,3 +120,29 @@ test_that("weighted overlap uses node strength weighting", {
 
   expect_equal(fit$interlayer_ties$similarity[1], 13 / 22)
 })
+
+test_that("negative weights rejected for louvain", {
+  layer <- matrix(c(
+    0, 1, -1,
+    1, 0, 1,
+    -1, 1, 0
+  ), nrow = 3, byrow = TRUE)
+
+  expect_error(
+    fit_multilayer_jaccard(list(layer, layer), algorithm = "louvain"),
+    "negative edge weights"
+  )
+})
+
+test_that("negative weights rejected for undirected leiden", {
+  layer <- matrix(c(
+    0, 1, -1,
+    1, 0, 1,
+    -1, 1, 0
+  ), nrow = 3, byrow = TRUE)
+
+  expect_error(
+    fit_multilayer_jaccard(list(layer, layer), algorithm = "leiden"),
+    "negative edge weights"
+  )
+})

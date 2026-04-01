@@ -127,3 +127,29 @@ def test_weighted_overlap_uses_node_strength_weights():
     ties = out["interlayer_ties"]
 
     assert np.isclose(ties.iloc[0]["similarity"], 13 / 22)
+
+
+def test_negative_weights_rejected_louvain():
+    import pytest
+
+    layer = np.array([
+        [0, 1, -1],
+        [1, 0, 1],
+        [-1, 1, 0],
+    ], dtype=float)
+
+    with pytest.raises(ValueError, match="negative edge weights"):
+        fit_multilayer_jaccard([layer, layer], algorithm="louvain")
+
+
+def test_negative_weights_rejected_leiden_undirected():
+    import pytest
+
+    layer = np.array([
+        [0, 1, -1],
+        [1, 0, 1],
+        [-1, 1, 0],
+    ], dtype=float)
+
+    with pytest.raises(ValueError, match="negative edge weights"):
+        fit_multilayer_jaccard([layer, layer], algorithm="leiden")

@@ -74,6 +74,19 @@ def fit_layer_communities(
 
     fits: list[LayerCommunityFit] = []
 
+    uses_modularity = algorithm == "louvain" or not directed
+
+    if uses_modularity:
+        for i, g in enumerate(graph_layers):
+            weights = [d.get("weight", 1.0) for _, _, d in g.edges(data=True)]
+            if any(w < 0 for w in weights):
+                raise ValueError(
+                    f"Layer {i + 1} contains negative edge weights. "
+                    "Modularity-based methods (Louvain and undirected Leiden) do not support negative weights. "
+                    'Use algorithm="leiden" with directed=True to select the CPM objective, '
+                    "which handles negative weights correctly."
+                )
+
     for g in graph_layers:
         zero_indexed = _is_zero_indexed(g)
 

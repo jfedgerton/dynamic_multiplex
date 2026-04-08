@@ -4,3 +4,5 @@ __pycache__/
 *.pyd
 *.egg-info/
 .pytest_cache/
+.claude/
+.idea/

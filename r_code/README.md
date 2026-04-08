@@ -42,13 +42,13 @@ GitHub install (recommended for collaborators):
 
 ```r
 # install.packages("remotes")
-remotes::install_github("jarededgerton/bayesnet", subdir = "r_code")
+remotes::install_github("jfedgerton/dynamic_multiplex", subdir = "r_code")
 ```
 
 ## Quick example
 
 ```r
-library(dynamic_multiplex)
+library(dynamicmultiplex)
 
 sim <- simulate_and_fit_multilayer(
   directed = TRUE,

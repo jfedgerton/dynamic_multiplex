@@ -34,7 +34,7 @@
 #   Rscript manuscript/02_empirical_application.R
 
 suppressPackageStartupMessages({
-  library(dynamic_multiplex)
+  library(dynamicmultiplex)
   library(ggplot2)
 })
 

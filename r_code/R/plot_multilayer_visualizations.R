@@ -221,9 +221,8 @@ plot_multilayer_alluvial <- function(fit, max_nodes = NULL, palette = "Dark2") {
   if (nrow(edge_df) == 0) {
     edge_plot <- data.frame(x = numeric(0), y = numeric(0), xend = numeric(0), yend = numeric(0), layer = character(0))
   } else {
-    vertex_ids <- as.character(igraph::as_ids(igraph::V(g)))
-    from_idx <- match(as.character(edge_df$from), vertex_ids)
-    to_idx <- match(as.character(edge_df$to), vertex_ids)
+    from_idx <- edge_df$from
+    to_idx <- edge_df$to
     edge_plot <- data.frame(
       x = nodes$x[from_idx],
       y = nodes$y[from_idx],

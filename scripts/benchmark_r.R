@@ -19,7 +19,7 @@
 # Usage:
 #   Rscript scripts/benchmark_r.R
 
-library(dynamic_multiplex)
+library(dynamicmultiplex)
 
 # ---------------------------------------------------------------------------
 # Simulation with evolving communities

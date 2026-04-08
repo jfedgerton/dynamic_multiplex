@@ -17,7 +17,7 @@
 # Usage:
 #   Rscript manuscript/01_synthetic_experiments.R
 
-library(dynamic_multiplex)
+library(dynamicmultiplex)
 library(ggplot2)
 
 outdir <- "manuscript/output"

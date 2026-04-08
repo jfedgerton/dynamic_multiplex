@@ -104,7 +104,7 @@ fit_layer_communities <- function(graph_layers, algorithm = c("louvain", "leiden
 
     if (algorithm == "louvain") {
       if (directed && igraph::is_directed(g_input)) {
-        g <- igraph::as.undirected(g_input, mode = "collapse", edge.attr.comb = list(weight = "sum", "ignore"))
+        g <- igraph::as.undirected(g_input, mode = "collapse", edge.attr.comb = list(weight = "sum"))
       }
       cl <- igraph::cluster_louvain(g, weights = igraph::E(g)$weight,
                                        resolution = resolution_parameter)
@@ -154,14 +154,14 @@ weighted_jaccard_similarity <- function(a, b, weights_a, weights_b) {
     return(0)
   }
 
-  inter <- intersect(a, b)
-  inter_weight <- sum(vapply(inter, function(node) {
-    min(weights_a[[as.character(node)]], weights_b[[as.character(node)]])
-  }, numeric(1)))
+  node_keys <- as.character(nodes)
+  wa <- weights_a[as.character(nodes)]
+  wb <- weights_b[as.character(nodes)]
+  wa[is.na(wa)] <- 0
+  wb[is.na(wb)] <- 0
 
-  union_weight <- sum(vapply(nodes, function(node) {
-    max(weights_a[[as.character(node)]], weights_b[[as.character(node)]])
-  }, numeric(1)))
+  inter_weight <- sum(pmin(wa, wb))
+  union_weight <- sum(pmax(wa, wb))
 
   if (union_weight == 0) {
     return(0)

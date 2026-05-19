@@ -1,20 +1,28 @@
-#' Bootstrap confidence intervals for multilayer community detection
+#' @title Bootstrap confidence intervals for multilayer community detection
 #'
-#' Uses a Bayesian bootstrap on edge weights: each bootstrap replicate
-#' multiplies every edge weight by an independent Exponential(1) draw,
-#' preserving graph topology while perturbing the weighting that drives
+#' @description Uses a Bayesian bootstrap on edge weights: each bootstrap
+#' replicate multiplies every edge weight by an independent Exponential(1)
+#' draw, preserving graph topology while perturbing the weighting that drives
 #' community detection.
 #'
 #' @param layers List of adjacency matrices or igraph objects.
+#'
 #' @param fit_type One of \code{"jaccard"}, \code{"overlap"},
-#'   \code{"weighted_jaccard"}, \code{"weighted_overlap"}, \code{"identity"}.
+#' \code{"weighted_jaccard"}, \code{"weighted_overlap"}, \code{"identity"}.
+#'
 #' @param algorithm Community detection algorithm: \code{"louvain"} or
-#'   \code{"leiden"}.
+#' \code{"leiden"}.
+#'
 #' @param n_boot Number of bootstrap replicates.
+#'
 #' @param layer_links Optional data.frame defining layer connectivity.
+#'
 #' @param min_similarity Minimum weighted similarity for interlayer ties.
+#'
 #' @param resolution_parameter Resolution parameter for community detection.
+#'
 #' @param directed Logical; if \code{TRUE}, treat networks as directed.
+#'
 #' @param seed Optional random seed for reproducibility.
 #'
 #' @return A list of class \code{"multilayer_bootstrap"} with components:
@@ -29,36 +37,46 @@
 #'       counts.}
 #'     \item{point_estimate}{The fit result from the original data.}
 #'   }
+#'
 #' @export
-bootstrap_multilayer <- function(layers,
-                                  fit_type = c("jaccard", "overlap",
-                                               "weighted_jaccard",
-                                               "weighted_overlap",
-                                               "identity"),
-                                  algorithm = c("louvain", "leiden"),
-                                  n_boot = 100,
-                                  layer_links = NULL,
-                                  min_similarity = 0,
-                                  resolution_parameter = 1,
-                                  directed = FALSE,
-                                  seed = NULL,
-                                  objective = NULL) {
+
+bootstrap_multilayer <- function(
+    layers,
+    fit_type = c(
+      "jaccard",
+      "overlap",
+      "weighted_jaccard",
+      "weighted_overlap",
+      "identity"
+    ),
+    algorithm = c("louvain", "leiden"),
+    n_boot = 100,
+    layer_links = NULL,
+    min_similarity = 0,
+    resolution_parameter = 1,
+    directed = FALSE,
+    seed = NULL,
+    objective = NULL
+  ) {
+
+  # Check arguments ----
   fit_type <- match.arg(fit_type)
   algorithm <- match.arg(algorithm)
 
+  # Set seed ----
   if (!is.null(seed)) set.seed(seed)
 
-  # Select fitting function
+  # Select fitting function ----
   fit_fn <- switch(
     fit_type,
-    jaccard          = fit_multilayer_jaccard,
-    overlap          = fit_multilayer_overlap,
+    jaccard = fit_multilayer_jaccard,
+    overlap = fit_multilayer_overlap,
     weighted_jaccard = fit_multilayer_weighted_jaccard,
     weighted_overlap = fit_multilayer_weighted_overlap,
-    identity         = fit_multilayer_identity_ties
+    identity = fit_multilayer_identity_ties
   )
 
-  # Convert layers to matrices for resampling
+  # Convert layers to matrices for resampling ----
   mat_layers <- lapply(layers, function(layer) {
     if (inherits(layer, "igraph")) {
       as.matrix(igraph::as_adjacency_matrix(layer, attr = "weight", sparse = FALSE))
@@ -67,10 +85,11 @@ bootstrap_multilayer <- function(layers,
     }
   })
 
+  # Assign layer and node numbers ----
   n_layers <- length(mat_layers)
   n_nodes <- nrow(mat_layers[[1]])
 
-  # Build common args
+  # Build common args ----
   fit_args <- list(
     algorithm = algorithm,
     layer_links = layer_links,
@@ -82,13 +101,14 @@ bootstrap_multilayer <- function(layers,
     fit_args$resolution_parameter <- resolution_parameter
   }
 
-  # Point estimate
+  # Calculate point estimate ----
   point_estimate <- do.call(fit_fn, c(list(layers = mat_layers), fit_args))
 
-  # Accumulators
+  # Assign accumulator matrices ----
   co_assign_accum <- lapply(seq_len(n_layers), function(i) {
     matrix(0, nrow = n_nodes, ncol = n_nodes)
   })
+
   # membership_records[[layer]][[node]] = vector of community assignments
   membership_records <- lapply(seq_len(n_layers), function(i) {
     lapply(seq_len(n_nodes), function(j) integer(0))
@@ -98,8 +118,9 @@ bootstrap_multilayer <- function(layers,
 
   n_completed <- 0L
 
- for (b in seq_len(n_boot)) {
-    # Bayesian bootstrap: multiply edge weights by Exp(1) draws
+  for (b in seq_len(n_boot)) {
+
+    ## Bayesian bootstrap: multiply edge weights by Exp(1) draws
     perturbed <- lapply(mat_layers, function(mat) {
       noise <- matrix(rexp(n_nodes * n_nodes, rate = 1),
                        nrow = n_nodes, ncol = n_nodes)
@@ -124,7 +145,7 @@ bootstrap_multilayer <- function(layers,
       mem <- lc$membership
       comms <- lc$communities
 
-      # Co-assignment
+      ### Co-assignment
       for (comm_nodes in comms) {
         if (length(comm_nodes) >= 2) {
           pairs <- utils::combn(comm_nodes, 2)
@@ -139,20 +160,20 @@ bootstrap_multilayer <- function(layers,
         }
       }
 
-      # Membership records
+      ### Membership records
       for (node_id in seq_along(mem)) {
         membership_records[[layer_idx]][[node_id]] <-
           c(membership_records[[layer_idx]][[node_id]], mem[node_id])
       }
 
-      # Modularity
+      ### Modularity
       mod_val <- lc$modularity
       mod_samples[[layer_idx]] <- c(
         mod_samples[[layer_idx]],
         if (is.null(mod_val) || is.na(mod_val)) NA_real_ else mod_val
       )
 
-      # Community count
+      ### Community count
       count_samples[[layer_idx]] <- c(
         count_samples[[layer_idx]],
         length(comms)
@@ -160,7 +181,7 @@ bootstrap_multilayer <- function(layers,
     }
   }
 
-  # Normalize co-assignment
+  # Normalize co-assignment ----
   if (n_completed > 0) {
     co_assignment <- lapply(co_assign_accum, function(m) {
       m <- m / n_completed

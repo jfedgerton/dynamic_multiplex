@@ -1,4 +1,7 @@
-#' @keywords internal
+#' @title Prepare Multilayer Graphs
+#'
+#' @noRd
+
 prepare_multilayer_graphs <- function(layers, directed = FALSE) {
   if (!requireNamespace("igraph", quietly = TRUE)) {
     stop("Package 'igraph' is required.", call. = FALSE)
@@ -34,7 +37,7 @@ prepare_multilayer_graphs <- function(layers, directed = FALSE) {
     names(graph_layers) <- paste0("layer_", seq_along(graph_layers))
   }
 
-  graph_layers
+  return(graph_layers)
 }
 
 #' @keywords internal
@@ -64,11 +67,20 @@ make_layer_links <- function(n_layers, layer_links = NULL) {
   layer_links
 }
 
-#' @keywords internal
-fit_layer_communities <- function(graph_layers, algorithm = c("louvain", "leiden"),
-                                  resolution_parameter = 1,
-                                  directed = FALSE,
-                                  objective = NULL) {
+
+
+#' @title Fit Layer Communities
+#'
+#' @noRd
+
+fit_layer_communities <- function(
+    graph_layers,
+    algorithm = c("louvain", "leiden"),
+    resolution_parameter = 1,
+    directed = FALSE,
+    objective = NULL
+  ) {
+
   algorithm <- match.arg(algorithm)
 
   if (!is.null(objective)) {
@@ -104,13 +116,20 @@ fit_layer_communities <- function(graph_layers, algorithm = c("louvain", "leiden
 
     if (algorithm == "louvain") {
       if (directed && igraph::is_directed(g_input)) {
-        g <- igraph::as.undirected(g_input, mode = "collapse", edge.attr.comb = list(weight = "sum"))
+        g <- igraph::as.undirected(
+          graph = g_input,
+          mode = "collapse",
+          edge.attr.comb = list(weight = "sum")
+        )
       }
-      cl <- igraph::cluster_louvain(g, weights = igraph::E(g)$weight,
-                                       resolution = resolution_parameter)
+      cl <- igraph::cluster_louvain(
+        graph = g,
+        weights = igraph::E(g)$weight,
+        resolution = resolution_parameter
+      )
     } else {
       cl <- igraph::cluster_leiden(
-        g,
+        graph = g,
         objective_function = if (effective_objective == "cpm") "CPM" else "modularity",
         resolution_parameter = resolution_parameter,
         weights = igraph::E(g)$weight
@@ -119,35 +138,56 @@ fit_layer_communities <- function(graph_layers, algorithm = c("louvain", "leiden
 
     list(
       membership = igraph::membership(cl),
-      modularity = if (igraph::is_directed(g_input) || effective_objective == "cpm") NA_real_ else igraph::modularity(g, igraph::membership(cl),
-                                      weights = igraph::E(g)$weight),
+      modularity = if (igraph::is_directed(g_input) || effective_objective == "cpm") {
+        NA_real_
+      } else {
+        igraph::modularity(g, igraph::membership(cl), weights = igraph::E(g)$weight)
+      },
       communities = split(seq_along(igraph::membership(cl)), igraph::membership(cl))
     )
   })
 }
 
-#' @keywords internal
+
+
+#' @title Weighted Jaccard
+#'
+#' @noRd
+
 weighted_jaccard <- function(a, b) {
   inter <- length(intersect(a, b))
   union <- length(union(a, b))
   if (union == 0) {
-    return(0)
+    jaccard <- 0
+  } else {
+    jaccard <- inter / union
   }
-  inter / union
+  return(jaccard)
 }
 
-#' @keywords internal
+
+
+#' @title Weighted Overlap
+#'
+#' @noRd
+
 weighted_overlap <- function(a, b) {
   inter <- length(intersect(a, b))
   min_size <- min(length(a), length(b))
   if (min_size == 0) {
-    return(0)
+    overlap <- 0
+  } else {
+    overlap <- inter / min_size
   }
-  inter / min_size
+  return(overlap)
 }
 
 
-#' @keywords internal
+
+#' @title Weighted Jaccard Similarity
+#'
+#' @noRd
+
 weighted_jaccard_similarity <- function(a, b, weights_a, weights_b) {
   nodes <- union(a, b)
   if (length(nodes) == 0) {
@@ -165,12 +205,19 @@ weighted_jaccard_similarity <- function(a, b, weights_a, weights_b) {
 
   if (union_weight == 0) {
     return(0)
+  } else {
+    return(inter_weight / union_weight)
   }
-  inter_weight / union_weight
 }
 
-#' @keywords internal
+
+
+#' @title Weighted Overlap Similarity
+#'
+#' @noRd
+
 weighted_overlap_similarity <- function(a, b, weights_a, weights_b) {
+
   inter <- intersect(a, b)
   inter_weight <- sum(vapply(inter, function(node) {
     min(weights_a[[as.character(node)]], weights_b[[as.character(node)]])
@@ -182,11 +229,17 @@ weighted_overlap_similarity <- function(a, b, weights_a, weights_b) {
 
   if (min_weight == 0) {
     return(0)
+  } else {
+    return(inter_weight / min_weight)
   }
-  inter_weight / min_weight
 }
 
-#' @keywords internal
+
+
+#' @title Layer Node Strengths
+#'
+#' @noRd
+
 layer_node_strengths <- function(graph_layers, directed = FALSE) {
   lapply(graph_layers, function(g) {
     strength_vals <- igraph::strength(g, mode = "all", loops = FALSE, weights = igraph::E(g)$weight)
@@ -195,10 +248,20 @@ layer_node_strengths <- function(graph_layers, directed = FALSE) {
   })
 }
 
-#' @keywords internal
-community_overlap_edges <- function(fit, layer_links, metric = c("jaccard", "overlap"),
-                                    min_similarity = 0,
-                                    node_weights_by_layer = NULL) {
+
+
+#' @title Community Overlap Edges
+#'
+#' @noRd
+
+community_overlap_edges <- function(
+    fit,
+    layer_links,
+    metric = c("jaccard", "overlap"),
+    min_similarity = 0,
+    node_weights_by_layer = NULL
+  ) {
+
   metric <- match.arg(metric)
   sim_fun <- if (metric == "jaccard") weighted_jaccard else weighted_overlap
   weighted_sim_fun <- if (metric == "jaccard") weighted_jaccard_similarity else weighted_overlap_similarity
@@ -258,17 +321,26 @@ community_overlap_edges <- function(fit, layer_links, metric = c("jaccard", "ove
       layer_weight = numeric(0),
       weighted_similarity = numeric(0)
     ))
+  } else {
+    return(do.call(rbind, edge_rows))
   }
-
-  do.call(rbind, edge_rows)
 }
 
 
-#' @keywords internal
-add_community_self_loops <- function(edge_df, fit, layer_links,
-                                     self_loop_multiplier = 1,
-                                     min_similarity = 0,
-                                     directed = FALSE) {
+
+#' @title Add Community Self Loops
+#'
+#' @noRd
+
+add_community_self_loops <- function(
+    edge_df,
+    fit,
+    layer_links,
+    self_loop_multiplier = 1,
+    min_similarity = 0,
+    directed = FALSE
+  ) {
+
   loop_rows <- list()
 
   # Undirected self-loops count each internal edge twice (A[i,j] + A[j,i])
@@ -305,7 +377,7 @@ add_community_self_loops <- function(edge_df, fit, layer_links,
 
   if (length(loop_rows) == 0) {
     return(edge_df)
+  } else {
+    return(rbind(edge_df, do.call(rbind, loop_rows)))
   }
-
-  rbind(edge_df, do.call(rbind, loop_rows))
 }

@@ -27,6 +27,8 @@ are connected in sequence.}
 \item{directed}{Logical; if \code{TRUE}, build directed graphs from adjacency
 matrices. For \code{algorithm = "louvain"}, directed layers are collapsed to
 undirected weighted graphs before community detection.}
+
+\item{objective}{One of "cpm" or "modularity" for directed networks only}
 }
 \value{
 A list with detected communities per layer and node-level interlayer

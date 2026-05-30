@@ -27,6 +27,8 @@
 #' @param self_loop_multiplier Numeric multiplier applied to self-loop weighted
 #' ties.
 #'
+#' @param objective One of "cpm" or "modularity" for directed networks only
+#'
 #' @return A list with detected communities per layer and interlayer ties.
 #'
 #' @export

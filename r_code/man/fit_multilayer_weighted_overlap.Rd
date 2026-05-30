@@ -39,6 +39,8 @@ self-loop ties.}
 
 \item{self_loop_multiplier}{Numeric multiplier applied to self-loop weighted
 ties.}
+
+\item{objective}{One of "cpm" or "modularity" for directed networks only}
 }
 \value{
 A list with detected communities per layer and interlayer ties.

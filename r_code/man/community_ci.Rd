@@ -9,21 +9,20 @@ community_ci(boot_result, alpha = 0.05)
 \arguments{
 \item{boot_result}{Output from \code{\link{bootstrap_multilayer}}.}
 
-\item{alpha}{Significance level (default 0.05 for 95\\% CIs).}
+\item{alpha}{Significance level (default 0.05 for 95 percent CIs).}
 }
 \value{
 A list with components:
 \describe{
-\item{modularity_ci}{Data frame with columns layer, estimate, lower,
-upper.}
-\item{community_count_ci}{Data frame with columns layer, estimate,
-lower, upper.}
-\item{mean_node_stability}{Data frame with columns layer,
-mean_stability.}
+\item{modularity_ci}{Data frame with columns layer, estimate, lower, upper.}
+\item{community_count_ci}{Data frame with columns layer, estimate, lower, upper.}
+\item{mean_node_stability}{Data frame with columns layer, mean_stability.}
 \item{node_stability}{Per-layer stability vectors.}
 \item{co_assignment}{Per-layer co-assignment matrices.}
 }
 }
 \description{
-Summarize bootstrap results into confidence intervals
+Compiles bootstrapping results into modularity and community
+count confidence intervals and reports mean node stability, node stability,
+and co-assignment metrics.
 }

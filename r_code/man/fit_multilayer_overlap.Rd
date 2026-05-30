@@ -41,6 +41,8 @@ self-loop ties after similarity computation to mimic aggregation behavior.}
 ties. The default \code{1} yields self-loop weighted similarity of
 \code{2 * layer_weight} for undirected or \code{1 * layer_weight} for directed
 networks, following the Louvain/Leiden community aggregation convention.}
+
+\item{objective}{One of "cpm" or "modularity" for directed networks only}
 }
 \value{
 A list with detected communities per layer and interlayer ties.

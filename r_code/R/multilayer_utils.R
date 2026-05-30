@@ -154,7 +154,7 @@ fit_layer_communities <- function(
 
       ### convert to undirected graph ----
       if (directed && igraph::is_directed(g_input)) {
-        g <- igraph::as.undirected(
+        g <- igraph::as_undirected(
           graph = g_input,
           mode = "collapse",
           edge.attr.comb = list(weight = "sum")
@@ -173,7 +173,7 @@ fit_layer_communities <- function(
       cl <- igraph::cluster_leiden(
         graph = g,
         objective_function = if (effective_objective == "cpm") "CPM" else "modularity",
-        resolution_parameter = resolution_parameter,
+        resolution = resolution_parameter,
         weights = igraph::E(g)$weight
       )
     }

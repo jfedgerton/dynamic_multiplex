@@ -37,6 +37,8 @@ bootstrap_multilayer(
 \item{directed}{Logical; if \code{TRUE}, treat networks as directed.}
 
 \item{seed}{Optional random seed for reproducibility.}
+
+\item{objective}{One of "cpm" or "modularity" for directed networks only}
 }
 \value{
 A list of class \code{"multilayer_bootstrap"} with components:

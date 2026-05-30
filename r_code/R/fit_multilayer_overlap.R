@@ -29,6 +29,8 @@
 #' `2 * layer_weight` for undirected or `1 * layer_weight` for directed
 #' networks, following the Louvain/Leiden community aggregation convention.
 #'
+#' @param objective One of "cpm" or "modularity" for directed networks only
+#'
 #' @return A list with detected communities per layer and interlayer ties.
 #'
 #' @export

@@ -25,6 +25,8 @@
 #'
 #' @param seed Optional random seed for reproducibility.
 #'
+#' @param objective One of "cpm" or "modularity" for directed networks only
+#'
 #' @return A list of class \code{"multilayer_bootstrap"} with components:
 #'   \describe{
 #'     \item{n_boot}{Number of completed bootstrap replicates.}
@@ -127,7 +129,7 @@ bootstrap_multilayer <- function(
     ## multiply edge weights by exp(1) draws for bayesian bootstrap ----
     perturbed <- lapply(mat_layers, function(mat) {
       noise <- matrix(
-        data = rexp(n_nodes * n_nodes, rate = 1),
+        data = stats::rexp(n_nodes * n_nodes, rate = 1),
         nrow = n_nodes,
         ncol = n_nodes
       )
@@ -229,18 +231,19 @@ bootstrap_multilayer <- function(
 
 #' @title Summarize bootstrap results into confidence intervals
 #'
+#' @description Compiles bootstrapping results into modularity and community
+#' count confidence intervals and reports mean node stability, node stability,
+#' and co-assignment metrics.
+#'
 #' @param boot_result Output from \code{\link{bootstrap_multilayer}}.
 #'
-#' @param alpha Significance level (default 0.05 for 95\% CIs).
+#' @param alpha Significance level (default 0.05 for 95 percent CIs).
 #'
 #' @return A list with components:
 #'   \describe{
-#'     \item{modularity_ci}{Data frame with columns layer, estimate, lower,
-#'       upper.}
-#'     \item{community_count_ci}{Data frame with columns layer, estimate,
-#'       lower, upper.}
-#'     \item{mean_node_stability}{Data frame with columns layer,
-#'       mean_stability.}
+#'     \item{modularity_ci}{Data frame with columns layer, estimate, lower, upper.}
+#'     \item{community_count_ci}{Data frame with columns layer, estimate, lower, upper.}
+#'     \item{mean_node_stability}{Data frame with columns layer, mean_stability.}
 #'     \item{node_stability}{Per-layer stability vectors.}
 #'     \item{co_assignment}{Per-layer co-assignment matrices.}
 #'   }
@@ -272,7 +275,7 @@ community_ci <- function(boot_result, alpha = 0.05) {
     samples <- boot_result$modularity_samples[[i]]
     valid <- samples[!is.na(samples)]
     if (length(valid) > 0) {
-      qs <- quantile(valid, probs = c(lower_q, upper_q), names = FALSE)
+      qs <- stats::quantile(valid, probs = c(lower_q, upper_q), names = FALSE)
       lo <- qs[1]
       hi <- qs[2]
     } else {
@@ -300,7 +303,7 @@ community_ci <- function(boot_result, alpha = 0.05) {
     lc <- point$layer_communities[[i]]
     est <- length(lc$communities)
     samples <- boot_result$community_count_samples[[i]]
-    qs <- quantile(samples, probs = c(lower_q, upper_q), names = FALSE)
+    qs <- stats::quantile(samples, probs = c(lower_q, upper_q), names = FALSE)
 
     ## compile community count confidence interval ----
     community_count_ci <- data.frame(

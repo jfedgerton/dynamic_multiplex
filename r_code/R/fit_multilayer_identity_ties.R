@@ -20,6 +20,8 @@
 #' matrices. For `algorithm = "louvain"`, directed layers are collapsed to
 #' undirected weighted graphs before community detection.
 #'
+#' @param objective One of "cpm" or "modularity" for directed networks only
+#'
 #' @return A list with detected communities per layer and node-level interlayer
 #' ties.
 #'

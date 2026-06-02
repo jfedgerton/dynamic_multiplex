@@ -22,6 +22,8 @@
 #'
 #' @return A `ggplot` object.
 #'
+#' @importFrom rlang .data
+#'
 #' @export
 
 plot_multilayer_series <- function(
@@ -56,13 +58,21 @@ plot_multilayer_series <- function(
   multilayer_series <- ggplot2::ggplot() +
     ggplot2::geom_segment(
       data = edge_df,
-      mapping = ggplot2::aes(x = x, y = y, xend = xend, yend = yend),
+      mapping = ggplot2::aes(
+        x = .data[["x"]],
+        y = .data[["y"]],
+        xend = .data[["xend"]],
+        yend = .data[["yend"]]),
       alpha = 0.3,
       linewidth = 0.4
     ) +
     ggplot2::geom_point(
       data = node_df,
-      mapping = ggplot2::aes(x = x, y = y, color = community),
+      mapping = ggplot2::aes(
+        x = .data[["x"]],
+        y = .data[["y"]],
+        color = .data[["community"]]
+      ),
       size = 2.7
     ) +
     ggplot2::facet_wrap(facets = ~layer, ncol = ncol) +
@@ -104,6 +114,8 @@ plot_multilayer_series <- function(
 #'
 #' @return The path to the created GIF.
 #'
+#' @importFrom rlang .data
+#'
 #' @export
 
 animate_multilayer_gif <- function(
@@ -142,25 +154,41 @@ animate_multilayer_gif <- function(
   multilayer_animation <- ggplot2::ggplot() +
     ggplot2::geom_segment(
       data = edge_df,
-      mapping = ggplot2::aes(x = x, y = y, xend = xend, yend = yend),
+      mapping = ggplot2::aes(
+        x = .data[["x"]],
+        y = .data[["y"]],
+        xend = .data[["xend"]],
+        yend = .data[["yend"]]
+      ),
       alpha = 0.3,
       linewidth = 0.4
     ) +
     ggplot2::geom_point(
       data = node_df,
-      mapping = ggplot2::aes(x = x, y = y, color = community),
+      mapping = ggplot2::aes(
+        x = .data[["x"]],
+        y = .data[["y"]],
+        color = .data[["community"]]
+      ),
       size = 3
     ) +
     ggplot2::scale_color_manual(values = .brewer_community_palette(palette = palette)) +
     ggplot2::theme_void() +
     ggplot2::theme(legend.position = "bottom") +
     ggplot2::labs(title = "{closest_state}", color = "Community") +
-    gganimate::transition_states(states = layer, state_length = 1, transition_length = 1) +
-    gganimate::ease_aes(default = "linear") |>
-    gganimate::animate(fps = fps, width = width, height = height)
+    gganimate::transition_states(
+      states = .data[["layer"]],
+      state_length = 1,
+      transition_length = 1
+    ) +
+    gganimate::ease_aes(default = "linear")
 
   # save multilayer animation ----
-  gganimate::anim_save(filename = output_file, animation = anim)
+  gganimate::anim_save(
+    filename = output_file,
+    animation = multilayer_animation |>
+      gganimate::animate(fps = fps, width = width, height = height)
+  )
 
   # return saved animation file name ----
   return(output_file)
@@ -176,6 +204,8 @@ animate_multilayer_gif <- function(
 #' @param palette ColorBrewer qualitative palette, one of `"Set2"` or `"Dark2"`.
 #'
 #' @return A `ggplot` object.
+#'
+#' @importFrom rlang .data
 #'
 #' @export
 
@@ -224,11 +254,11 @@ plot_multilayer_alluvial <- function(fit, max_nodes = NULL, palette = "Dark2") {
   multilayer_alluvial <- rows |>
     ggplot2::ggplot(
       mapping = ggplot2::aes(
-        x = layer,
-        stratum = community,
-        alluvium = node,
+        x = .data[["layer"]],
+        stratum = .data[["community"]],
+        alluvium = .data[["node"]],
         y = 1,
-        fill = community
+        fill = .data[["community"]]
       )
     ) +
     ggalluvial::geom_alluvium(alpha = 0.5) +

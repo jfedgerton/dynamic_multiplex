@@ -26,3 +26,22 @@ Compiles bootstrapping results into modularity and community
 count confidence intervals and reports mean node stability, node stability,
 and co-assignment metrics.
 }
+\examples{
+set.seed(123)
+layers <- lapply(1:3, function(i) {
+  m <- matrix(rbinom(64, 1, 0.35), nrow = 8)
+  m <- pmax(m, t(m))
+  diag(m) <- 0
+  m
+})
+boot <- bootstrap_multilayer(
+  layers,
+  fit_type = "jaccard",
+  algorithm = "louvain",
+  n_boot = 5,
+  seed = 123
+)
+ci <- community_ci(boot, alpha = 0.05)
+str(ci, max.level = 1)
+
+}

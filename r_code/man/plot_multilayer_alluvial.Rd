@@ -20,3 +20,18 @@ A \code{ggplot} object.
 \description{
 Plot an alluvial view of community transitions over time
 }
+\examples{
+if (requireNamespace("ggplot2", quietly = TRUE) &&
+    requireNamespace("ggalluvial", quietly = TRUE)) {
+  set.seed(123)
+  layers <- lapply(1:3, function(i) {
+    m <- matrix(rbinom(64, 1, 0.35), nrow = 8)
+    m <- pmax(m, t(m))
+    diag(m) <- 0
+    m
+  })
+  fit <- fit_multilayer_jaccard(layers, algorithm = "louvain")
+  p <- plot_multilayer_alluvial(fit)
+}
+
+}

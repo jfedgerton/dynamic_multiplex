@@ -24,6 +24,19 @@
 #'
 #' @importFrom rlang .data
 #'
+#' @examples
+#' if (requireNamespace("ggplot2", quietly = TRUE)) {
+#'   set.seed(123)
+#'   layers <- lapply(1:3, function(i) {
+#'     m <- matrix(rbinom(64, 1, 0.35), nrow = 8)
+#'     m <- pmax(m, t(m))
+#'     diag(m) <- 0
+#'     m
+#'   })
+#'   fit <- fit_multilayer_jaccard(layers, algorithm = "louvain")
+#'   p <- plot_multilayer_series(layers, fit = fit)
+#' }
+#'
 #' @export
 
 plot_multilayer_series <- function(
@@ -116,6 +129,26 @@ plot_multilayer_series <- function(
 #'
 #' @importFrom rlang .data
 #'
+#' @examples
+#' \dontrun{
+#' if (requireNamespace("ggplot2", quietly = TRUE) &&
+#'     requireNamespace("gganimate", quietly = TRUE)) {
+#'   set.seed(123)
+#'   layers <- lapply(1:3, function(i) {
+#'     m <- matrix(rbinom(64, 1, 0.35), nrow = 8)
+#'     m <- pmax(m, t(m))
+#'     diag(m) <- 0
+#'     m
+#'   })
+#'   fit <- fit_multilayer_jaccard(layers, algorithm = "louvain")
+#'   gif_path <- animate_multilayer_gif(
+#'     layers,
+#'     fit = fit,
+#'     output_file = tempfile(fileext = ".gif")
+#'   )
+#' }
+#' }
+#'
 #' @export
 
 animate_multilayer_gif <- function(
@@ -207,6 +240,20 @@ animate_multilayer_gif <- function(
 #'
 #' @importFrom rlang .data
 #'
+#' @examples
+#' if (requireNamespace("ggplot2", quietly = TRUE) &&
+#'     requireNamespace("ggalluvial", quietly = TRUE)) {
+#'   set.seed(123)
+#'   layers <- lapply(1:3, function(i) {
+#'     m <- matrix(rbinom(64, 1, 0.35), nrow = 8)
+#'     m <- pmax(m, t(m))
+#'     diag(m) <- 0
+#'     m
+#'   })
+#'   fit <- fit_multilayer_jaccard(layers, algorithm = "louvain")
+#'   p <- plot_multilayer_alluvial(fit)
+#' }
+#'
 #' @export
 
 plot_multilayer_alluvial <- function(fit, max_nodes = NULL, palette = "Dark2") {
@@ -244,79 +291,4 @@ plot_multilayer_alluvial <- function(fit, max_nodes = NULL, palette = "Dark2") {
     })
   )
 
-  # filter to maximum node count if specified ----
-  if (!is.null(max_nodes)) {
-    keep <- unique(rows$node)[seq_len(min(max_nodes, length(unique(rows$node))))]
-    rows <- rows[rows$node %in% keep, ]
-  }
-
-  # create multilayer alluvial figure ----
-  multilayer_alluvial <- rows |>
-    ggplot2::ggplot(
-      mapping = ggplot2::aes(
-        x = .data[["layer"]],
-        stratum = .data[["community"]],
-        alluvium = .data[["node"]],
-        y = 1,
-        fill = .data[["community"]]
-      )
-    ) +
-    ggalluvial::geom_alluvium(alpha = 0.5) +
-    ggalluvial::geom_stratum(alpha = 0.9) +
-    ggplot2::scale_fill_manual(values = .brewer_community_palette(palette = palette)) +
-    ggplot2::theme_minimal() +
-    ggplot2::labs(x = "Temporal layer", y = "Nodes", fill = "Community")
-
-  # return multilayer alluvial figure ----
-  return(multilayer_alluvial)
-}
-
-.resolve_memberships <- function(graph_layers, fit = NULL, community_memberships = NULL) {
-  if (!is.null(fit) && !is.null(fit$layer_communities)) {
-    return(lapply(fit$layer_communities, function(x) x$membership))
-  }
-
-  if (!is.null(community_memberships)) {
-    return(community_memberships)
-  }
-
-  return(lapply(graph_layers, function(g) seq_len(igraph::vcount(g))))
-}
-
-.brewer_community_palette <- function(palette = "Dark2") {
-  if (!requireNamespace("RColorBrewer", quietly = TRUE)) {
-    stop("Package 'RColorBrewer' is required for palette support.", call. = FALSE)
-  }
-  palette <- match.arg(palette, c("Set2", "Dark2"))
-  return(RColorBrewer::brewer.pal(8, palette))
-}
-
-.build_layer_plot_data <- function(g, membership, layer_idx, layout) {
-  layout_fn <- if (is.function(layout)) layout else get(layout, envir = asNamespace("igraph"))
-  coords <- layout_fn(g)
-  nodes <- data.frame(
-    node = seq_len(igraph::vcount(g)),
-    x = coords[, 1],
-    y = coords[, 2],
-    community = as.factor(membership),
-    layer = paste0("Layer ", layer_idx),
-    stringsAsFactors = FALSE
-  )
-
-  edge_df <- igraph::as_data_frame(g, what = "edges")
-  if (nrow(edge_df) == 0) {
-    edge_plot <- data.frame(x = numeric(0), y = numeric(0), xend = numeric(0), yend = numeric(0), layer = character(0))
-  } else {
-    from_idx <- edge_df$from
-    to_idx <- edge_df$to
-    edge_plot <- data.frame(
-      x = nodes$x[from_idx],
-      y = nodes$y[from_idx],
-      xend = nodes$x[to_idx],
-      yend = nodes$y[to_idx],
-      layer = paste0("Layer ", layer_idx)
-    )
-  }
-
-  return(list(nodes = nodes, edges = edge_plot))
-}
+  # filt

@@ -11,22 +11,12 @@ requires-python = ">=3.10"
 authors = [
   { name = "Jared Edgerton", email = "jared.edgerton@gmail.com" }
 ]
-dependencies = [
-  "numpy>=1.24",
-  "pandas>=2.0",
-  "networkx>=3.0"
-]
-
-[project.optional-dependencies]
-louvain = ["python-louvain>=0.16"]
-leiden = ["python-igraph>=0.11", "leidenalg>=0.10"]
-dev = ["pytest>=8.0"]
-
-[tool.pytest.ini_options]
-testpaths = ["tests"]
-
-[tool.setuptools]
-package-dir = {"" = "src"}
-
-[tool.setuptools.packages.find]
-where = ["src"]
+license = { file = "LICENSE" }
+keywords = ["community detection", "multiplex networks", "temporal networks", "louvain", "leiden"]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Intended Audience :: Science/Research",
+  "License :: OSI Approved :: MIT License",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :

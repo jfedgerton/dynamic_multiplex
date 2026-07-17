@@ -28,6 +28,17 @@
 #' @return A list containing simulated layers, true memberships, and fit
 #' results.
 #'
+#' @examples
+#' sim <- simulate_and_fit_multilayer(
+#'   n_nodes = 30,
+#'   n_layers = 3,
+#'   n_communities = 3,
+#'   fit_type = "jaccard",
+#'   algorithm = "louvain",
+#'   seed = 123
+#' )
+#' names(sim)
+#'
 #' @export
 
 simulate_and_fit_multilayer <- function(

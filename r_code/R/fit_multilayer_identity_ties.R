@@ -25,6 +25,17 @@
 #' @return A list with detected communities per layer and node-level interlayer
 #' ties.
 #'
+#' @examples
+#' set.seed(123)
+#' layers <- lapply(1:3, function(i) {
+#'   m <- matrix(rbinom(64, 1, 0.35), nrow = 8)
+#'   m <- pmax(m, t(m))
+#'   diag(m) <- 0
+#'   m
+#' })
+#' fit <- fit_multilayer_identity_ties(layers, algorithm = "louvain")
+#' names(fit)
+#'
 #' @export
 
 fit_multilayer_identity_ties <- function(
@@ -79,24 +90,4 @@ fit_multilayer_identity_ties <- function(
     ties <- data.frame(
       from_layer = integer(0),
       to_layer = integer(0),
-      node = character(0),
-      layer_weight = numeric(0),
-      stringsAsFactors = FALSE
-    )
-  }
-
-  # Compile multilayer identity fit object ----
-  multilayer_identity_ties <- structure(
-    list(
-      algorithm = algorithm,
-      layer_communities = fit,
-      layer_links = links,
-      interlayer_ties = ties,
-      directed = directed
-    ),
-    class = "multilayer_identity_fit"
-  )
-
-  # Return multilayer identity fit object ----
-  return(multilayer_identity_ties)
-}
+      node = character

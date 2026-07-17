@@ -50,3 +50,15 @@ Runs Louvain or Leiden community detection for each layer and
 creates interlayer ties between communities in selected layer pairs using
 node-strength weighted Jaccard similarity.
 }
+\examples{
+set.seed(123)
+layers <- lapply(1:3, function(i) {
+  w <- matrix(runif(64), 8, 8) * matrix(rbinom(64, 1, 0.35), 8, 8)
+  w <- (w + t(w)) / 2
+  diag(w) <- 0
+  w
+})
+fit <- fit_multilayer_weighted_jaccard(layers, algorithm = "louvain")
+names(fit)
+
+}

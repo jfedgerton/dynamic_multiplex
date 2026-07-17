@@ -52,3 +52,15 @@ Runs Louvain or Leiden community detection for each layer and
 creates interlayer ties between communities in selected layer pairs using
 a weighted overlap coefficient.
 }
+\examples{
+set.seed(123)
+layers <- lapply(1:3, function(i) {
+  m <- matrix(rbinom(64, 1, 0.35), nrow = 8)
+  m <- pmax(m, t(m))
+  diag(m) <- 0
+  m
+})
+fit <- fit_multilayer_overlap(layers, algorithm = "louvain")
+names(fit)
+
+}

@@ -60,3 +60,21 @@ replicate multiplies every edge weight by an independent Exponential(1)
 draw, preserving graph topology while perturbing the weighting that drives
 community detection.
 }
+\examples{
+set.seed(123)
+layers <- lapply(1:3, function(i) {
+  m <- matrix(rbinom(64, 1, 0.35), nrow = 8)
+  m <- pmax(m, t(m))
+  diag(m) <- 0
+  m
+})
+boot <- bootstrap_multilayer(
+  layers,
+  fit_type = "jaccard",
+  algorithm = "louvain",
+  n_boot = 5,
+  seed = 123
+)
+names(boot)
+
+}

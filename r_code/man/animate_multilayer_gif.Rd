@@ -48,3 +48,24 @@ The path to the created GIF.
 Creates one frame per layer and colors nodes by community using
 colorblind-friendly ColorBrewer palettes (\code{Set2} or \code{Dark2}).
 }
+\examples{
+\dontrun{
+if (requireNamespace("ggplot2", quietly = TRUE) &&
+    requireNamespace("gganimate", quietly = TRUE)) {
+  set.seed(123)
+  layers <- lapply(1:3, function(i) {
+    m <- matrix(rbinom(64, 1, 0.35), nrow = 8)
+    m <- pmax(m, t(m))
+    diag(m) <- 0
+    m
+  })
+  fit <- fit_multilayer_jaccard(layers, algorithm = "louvain")
+  gif_path <- animate_multilayer_gif(
+    layers,
+    fit = fit,
+    output_file = tempfile(fileext = ".gif")
+  )
+}
+}
+
+}

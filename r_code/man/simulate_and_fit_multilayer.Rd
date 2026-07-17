@@ -49,3 +49,15 @@ results.
 Generates synthetic multiplex network layers using a planted
 partition model, then fits one of the provided interlayer tie strategies.
 }
+\examples{
+sim <- simulate_and_fit_multilayer(
+  n_nodes = 30,
+  n_layers = 3,
+  n_communities = 3,
+  fit_type = "jaccard",
+  algorithm = "louvain",
+  seed = 123
+)
+names(sim)
+
+}

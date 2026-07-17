@@ -33,6 +33,17 @@
 #'
 #' @return A list with detected communities per layer and interlayer ties.
 #'
+#' @examples
+#' set.seed(123)
+#' layers <- lapply(1:3, function(i) {
+#'   m <- matrix(rbinom(64, 1, 0.35), nrow = 8)
+#'   m <- pmax(m, t(m))
+#'   diag(m) <- 0
+#'   m
+#' })
+#' fit <- fit_multilayer_overlap(layers, algorithm = "louvain")
+#' names(fit)
+#'
 #' @export
 
 fit_multilayer_overlap <- function(
@@ -83,18 +94,4 @@ fit_multilayer_overlap <- function(
     )
   }
 
-  # Compile multilayer community fit object ----
-  multilayer_overlap <- structure(
-    list(
-      algorithm = algorithm,
-      layer_communities = fit,
-      layer_links = links,
-      interlayer_ties = interlayer_ties,
-      directed = directed
-    ),
-    class = "multilayer_community_fit"
-  )
-
-  # Return multilayer community fit object ----
-  return(multilayer_overlap)
-}
+  # C

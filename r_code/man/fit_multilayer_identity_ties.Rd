@@ -41,3 +41,15 @@ Layers may contain different node sets; only nodes present in both layers of
 a linked pair receive interlayer edges. Nodes are matched by
 \code{V(g)$name} when available, or by vertex index otherwise.
 }
+\examples{
+set.seed(123)
+layers <- lapply(1:3, function(i) {
+  m <- matrix(rbinom(64, 1, 0.35), nrow = 8)
+  m <- pmax(m, t(m))
+  diag(m) <- 0
+  m
+})
+fit <- fit_multilayer_identity_ties(layers, algorithm = "louvain")
+names(fit)
+
+}

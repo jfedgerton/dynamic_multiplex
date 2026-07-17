@@ -39,3 +39,17 @@ A \code{ggplot} object.
 Draws one panel per layer with nodes colored by community
 assignment, using a faceted/wrapped layout.
 }
+\examples{
+if (requireNamespace("ggplot2", quietly = TRUE)) {
+  set.seed(123)
+  layers <- lapply(1:3, function(i) {
+    m <- matrix(rbinom(64, 1, 0.35), nrow = 8)
+    m <- pmax(m, t(m))
+    diag(m) <- 0
+    m
+  })
+  fit <- fit_multilayer_jaccard(layers, algorithm = "louvain")
+  p <- plot_multilayer_series(layers, fit = fit)
+}
+
+}

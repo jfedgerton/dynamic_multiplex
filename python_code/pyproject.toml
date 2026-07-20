@@ -23,16 +23,16 @@ classifiers = [
   "Programming Language :: Python :: 3.12",
   "Topic :: Scientific/Engineering"
 ]
-
-[project.urls]
-Homepage = "https://github.com/jfedgerton/dynamic_multiplex"
-Repository = "https://github.com/jfedgerton/dynamic_multiplex"
-Issues = "https://github.com/jfedgerton/dynamic_multiplex/issues"
 dependencies = [
   "numpy>=1.24",
   "pandas>=2.0",
   "networkx>=3.0"
 ]
+
+[project.urls]
+Homepage = "https://github.com/jfedgerton/dynamic_multiplex"
+Repository = "https://github.com/jfedgerton/dynamic_multiplex"
+Issues = "https://github.com/jfedgerton/dynamic_multiplex/issues"
 
 [project.optional-dependencies]
 louvain = ["python-louvain>=0.16"]

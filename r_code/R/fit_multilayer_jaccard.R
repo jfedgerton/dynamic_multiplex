@@ -91,4 +91,22 @@ fit_multilayer_jaccard <- function(
       layer_links = links,
       self_loop_multiplier = self_loop_multiplier,
       min_similarity = min_similarity,
-   
+      directed = directed
+    )
+  }
+
+  # Compile multilayer community fit object ----
+  multilayer_jaccard <- structure(
+    list(
+      algorithm = algorithm,
+      layer_communities = fit,
+      layer_links = links,
+      interlayer_ties = interlayer_ties,
+      directed = directed
+    ),
+    class = "multilayer_community_fit"
+  )
+
+  # Return multilayer community fit object ----
+  return(multilayer_jaccard)
+}

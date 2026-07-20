@@ -90,4 +90,24 @@ fit_multilayer_identity_ties <- function(
     ties <- data.frame(
       from_layer = integer(0),
       to_layer = integer(0),
-      node = character
+      node = character(0),
+      layer_weight = numeric(0),
+      stringsAsFactors = FALSE
+    )
+  }
+
+  # Compile multilayer identity fit object ----
+  multilayer_identity_ties <- structure(
+    list(
+      algorithm = algorithm,
+      layer_communities = fit,
+      layer_links = links,
+      interlayer_ties = ties,
+      directed = directed
+    ),
+    class = "multilayer_identity_fit"
+  )
+
+  # Return multilayer identity fit object ----
+  return(multilayer_identity_ties)
+}

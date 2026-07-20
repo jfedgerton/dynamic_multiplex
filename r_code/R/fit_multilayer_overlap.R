@@ -94,4 +94,18 @@ fit_multilayer_overlap <- function(
     )
   }
 
-  # C
+  # Compile multilayer community fit object ----
+  multilayer_overlap <- structure(
+    list(
+      algorithm = algorithm,
+      layer_communities = fit,
+      layer_links = links,
+      interlayer_ties = interlayer_ties,
+      directed = directed
+    ),
+    class = "multilayer_community_fit"
+  )
+
+  # Return multilayer community fit object ----
+  return(multilayer_overlap)
+}

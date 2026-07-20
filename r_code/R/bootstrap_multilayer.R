@@ -306,4 +306,76 @@ community_ci <- function(boot_result, alpha = 0.05) {
     ## calculate confidence interval bounds ----
     lc <- point$layer_communities[[i]]
     est <- lc$modularity
-    if (is.null(
+    if (is.null(est) || is.na(est)) est <- NA_real_
+    samples <- boot_result$modularity_samples[[i]]
+    valid <- samples[!is.na(samples)]
+    if (length(valid) > 0) {
+      qs <- stats::quantile(valid, probs = c(lower_q, upper_q), names = FALSE)
+      lo <- qs[1]
+      hi <- qs[2]
+    } else {
+      lo <- NA_real_
+      hi <- NA_real_
+    }
+
+    ## compile modularity confidence interval ----
+    modularity_ci <- data.frame(
+      layer = i,
+      estimate = est,
+      lower = lo,
+      upper = hi,
+      stringsAsFactors = FALSE
+    )
+
+    ## return modularity confidence interval ----
+    return(modularity_ci)
+  })
+
+  # calculate community count confidence intervals for each layer ----
+  count_rows <- lapply(seq_len(n_layers), function(i) {
+
+    ## calculate confidence interval bounds ----
+    lc <- point$layer_communities[[i]]
+    est <- length(lc$communities)
+    samples <- boot_result$community_count_samples[[i]]
+    qs <- stats::quantile(samples, probs = c(lower_q, upper_q), names = FALSE)
+
+    ## compile community count confidence interval ----
+    community_count_ci <- data.frame(
+      layer = i,
+      estimate = est,
+      lower = qs[1],
+      upper = qs[2],
+      stringsAsFactors = FALSE
+    )
+
+    ## return community count confidence interval ----
+    return(community_count_ci)
+  })
+
+  # calculate mean node stability for each layer ----
+  stab_rows <- lapply(seq_len(n_layers), function(i) {
+
+    ## calculate mean node stability ----
+    mean_node_stability <- data.frame(
+      layer = i,
+      mean_stability = mean(boot_result$node_stability[[i]]),
+      stringsAsFactors = FALSE
+    )
+
+    ## return mean node stability ----
+    return(mean_node_stability)
+  })
+
+  # compile confidence interval results ----
+  ci_result <- list(
+    modularity_ci = do.call(rbind, mod_rows),
+    community_count_ci = do.call(rbind, count_rows),
+    mean_node_stability = do.call(rbind, stab_rows),
+    node_stability = boot_result$node_stability,
+    co_assignment = boot_result$co_assignment
+  )
+
+  # return confidence interval results ----
+  return(ci_result)
+}

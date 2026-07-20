@@ -96,4 +96,19 @@ fit_multilayer_weighted_overlap <- function(
     )
   }
 
-  # Compile multilayer comm
+  # Compile multilayer community fit object ----
+  multilayer_weighted_overlap <- structure(
+    list(
+      algorithm = algorithm,
+      layer_communities = fit,
+      layer_links = links,
+      interlayer_ties = interlayer_ties,
+      directed = directed,
+      weighting = "node_strength"
+    ),
+    class = "multilayer_community_fit"
+  )
+
+  # Return multilayer community fit object ----
+  return(multilayer_weighted_overlap)
+}

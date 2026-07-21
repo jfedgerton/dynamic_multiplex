@@ -1,8 +1,8 @@
 # =============================================================================
-# manuscript/13_coassign_ci_coverage.R
+# manuscript/14_coverage2_sw08.R
 #
-# Coverage study v2. Supersedes 12_bootstrap_coverage.R (jobs cancelled
-# 2026-07-21 by Jared's instruction). Same task grid and modes, plus a new
+# Coverage study v2 ADD-ON: p_switch = 0.80 stress arm (near-independent
+# memberships across layers). Same machinery as 13_, single switching value,
 # estimand: coverage of Wilson intervals for pairwise co-assignment
 # propensities (the co_assignment_ci() feature planned for 1.1.0).
 #
@@ -23,7 +23,7 @@
 # Costs: M=500 sims (was 1000), each sim runs B=100 bootstrap fits plus
 # R_TRUTH=100 truth fits, so per-task wall time is comparable to v1.
 #
-# Usage (mini test): COV_MODE=main COV_TASK=1 COV_MINI=1 Rscript manuscript/13_coassign_ci_coverage.R
+# Usage (mini test): COV_MODE=main COV_TASK=1 COV_MINI=1 Rscript manuscript/14_coverage2_sw08.R
 # =============================================================================
 
 suppressPackageStartupMessages({
@@ -51,14 +51,14 @@ DENSITIES <- list(weak    = c(p_in = 0.20, p_out = 0.10),
                   strong  = c(p_in = 0.50, p_out = 0.02))
 
 outdir <- file.path("manuscript", "output",
-                    sprintf("coverage2_chunks_%s", MODE))
+                    sprintf("coverage2sw08_chunks_%s", MODE))
 dir.create(outdir, showWarnings = FALSE, recursive = TRUE)
 
 # --------------------------- task table (identical to v1) --------------------
 if (MODE == "main") {
   cells <- expand.grid(
     n = c(50, 100, 200, 400), K = c(3, 5, 10),
-    p_switch = c(0.02, 0.05, 0.10, 0.20, 0.50),
+    p_switch = c(0.80),
     density = names(DENSITIES), T_ = c(5, 10, 15),
     stringsAsFactors = FALSE)
   cells <- cells[!(cells$K == 10 & cells$n == 50), ]
@@ -96,7 +96,7 @@ if (TASK < 1 || TASK > nrow(task_tab)) {
                TASK, nrow(task_tab), MODE))
 }
 cfg <- task_tab[TASK, ]
-cat(sprintf("[coverage2] mode=%s task=%d/%d : n=%d K=%d sw=%.2f dens=%s T=%d w=%s %s/%s B=%d M=%d R=%d\n",
+cat(sprintf("[coverage2sw08] mode=%s task=%d/%d : n=%d K=%d sw=%.2f dens=%s T=%d w=%s %s/%s B=%d M=%d R=%d\n",
             MODE, TASK, nrow(task_tab), cfg$n, cfg$K, cfg$p_switch,
             cfg$density, cfg$T_, cfg$weights, cfg$fit_type, cfg$algorithm,
             cfg$B, M_SIMS, R_TRUTH))
@@ -163,7 +163,7 @@ wilson_bounds <- function(phat, b) {
 
 # --------------------------- one simulation ----------------------------------
 run_one <- function(sim_id) {
-  seed <- TASK * 550000L + sim_id
+  seed <- (3000L + TASK) * 550000L + sim_id
   set.seed(seed)
   truth  <- gen_memberships(cfg)
   layers <- gen_layers(truth, cfg)
@@ -187,7 +187,7 @@ run_one <- function(sim_id) {
   n <- cfg$n
   pstar_acc <- lapply(seq_len(T_), function(t) matrix(0, n, n))
   for (r in seq_len(R_TRUTH)) {
-    set.seed(TASK * 550000L + 1000L + sim_id * 1000L + r)
+    set.seed((3000L + TASK) * 550000L + 1000L + sim_id * 1000L + r)
     fresh <- gen_layers(truth, cfg)
     fit <- fitfun(fresh, algorithm = cfg$algorithm)
     for (t in seq_len(T_)) {
@@ -271,7 +271,7 @@ write.csv(rows, file.path(outdir, sprintf("cov_task%05d.csv", TASK)),
 write.csv(calib, file.path(outdir, sprintf("calib_task%05d.csv", TASK)),
           row.names = FALSE)
 
-cat(sprintf("[coverage2] task %d done: %d/%d sims ok, %.1f min. cov_K=%.3f cov_Q=%.3f cov_P=%.3f\n",
+cat(sprintf("[coverage2sw08] task %d done: %d/%d sims ok, %.1f min. cov_K=%.3f cov_Q=%.3f cov_P=%.3f\n",
             TASK, nrow(rows), M_SIMS, (proc.time()["elapsed"] - t0) / 60,
             mean(rows$cov_K_mean), mean(rows$cov_Q_mean),
             mean(rows$cov_P_mean)))

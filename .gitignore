@@ -9,3 +9,12 @@ __pycache__/
 PA_manuscript_outline.md
 paper_outline*
 paper_draft.tex
+
+# Paper materials - keep out of the public repo
+paper_assets/
+paper_assets.zip
+restyled_figures/
+
+# Build artifacts
+*.tar.gz
+python_code/dist/

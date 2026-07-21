@@ -1,4 +1,9 @@
-from .bootstrap_multilayer import BootstrapResult, bootstrap_multilayer, community_ci
+from .bootstrap_multilayer import (
+    BootstrapResult,
+    bootstrap_multilayer,
+    co_assignment_ci,
+    community_ci,
+)
 from .fit_multilayer_identity_ties import fit_multilayer_identity_ties
 from .fit_multilayer_jaccard import fit_multilayer_jaccard
 from .fit_multilayer_overlap import fit_multilayer_overlap
@@ -9,6 +14,7 @@ from .simulate_multiplex_layers import simulate_and_fit_multilayer
 __all__ = [
     "bootstrap_multilayer",
     "community_ci",
+    "co_assignment_ci",
     "BootstrapResult",
     "fit_multilayer_jaccard",
     "fit_multilayer_overlap",

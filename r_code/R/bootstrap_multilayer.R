@@ -248,9 +248,31 @@ bootstrap_multilayer <- function(
 
 #' @title Summarize bootstrap results into confidence intervals
 #'
-#' @description Compiles bootstrapping results into modularity and community
-#' count confidence intervals and reports mean node stability, node stability,
+#' @description Compiles bootstrapping results into community count
+#' confidence intervals and reports mean node stability, node stability,
 #' and co-assignment metrics.
+#'
+#' @section Warning:
+#' \strong{Community count intervals undercover badly on small networks.}
+#' In a large simulation study on planted-partition multilayer networks
+#' (n = 50 to 400 nodes; 3 to 10 communities; 5 to 15 layers; varying
+#' switching rates and densities), the nominal 95 percent
+#' \code{community_count_ci} contained the true community count in only
+#' about 40 percent of simulations at n = 50 nodes. Coverage recovers to
+#' at or above the nominal level for networks of roughly 100 nodes or
+#' more. A runtime warning is issued when layers have fewer than 100
+#' nodes; on such networks, treat the intervals as descriptive stability
+#' summaries, not calibrated confidence intervals.
+#'
+#' Earlier versions of this package also returned \code{modularity_ci}.
+#' It was removed in version 1.1.0: the same simulation study showed its
+#' empirical coverage is never close to the nominal level at any network
+#' size (about 0.40 at n = 50, 0.00 at n = 100, and vacuously 1.00 at
+#' n = 200), because community detection maximizes modularity and the
+#' bootstrap interval concentrates around that optimized, upwardly
+#' biased value. Raw bootstrap modularity draws remain available as
+#' \code{modularity_samples} in the \code{\link{bootstrap_multilayer}}
+#' output for descriptive use.
 #'
 #' @param boot_result Output from \code{\link{bootstrap_multilayer}}.
 #'
@@ -258,12 +280,14 @@ bootstrap_multilayer <- function(
 #'
 #' @return A list with components:
 #'   \describe{
-#'     \item{modularity_ci}{Data frame with columns layer, estimate, lower, upper.}
 #'     \item{community_count_ci}{Data frame with columns layer, estimate, lower, upper.}
 #'     \item{mean_node_stability}{Data frame with columns layer, mean_stability.}
 #'     \item{node_stability}{Per-layer stability vectors.}
 #'     \item{co_assignment}{Per-layer co-assignment matrices.}
 #'   }
+#'
+#' @seealso \code{\link{co_assignment_ci}} for calibrated node-pair
+#' co-assignment intervals.
 #'
 #' @examples
 #' set.seed(123)
@@ -300,36 +324,20 @@ community_ci <- function(boot_result, alpha = 0.05) {
   point <- boot_result$point_estimate
   n_layers <- length(boot_result$modularity_samples)
 
-  # calculate modularity confidence intervals for each layer ----
-  mod_rows <- lapply(seq_len(n_layers), function(i) {
-
-    ## calculate confidence interval bounds ----
-    lc <- point$layer_communities[[i]]
-    est <- lc$modularity
-    if (is.null(est) || is.na(est)) est <- NA_real_
-    samples <- boot_result$modularity_samples[[i]]
-    valid <- samples[!is.na(samples)]
-    if (length(valid) > 0) {
-      qs <- stats::quantile(valid, probs = c(lower_q, upper_q), names = FALSE)
-      lo <- qs[1]
-      hi <- qs[2]
-    } else {
-      lo <- NA_real_
-      hi <- NA_real_
-    }
-
-    ## compile modularity confidence interval ----
-    modularity_ci <- data.frame(
-      layer = i,
-      estimate = est,
-      lower = lo,
-      upper = hi,
-      stringsAsFactors = FALSE
+  # warn loudly on small networks: coverage study showed ~40 percent
+  # empirical coverage for the nominal 95 percent community count CI at
+  # n = 50 nodes, recovering to nominal at n >= 100 ----
+  n_nodes <- length(boot_result$node_stability[[1]])
+  if (n_nodes < 100) {
+    warning(
+      "Layers have ", n_nodes, " nodes (< 100). In simulation studies the ",
+      "nominal 95% community_count_ci covered the true community count in ",
+      "only ~40% of small-network simulations (n = 50). Treat these ",
+      "intervals as descriptive stability summaries, not calibrated ",
+      "confidence intervals. See ?community_ci section 'Warning'.",
+      call. = FALSE
     )
-
-    ## return modularity confidence interval ----
-    return(modularity_ci)
-  })
+  }
 
   # calculate community count confidence intervals for each layer ----
   count_rows <- lapply(seq_len(n_layers), function(i) {
@@ -369,7 +377,6 @@ community_ci <- function(boot_result, alpha = 0.05) {
 
   # compile confidence interval results ----
   ci_result <- list(
-    modularity_ci = do.call(rbind, mod_rows),
     community_count_ci = do.call(rbind, count_rows),
     mean_node_stability = do.call(rbind, stab_rows),
     node_stability = boot_result$node_stability,

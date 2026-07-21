@@ -2,6 +2,7 @@
 
 export(animate_multilayer_gif)
 export(bootstrap_multilayer)
+export(co_assignment_ci)
 export(community_ci)
 export(fit_multilayer_identity_ties)
 export(fit_multilayer_jaccard)

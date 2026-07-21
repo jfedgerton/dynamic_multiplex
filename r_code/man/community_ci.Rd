@@ -14,7 +14,6 @@ community_ci(boot_result, alpha = 0.05)
 \value{
 A list with components:
 \describe{
-\item{modularity_ci}{Data frame with columns layer, estimate, lower, upper.}
 \item{community_count_ci}{Data frame with columns layer, estimate, lower, upper.}
 \item{mean_node_stability}{Data frame with columns layer, mean_stability.}
 \item{node_stability}{Per-layer stability vectors.}
@@ -22,10 +21,34 @@ A list with components:
 }
 }
 \description{
-Compiles bootstrapping results into modularity and community
-count confidence intervals and reports mean node stability, node stability,
+Compiles bootstrapping results into community count
+confidence intervals and reports mean node stability, node stability,
 and co-assignment metrics.
 }
+\section{Warning}{
+
+\strong{Community count intervals undercover badly on small networks.}
+In a large simulation study on planted-partition multilayer networks
+(n = 50 to 400 nodes; 3 to 10 communities; 5 to 15 layers; varying
+switching rates and densities), the nominal 95 percent
+\code{community_count_ci} contained the true community count in only
+about 40 percent of simulations at n = 50 nodes. Coverage recovers to
+at or above the nominal level for networks of roughly 100 nodes or
+more. A runtime warning is issued when layers have fewer than 100
+nodes; on such networks, treat the intervals as descriptive stability
+summaries, not calibrated confidence intervals.
+
+Earlier versions of this package also returned \code{modularity_ci}.
+It was removed in version 1.1.0: the same simulation study showed its
+empirical coverage is never close to the nominal level at any network
+size (about 0.40 at n = 50, 0.00 at n = 100, and vacuously 1.00 at
+n = 200), because community detection maximizes modularity and the
+bootstrap interval concentrates around that optimized, upwardly
+biased value. Raw bootstrap modularity draws remain available as
+\code{modularity_samples} in the \code{\link{bootstrap_multilayer}}
+output for descriptive use.
+}
+
 \examples{
 set.seed(123)
 layers <- lapply(1:3, function(i) {
@@ -44,4 +67,8 @@ boot <- bootstrap_multilayer(
 ci <- community_ci(boot, alpha = 0.05)
 str(ci, max.level = 1)
 
+}
+\seealso{
+\code{\link{co_assignment_ci}} for calibrated node-pair
+co-assignment intervals.
 }

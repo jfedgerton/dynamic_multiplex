@@ -2,12 +2,23 @@
 
 Provides nonparametric bootstrap uncertainty quantification by resampling
 edge weights (Bayesian bootstrap), re-running community detection B times,
-and computing co-assignment probabilities, modularity CIs, and node-level
-stability measures.
+and computing co-assignment probabilities, community count CIs, node-pair
+co-assignment intervals, and node-level stability measures.
+
+.. warning::
+   A large simulation study found that the nominal 95% community count
+   interval covers the truth in only ~40% of simulations on small networks
+   (n = 50 nodes), recovering to nominal for n >= 100. A modularity CI was
+   removed in version 1.1.0 because its empirical coverage is never close
+   to nominal at any network size (community detection maximizes
+   modularity, so the bootstrap interval concentrates around an upwardly
+   biased value). Raw ``modularity_samples`` remain available for
+   descriptive use.
 """
 
 from __future__ import annotations
 
+import warnings
 from dataclasses import dataclass, field
 
 import numpy as np
@@ -231,6 +242,24 @@ def community_ci(
 ) -> dict:
     """Summarize bootstrap results into confidence intervals.
 
+    .. warning::
+       **Community count intervals undercover badly on small networks.**
+       In a simulation study on planted-partition multilayer networks
+       (n = 50-400 nodes, 3-10 communities, 5-15 layers), the nominal 95%
+       ``community_count_ci`` contained the true community count in only
+       ~40% of simulations at n = 50 nodes. Coverage recovers to at or
+       above nominal for n >= 100. A ``UserWarning`` is raised when layers
+       have fewer than 100 nodes; on such networks treat the intervals as
+       descriptive stability summaries, not calibrated CIs.
+
+       Earlier versions also returned ``modularity_ci``. It was removed in
+       1.1.0: its empirical coverage is never close to nominal at any
+       network size (~0.40 at n = 50, 0.00 at n = 100, vacuously 1.00 at
+       n = 200) because community detection maximizes modularity and the
+       bootstrap interval concentrates around that optimized, upwardly
+       biased value. Raw draws remain in
+       ``BootstrapResult.modularity_samples``.
+
     Parameters
     ----------
     boot_result : BootstrapResult
@@ -242,11 +271,14 @@ def community_ci(
     -------
     dict
         Dictionary with keys:
-        - ``modularity_ci``: DataFrame with layer, estimate, lower, upper
         - ``community_count_ci``: DataFrame with layer, estimate, lower, upper
         - ``mean_node_stability``: DataFrame with layer, mean_stability
         - ``node_stability``: list of per-layer stability arrays
         - ``co_assignment``: list of per-layer co-assignment matrices
+
+    See Also
+    --------
+    co_assignment_ci : Wilson intervals for node-pair co-assignment.
     """
     if boot_result.n_boot == 0:
         raise ValueError("No completed bootstrap replicates.")
@@ -257,24 +289,19 @@ def community_ci(
     n_layers = len(boot_result.modularity_samples)
     point = boot_result.point_estimate
 
-    # Modularity CIs
-    mod_rows = []
-    for i in range(n_layers):
-        lc = point["layer_communities"][i]
-        est = lc.modularity
-        samples = boot_result.modularity_samples[i]
-        valid = samples[~np.isnan(samples)]
-        if len(valid) > 0:
-            lo, hi = np.quantile(valid, [lower_q, upper_q])
-        else:
-            lo, hi = np.nan, np.nan
-        mod_rows.append(
-            {
-                "layer": i + 1,
-                "estimate": est if est is not None else np.nan,
-                "lower": lo,
-                "upper": hi,
-            }
+    # Warn loudly on small networks: coverage study showed ~40% empirical
+    # coverage for the nominal 95% community count CI at n = 50 nodes,
+    # recovering to nominal at n >= 100.
+    n_nodes = len(boot_result.node_stability[0])
+    if n_nodes < 100:
+        warnings.warn(
+            f"Layers have {n_nodes} nodes (< 100). In simulation studies the "
+            "nominal 95% community_count_ci covered the true community count "
+            "in only ~40% of small-network simulations (n = 50). Treat these "
+            "intervals as descriptive stability summaries, not calibrated "
+            "confidence intervals.",
+            UserWarning,
+            stacklevel=2,
         )
 
     # Community count CIs
@@ -299,9 +326,76 @@ def community_ci(
         )
 
     return {
-        "modularity_ci": pd.DataFrame(mod_rows),
         "community_count_ci": pd.DataFrame(count_rows),
         "mean_node_stability": pd.DataFrame(stab_rows),
         "node_stability": boot_result.node_stability,
         "co_assignment": boot_result.co_assignment,
     }
+
+
+def co_assignment_ci(
+    boot_result: BootstrapResult,
+    alpha: float = 0.05,
+) -> list[dict]:
+    """Wilson confidence intervals for node-pair co-assignment.
+
+    For every pair of nodes in every layer, computes a Wilson score
+    interval for the co-clustering propensity: the probability that the
+    fitted community detection procedure places the two nodes in the same
+    community when the data are perturbed. The point estimate is the
+    co-assignment probability from ``bootstrap_multilayer`` (the share of
+    bootstrap replicates in which the pair was co-assigned), and the
+    interval treats the ``n_boot`` replicates as binomial draws.
+
+    Because co-assignment is label-invariant (it never compares community
+    labels across replicates, only whether two nodes sit together), it
+    avoids the label-switching problem that makes per-node membership
+    intervals ill-defined.
+
+    .. warning::
+       These intervals quantify the stability of the detection procedure,
+       not the probability that two nodes truly share a community.
+       Interpret cautiously on networks with fewer than 100 nodes, where
+       community detection itself is unstable.
+
+    Parameters
+    ----------
+    boot_result : BootstrapResult
+        Output from ``bootstrap_multilayer``.
+    alpha : float
+        Significance level (default 0.05 for 95% intervals).
+
+    Returns
+    -------
+    list[dict]
+        One dict per layer with keys ``estimate``, ``lower``, ``upper``,
+        each an ``n_nodes x n_nodes`` ndarray. Diagonals are 1 by
+        construction.
+
+    See Also
+    --------
+    community_ci : Community count intervals and node stability summaries.
+    """
+    if boot_result.n_boot == 0:
+        raise ValueError("No completed bootstrap replicates.")
+
+    from statistics import NormalDist  # stdlib; avoids a scipy dependency
+
+    b = boot_result.n_boot
+    z = NormalDist().inv_cdf(1 - alpha / 2)
+    z2 = z**2
+
+    layer_cis = []
+    for phat in boot_result.co_assignment:
+        denom = 1 + z2 / b
+        center = (phat + z2 / (2 * b)) / denom
+        half = z * np.sqrt(phat * (1 - phat) / b + z2 / (4 * b**2)) / denom
+        lower = np.clip(center - half, 0.0, 1.0)
+        upper = np.clip(center + half, 0.0, 1.0)
+        np.fill_diagonal(lower, 1.0)
+        np.fill_diagonal(upper, 1.0)
+        layer_cis.append(
+            {"estimate": phat, "lower": lower, "upper": upper}
+        )
+
+    return layer_cis

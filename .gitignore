@@ -4,3 +4,8 @@ __pycache__/
 .claude/
 .idea/
 .Rproj.user
+
+# Paper drafts and outlines - never push
+PA_manuscript_outline.md
+paper_outline*
+paper_draft.tex

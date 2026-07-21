@@ -80,24 +80,21 @@ def bootstrap_multilayer(
     directed: bool = False,
     seed: int | None = None,
     objective: str | None = None,
-    resample: str = "edges",
 ) -> BootstrapResult:
     """Bootstrap confidence intervals for multilayer community detection.
 
-    Refits communities on ``n_boot`` resampled versions of the data. Two
-    resampling schemes are available via ``resample``:
+    Refits communities on ``n_boot`` resampled networks using a parametric
+    network bootstrap: within- and between-community edge probabilities
+    (and, for weighted networks, edge-weight pools) are estimated from the
+    observed network using the point-estimate partition; each replicate
+    redraws the full edge set from those estimates, reproducing the
+    variability of fresh data, including which edges exist.
 
-    - ``"edges"`` (default): parametric network bootstrap. Within- and
-      between-community edge probabilities (and, for weighted networks,
-      edge-weight pools) are estimated from the observed network using the
-      point-estimate partition; each replicate redraws the full edge set
-      from those estimates, reproducing the variability of fresh data.
-    - ``"weights"`` (legacy): Bayesian bootstrap that multiplies every
-      observed edge weight by an independent Exponential(1) draw. Topology
-      is held fixed, so replicates see less variability than fresh data;
-      in simulation studies intervals built from this scheme undercovered
-      substantially (~45-48% at nominal 95% for pairwise co-assignment).
-      Retained for backward compatibility and comparison only.
+    Versions before 1.1.0 instead used a Bayesian bootstrap on edge
+    weights (Exponential(1) multipliers on a fixed topology). That scheme
+    was removed: it understates the variability of fresh data, and in
+    simulation studies intervals built from it undercovered substantially
+    (~45-48% at nominal 95% for pairwise co-assignment).
 
     Parameters
     ----------
@@ -120,9 +117,6 @@ def bootstrap_multilayer(
         Whether networks are directed.
     seed : int or None
         Random seed for reproducibility.
-    resample : str
-        Resampling scheme: ``"edges"`` (parametric network bootstrap,
-        default) or ``"weights"`` (legacy Bayesian weight bootstrap).
 
     Returns
     -------
@@ -134,8 +128,6 @@ def bootstrap_multilayer(
         raise ValueError(
             f"`fit_type` must be one of {set(_FIT_FNS.keys())}."
         )
-    if resample not in ("edges", "weights"):
-        raise ValueError('`resample` must be "edges" or "weights".')
 
     fit_fn = _FIT_FNS[fit_type]
 
@@ -169,35 +161,34 @@ def bootstrap_multilayer(
     # Precompute per-layer edge models for the parametric network bootstrap
     # (estimated once from the observed network + point-estimate partition)
     edge_models = []
-    if resample == "edges":
-        for layer_idx in range(n_layers):
-            A = np_layers[layer_idx]
-            memd = point_estimate["layer_communities"][layer_idx].membership
-            mem_vec = np.array([memd[i + 1] for i in range(n_nodes)])
-            same = mem_vec[:, None] == mem_vec[None, :]
-            if directed:
-                sel = ~np.eye(n_nodes, dtype=bool)
-            else:
-                sel = np.triu(np.ones((n_nodes, n_nodes), dtype=bool), k=1)
-            edge_present = A > 0
-            in_dyads = sel & same
-            out_dyads = sel & ~same
-            p_all = float(edge_present[sel].mean()) if sel.any() else 0.0
-            p_in = float(edge_present[in_dyads].mean()) if in_dyads.any() else p_all
-            p_out = float(edge_present[out_dyads].mean()) if out_dyads.any() else p_all
-            w_all = A[sel & edge_present]
-            if w_all.size == 0:
-                w_all = np.array([1.0])
-            w_in = A[in_dyads & edge_present]
-            w_out = A[out_dyads & edge_present]
-            if w_in.size == 0:
-                w_in = w_all
-            if w_out.size == 0:
-                w_out = w_all
-            edge_models.append(
-                {"same": same, "sel": sel, "p_in": p_in, "p_out": p_out,
-                 "w_in": w_in, "w_out": w_out}
-            )
+    for layer_idx in range(n_layers):
+        A = np_layers[layer_idx]
+        memd = point_estimate["layer_communities"][layer_idx].membership
+        mem_vec = np.array([memd[i + 1] for i in range(n_nodes)])
+        same = mem_vec[:, None] == mem_vec[None, :]
+        if directed:
+            sel = ~np.eye(n_nodes, dtype=bool)
+        else:
+            sel = np.triu(np.ones((n_nodes, n_nodes), dtype=bool), k=1)
+        edge_present = A > 0
+        in_dyads = sel & same
+        out_dyads = sel & ~same
+        p_all = float(edge_present[sel].mean()) if sel.any() else 0.0
+        p_in = float(edge_present[in_dyads].mean()) if in_dyads.any() else p_all
+        p_out = float(edge_present[out_dyads].mean()) if out_dyads.any() else p_all
+        w_all = A[sel & edge_present]
+        if w_all.size == 0:
+            w_all = np.array([1.0])
+        w_in = A[in_dyads & edge_present]
+        w_out = A[out_dyads & edge_present]
+        if w_in.size == 0:
+            w_in = w_all
+        if w_out.size == 0:
+            w_out = w_all
+        edge_models.append(
+            {"same": same, "sel": sel, "p_in": p_in, "p_out": p_out,
+             "w_in": w_in, "w_out": w_out}
+        )
 
     # Accumulators
     co_assign_accum = [np.zeros((n_nodes, n_nodes)) for _ in range(n_layers)]
@@ -209,39 +200,28 @@ def bootstrap_multilayer(
 
     for _b in range(n_boot):
         perturbed = []
-        if resample == "edges":
-            # Parametric network bootstrap: redraw the full edge set
-            for em in edge_models:
-                probs = np.where(em["same"], em["p_in"], em["p_out"])
-                draw = (rng.random((n_nodes, n_nodes)) < probs) & em["sel"]
-                mat_new = np.zeros((n_nodes, n_nodes))
-                on = np.where(draw)
-                k = on[0].size
-                if k > 0:
-                    same_on = em["same"][on]
-                    w = np.empty(k)
-                    n_in = int(same_on.sum())
-                    if n_in > 0:
-                        w[same_on] = rng.choice(em["w_in"], size=n_in,
-                                                replace=True)
-                    if k - n_in > 0:
-                        w[~same_on] = rng.choice(em["w_out"], size=k - n_in,
-                                                 replace=True)
-                    mat_new[on] = w
-                if not directed:
-                    mat_new = mat_new + mat_new.T
-                np.fill_diagonal(mat_new, 0.0)
-                perturbed.append(mat_new)
-        else:
-            # Legacy Bayesian bootstrap: multiply edge weights by Exp(1) draws
-            for mat in np_layers:
-                noise = rng.exponential(1.0, size=mat.shape)
-                # Symmetrize noise for undirected networks
-                if not directed:
-                    noise = (noise + noise.T) / 2.0
-                perturbed_mat = mat * noise
-                np.fill_diagonal(perturbed_mat, 0.0)
-                perturbed.append(perturbed_mat)
+        # Parametric network bootstrap: redraw the full edge set
+        for em in edge_models:
+            probs = np.where(em["same"], em["p_in"], em["p_out"])
+            draw = (rng.random((n_nodes, n_nodes)) < probs) & em["sel"]
+            mat_new = np.zeros((n_nodes, n_nodes))
+            on = np.where(draw)
+            k = on[0].size
+            if k > 0:
+                same_on = em["same"][on]
+                w = np.empty(k)
+                n_in = int(same_on.sum())
+                if n_in > 0:
+                    w[same_on] = rng.choice(em["w_in"], size=n_in,
+                                            replace=True)
+                if k - n_in > 0:
+                    w[~same_on] = rng.choice(em["w_out"], size=k - n_in,
+                                             replace=True)
+                mat_new[on] = w
+            if not directed:
+                mat_new = mat_new + mat_new.T
+            np.fill_diagonal(mat_new, 0.0)
+            perturbed.append(mat_new)
 
         try:
             boot_fit = fit_fn(perturbed, **fit_kwargs)

@@ -19,17 +19,17 @@ n = 50-400 nodes, 3-10 communities, 5-15 layers, 5 switching rates,
 
 ## New features
 
-* `bootstrap_multilayer()` gains a `resample` argument selecting the
-  resampling scheme. The new default, `resample = "edges"`, is a parametric
-  network bootstrap: within/between-community edge probabilities and
-  edge-weight pools are estimated from the observed network using the
-  point-estimate partition, and each replicate redraws the full edge set.
-  The previous behavior (Bayesian bootstrap on edge weights with fixed
-  topology) remains available as `resample = "weights"` but is documented
-  as legacy: because it never varies which edges exist, it understates the
-  variability of fresh data, and simulation studies showed intervals built
-  from it undercover badly (~45-48% at nominal 95% for pairwise
-  co-assignment).
+* `bootstrap_multilayer()` now uses a parametric network bootstrap:
+  within/between-community edge probabilities and edge-weight pools are
+  estimated from the observed network using the point-estimate partition,
+  and each replicate redraws the full edge set. The previous scheme
+  (Bayesian bootstrap on edge weights with fixed topology) was REMOVED
+  rather than kept as an option: because it never varies which edges
+  exist, it understates the variability of fresh data, and simulation
+  studies showed intervals built from it undercover badly (~45-48% at
+  nominal 95% for pairwise co-assignment) with no recovery as networks
+  grow. Under the project's design principle, a misleading option is
+  worse than no option.
 
 * `co_assignment_ci()`: Wilson score intervals for node-pair co-assignment
   propensities, computed from the bootstrap co-assignment probabilities.

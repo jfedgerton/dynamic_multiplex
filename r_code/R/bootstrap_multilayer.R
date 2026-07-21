@@ -1,9 +1,25 @@
 #' @title Bootstrap confidence intervals for multilayer community detection
 #'
-#' @description Uses a Bayesian bootstrap on edge weights: each bootstrap
-#' replicate multiplies every edge weight by an independent Exponential(1)
-#' draw, preserving graph topology while perturbing the weighting that drives
-#' community detection.
+#' @description Quantifies the uncertainty of multilayer community detection
+#' by refitting communities on \code{n_boot} resampled versions of the data.
+#' Two resampling schemes are available via \code{resample}:
+#'
+#' \describe{
+#'   \item{\code{"edges"} (default)}{Parametric network bootstrap. Within-
+#'   and between-community edge probabilities (and, for weighted networks,
+#'   edge-weight pools) are estimated from the observed network using the
+#'   point-estimate partition, and each replicate redraws the full edge set
+#'   from those estimates. This reproduces the variability of fresh data,
+#'   including which edges exist.}
+#'   \item{\code{"weights"} (legacy)}{Bayesian bootstrap on edge weights:
+#'   each replicate multiplies every observed edge weight by an independent
+#'   Exponential(1) draw. Topology is held fixed, so replicates see less
+#'   variability than fresh data. In simulation studies, confidence
+#'   intervals built from this scheme undercovered substantially (pairwise
+#'   co-assignment intervals covered ~45-48 percent at a nominal 95
+#'   percent); it is retained for backward compatibility and comparison
+#'   only.}
+#' }
 #'
 #' @param layers List of adjacency matrices or igraph objects.
 #'
@@ -26,6 +42,10 @@
 #' @param seed Optional random seed for reproducibility.
 #'
 #' @param objective One of "cpm" or "modularity" for directed networks only
+#'
+#' @param resample Resampling scheme: \code{"edges"} (parametric network
+#' bootstrap, default) or \code{"weights"} (legacy Bayesian weight
+#' bootstrap). See Description.
 #'
 #' @return A list of class \code{"multilayer_bootstrap"} with components:
 #'   \describe{
@@ -75,12 +95,14 @@ bootstrap_multilayer <- function(
     resolution_parameter = 1,
     directed = FALSE,
     seed = NULL,
-    objective = NULL
+    objective = NULL,
+    resample = c("edges", "weights")
   ) {
 
   # check arguments ----
   fit_type <- match.arg(fit_type)
   algorithm <- match.arg(algorithm)
+  resample <- match.arg(resample)
 
   # assign seed unless a seed is provided ----
   if (!is.null(seed)) set.seed(seed)
@@ -125,6 +147,43 @@ bootstrap_multilayer <- function(
   # execute multilayer fit for point estimate assignment ----
   point_estimate <- do.call(fit_fn, c(list(layers = mat_layers), fit_args))
 
+  # precompute per-layer edge models for the parametric network bootstrap ----
+  # (estimated once from the observed network + point-estimate partition;
+  # each replicate then redraws the full edge set from these estimates)
+  if (resample == "edges") {
+    edge_models <- lapply(seq_len(n_layers), function(layer_idx) {
+
+      ## observed adjacency, detected partition, dyad selector ----
+      A <- mat_layers[[layer_idx]]
+      mem <- point_estimate$layer_communities[[layer_idx]]$membership
+      same <- outer(mem, mem, "==")
+      sel <- if (directed) {
+        !diag(TRUE, n_nodes)
+      } else {
+        upper.tri(A)
+      }
+      E <- A > 0
+
+      ## within/between edge probabilities (fallback: overall density) ----
+      in_dyads <- sel & same
+      out_dyads <- sel & !same
+      p_all <- mean(E[sel])
+      p_in <- if (any(in_dyads)) mean(E[in_dyads]) else p_all
+      p_out <- if (any(out_dyads)) mean(E[out_dyads]) else p_all
+
+      ## edge-weight pools (resampled with replacement for new edges) ----
+      w_in <- A[in_dyads & E]
+      w_out <- A[out_dyads & E]
+      w_all <- A[sel & E]
+      if (length(w_all) == 0) w_all <- 1
+      if (length(w_in) == 0) w_in <- w_all
+      if (length(w_out) == 0) w_out <- w_all
+
+      list(same = same, sel = sel, p_in = p_in, p_out = p_out,
+           w_in = w_in, w_out = w_out)
+    })
+  }
+
   # initialize accumulator matrices ----
   co_assign_accum <- lapply(seq_len(n_layers), function(i) {
     matrix(0, nrow = n_nodes, ncol = n_nodes)
@@ -143,18 +202,46 @@ bootstrap_multilayer <- function(
   # build multilayer fits for all bootstrap replicates ----
   for (b in seq_len(n_boot)) {
 
-    ## multiply edge weights by exp(1) draws for bayesian bootstrap ----
-    perturbed <- lapply(mat_layers, function(mat) {
-      noise <- matrix(
-        data = stats::rexp(n_nodes * n_nodes, rate = 1),
-        nrow = n_nodes,
-        ncol = n_nodes
-      )
-      if (!directed) noise <- (noise + t(noise)) / 2
-      p_mat <- mat * noise
-      diag(p_mat) <- 0
-      return(p_mat)
-    })
+    ## build one resampled network per layer ----
+    if (resample == "edges") {
+
+      ### parametric network bootstrap: redraw the full edge set ----
+      perturbed <- lapply(seq_len(n_layers), function(layer_idx) {
+        em <- edge_models[[layer_idx]]
+        idx <- which(em$sel)
+        probs <- ifelse(em$same[idx], em$p_in, em$p_out)
+        on <- idx[stats::rbinom(length(idx), 1, probs) == 1]
+        M <- matrix(0, nrow = n_nodes, ncol = n_nodes)
+        if (length(on) > 0) {
+          same_on <- em$same[on]
+          w <- numeric(length(on))
+          if (any(same_on)) {
+            w[same_on] <- sample(em$w_in, sum(same_on), replace = TRUE)
+          }
+          if (any(!same_on)) {
+            w[!same_on] <- sample(em$w_out, sum(!same_on), replace = TRUE)
+          }
+          M[on] <- w
+        }
+        if (!directed) M <- M + t(M)
+        diag(M) <- 0
+        return(M)
+      })
+    } else {
+
+      ### legacy bayesian bootstrap: multiply edge weights by exp(1) draws ----
+      perturbed <- lapply(mat_layers, function(mat) {
+        noise <- matrix(
+          data = stats::rexp(n_nodes * n_nodes, rate = 1),
+          nrow = n_nodes,
+          ncol = n_nodes
+        )
+        if (!directed) noise <- (noise + t(noise)) / 2
+        p_mat <- mat * noise
+        diag(p_mat) <- 0
+        return(p_mat)
+      })
+    }
 
     ## create multilayer fit ----
     boot_fit <- tryCatch(

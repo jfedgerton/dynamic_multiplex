@@ -204,3 +204,34 @@ class TestCoAssignmentCi:
         boot.n_boot = 0
         with pytest.raises(ValueError):
             co_assignment_ci(boot)
+
+
+class TestEdgeResampling:
+    def test_edges_mode_runs_and_is_default(self):
+        import inspect
+
+        # "edges" is the default resampling scheme
+        sig = inspect.signature(bootstrap_multilayer)
+        assert sig.parameters["resample"].default == "edges"
+
+        layers = _make_planted_layers(n_nodes=20, n_layers=2)
+        boot_edges = bootstrap_multilayer(
+            layers, fit_type="jaccard", n_boot=6, seed=41, resample="edges")
+        boot_weights = bootstrap_multilayer(
+            layers, fit_type="jaccard", n_boot=6, seed=41, resample="weights")
+
+        # both schemes complete and give probabilities in [0, 1]
+        assert boot_edges.n_boot == 6
+        assert boot_weights.n_boot == 6
+        assert (boot_edges.co_assignment[0] >= 0).all()
+        assert (boot_edges.co_assignment[0] <= 1).all()
+        # schemes differ (detection is stochastic, but topologies differ
+        # structurally: edges mode creates edges absent from the data)
+        assert not np.array_equal(
+            boot_edges.co_assignment[0], boot_weights.co_assignment[0])
+
+    def test_invalid_resample_raises(self):
+        layers = _make_planted_layers(n_nodes=15, n_layers=2)
+        with pytest.raises(ValueError):
+            bootstrap_multilayer(layers, fit_type="jaccard", n_boot=3,
+                                 resample="nope")

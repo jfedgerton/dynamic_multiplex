@@ -14,7 +14,8 @@ bootstrap_multilayer(
   resolution_parameter = 1,
   directed = FALSE,
   seed = NULL,
-  objective = NULL
+  objective = NULL,
+  resample = c("edges", "weights")
 )
 }
 \arguments{
@@ -39,6 +40,10 @@ bootstrap_multilayer(
 \item{seed}{Optional random seed for reproducibility.}
 
 \item{objective}{One of "cpm" or "modularity" for directed networks only}
+
+\item{resample}{Resampling scheme: \code{"edges"} (parametric network
+bootstrap, default) or \code{"weights"} (legacy Bayesian weight
+bootstrap). See Description.}
 }
 \value{
 A list of class \code{"multilayer_bootstrap"} with components:
@@ -55,10 +60,26 @@ counts.}
 }
 }
 \description{
-Uses a Bayesian bootstrap on edge weights: each bootstrap
-replicate multiplies every edge weight by an independent Exponential(1)
-draw, preserving graph topology while perturbing the weighting that drives
-community detection.
+Quantifies the uncertainty of multilayer community detection
+by refitting communities on \code{n_boot} resampled versions of the data.
+Two resampling schemes are available via \code{resample}:
+
+\describe{
+\item{\code{"edges"} (default)}{Parametric network bootstrap. Within-
+and between-community edge probabilities (and, for weighted networks,
+edge-weight pools) are estimated from the observed network using the
+point-estimate partition, and each replicate redraws the full edge set
+from those estimates. This reproduces the variability of fresh data,
+including which edges exist.}
+\item{\code{"weights"} (legacy)}{Bayesian bootstrap on edge weights:
+each replicate multiplies every observed edge weight by an independent
+Exponential(1) draw. Topology is held fixed, so replicates see less
+variability than fresh data. In simulation studies, confidence
+intervals built from this scheme undercovered substantially (pairwise
+co-assignment intervals covered ~45-48 percent at a nominal 95
+percent); it is retained for backward compatibility and comparison
+only.}
+}
 }
 \examples{
 set.seed(123)

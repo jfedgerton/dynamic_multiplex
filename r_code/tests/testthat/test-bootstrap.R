@@ -180,3 +180,28 @@ test_that("community_ci warns on small networks", {
                                 seed = 23)
   expect_warning(community_ci(boot), "descriptive stability summaries")
 })
+
+test_that("edge-resampling bootstrap runs and differs from weights scheme", {
+  layers <- make_planted_layers(n_nodes = 20, n_layers = 2)
+  boot_e <- bootstrap_multilayer(layers, fit_type = "jaccard", n_boot = 8,
+                                  seed = 31, resample = "edges")
+  boot_w <- bootstrap_multilayer(layers, fit_type = "jaccard", n_boot = 8,
+                                  seed = 31, resample = "weights")
+  expect_equal(boot_e$n_boot, 8)
+  expect_equal(boot_w$n_boot, 8)
+  expect_equal(dim(boot_e$co_assignment[[1]]), c(20, 20))
+  # both give probabilities in [0, 1]
+  expect_true(all(boot_e$co_assignment[[1]] >= 0 & boot_e$co_assignment[[1]] <= 1))
+  # edges scheme should generally produce different co-assignment than weights
+  expect_false(identical(boot_e$co_assignment[[1]], boot_w$co_assignment[[1]]))
+})
+
+test_that("edges is the default resampling scheme", {
+  layers <- make_planted_layers(n_nodes = 15, n_layers = 2)
+  boot_default <- bootstrap_multilayer(layers, fit_type = "jaccard",
+                                        n_boot = 5, seed = 32)
+  boot_edges <- bootstrap_multilayer(layers, fit_type = "jaccard",
+                                      n_boot = 5, seed = 32,
+                                      resample = "edges")
+  expect_equal(boot_default$co_assignment[[1]], boot_edges$co_assignment[[1]])
+})

@@ -145,6 +145,17 @@ fit_layer_communities <- function(
     }
   }
 
+  # warn once for directed leiden (collapsed per layer below) ----
+  if (algorithm == "leiden" && directed &&
+      any(vapply(graph_layers, igraph::is_directed, logical(1)))) {
+    warning(
+      "Leiden in igraph does not support directed graphs; ",
+      "collapsing directed layers to weighted undirected graphs. ",
+      "For directed-aware detection use the Python package (leidenalg).",
+      call. = FALSE
+    )
+  }
+
   # fit communities for each layer ----
   layer_communities <- lapply(graph_layers, function(g) {
     g_input <- g
@@ -168,6 +179,18 @@ fit_layer_communities <- function(
         resolution = resolution_parameter
       )
     } else {
+
+      ### convert to undirected graph ----
+      ### (igraph's cluster_leiden supports undirected graphs only; see
+      ### community/leiden.c. Mirror the louvain path: collapse directed
+      ### layers to weighted undirected graphs; warned once above.)
+      if (directed && igraph::is_directed(g_input)) {
+        g <- igraph::as_undirected(
+          graph = g_input,
+          mode = "collapse",
+          edge.attr.comb = list(weight = "sum")
+        )
+      }
 
       ### find leiden community clusters ----
       cl <- igraph::cluster_leiden(

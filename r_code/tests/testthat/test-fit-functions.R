@@ -168,3 +168,18 @@ test_that("louvain with cpm objective raises error", {
     "Louvain does not support the CPM objective"
   )
 })
+
+test_that("directed leiden collapses to undirected with a warning", {
+  set.seed(123)
+  n <- 30
+  A1 <- matrix(rbinom(n * n, 1, 0.2), n, n); diag(A1) <- 0
+  A2 <- matrix(rbinom(n * n, 1, 0.2), n, n); diag(A2) <- 0
+  expect_warning(
+    fit <- fit_multilayer_jaccard(list(A1, A2), directed = TRUE,
+                                  algorithm = "leiden"),
+    "does not support directed"
+  )
+  expect_length(fit$layer_communities, 2)
+  expect_true(all(vapply(fit$layer_communities,
+                         function(x) length(x$membership) == n, logical(1))))
+})

@@ -44,6 +44,12 @@ n = 50-400 nodes, 3-10 communities, 5-15 layers, 5 switching rates,
   above nominal for n >= 100. Documentation gained a prominent Warning
   section with the study numbers.
 
+* `directed = TRUE` with `algorithm = "leiden"` previously errored
+  (igraph's `cluster_leiden()` supports undirected graphs only). Directed
+  layers are now collapsed to weighted undirected graphs — matching the
+  existing Louvain behavior — with a single warning per fit pointing users
+  who need directed-aware detection to the Python package (leidenalg).
+
 # dynamicmultiplex 1.0.0
 
 Initial CRAN release.

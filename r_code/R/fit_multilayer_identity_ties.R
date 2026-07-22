@@ -17,8 +17,9 @@
 #' @param resolution_parameter Leiden resolution parameter.
 #'
 #' @param directed Logical; if `TRUE`, build directed graphs from adjacency
-#' matrices. For `algorithm = "louvain"`, directed layers are collapsed to
-#' undirected weighted graphs before community detection.
+#' matrices. Directed layers are collapsed to undirected weighted graphs before
+#' community detection (igraph supports Leiden on undirected graphs only;
+#' a warning is issued for `algorithm = "leiden"`).
 #'
 #' @param objective One of "cpm" or "modularity" for directed networks only
 #'

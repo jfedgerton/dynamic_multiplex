@@ -6,13 +6,6 @@
 #' a linked pair receive interlayer edges. Nodes are matched by
 #' \code{V(g)$name} when available, or by vertex index otherwise.
 #'
-#' For this specification the cross-layer \code{meta_communities} are obtained
-#' by \strong{Mucha (2010) multislice modularity}: the layers are stacked into a
-#' single supra-graph (intra-layer edges are each layer's own adjacency) with
-#' interlayer identity edges joining each node to its copies in the coupled
-#' layers (weighted by \code{layer_links}), and one community detection is run
-#' on the whole supra-graph. The coupling strength is the layer-link weight.
-#'
 #' @param layers List of `igraph` objects or square adjacency matrices.
 #'
 #' @param algorithm Community algorithm: `"louvain"` or `"leiden"`.
@@ -21,46 +14,16 @@
 #' with columns `from`, `to`, and optional `weight`. If `NULL`, adjacent layers
 #' are connected in sequence.
 #'
-#' @param resolution_parameter Leiden resolution parameter. Also forwarded to
-#' the multislice supra-graph detection as Mucha's modularity resolution
-#' (larger values yield more, smaller meta-communities).
-#'
-#' @param omega Interlayer coupling strength for the multislice supra-graph
-#' (Mucha's omega). Multiplies the interlayer identity-edge weights on top of
-#' any `layer_links` weights. Larger `omega` couples layers more strongly and,
-#' past a point, collapses everything into one meta-community; smaller `omega`
-#' decouples toward independent per-layer detection. Use to probe the
-#' omega-sensitivity / resolution-limit behavior of multislice modularity.
+#' @param resolution_parameter Leiden resolution parameter.
 #'
 #' @param directed Logical; if `TRUE`, build directed graphs from adjacency
-#' matrices. Directed layers are collapsed to undirected weighted graphs before
-#' community detection (igraph supports Leiden on undirected graphs only;
-#' a warning is issued for `algorithm = "leiden"`).
+#' matrices. For `algorithm = "louvain"`, directed layers are collapsed to
+#' undirected weighted graphs before community detection.
 #'
 #' @param objective One of "cpm" or "modularity" for directed networks only
 #'
-#' @return A list of class \code{"multilayer_community_fit"} with components:
-#'   \describe{
-#'     \item{layer_communities}{Per-layer community detection (each with
-#'       \code{membership} and \code{communities}). Detected independently
-#'       per layer.}
-#'     \item{meta_communities}{The cross-layer tracked partition from the
-#'       second-stage detection: one integer vector per layer giving each
-#'       node's meta-community. This is the membership that reflects the
-#'       interlayer ties and any custom \code{layer_links}, and the one
-#'       validated by \code{\link{bootstrap_multilayer}}. See
-#'       \code{\link{extract_meta_membership}}.}
-#'     \item{interlayer_ties}{Interlayer similarity edges between communities
-#'       (plus self-loops).}
-#'     \item{layer_links}{The layer connectivity used.}
-#'   }
-#'
-#' @section Directed networks:
-#' Directed layers are stored as directed graphs and the interlayer self-loop
-#' weighting is directed-aware, but community \emph{detection} collapses
-#' directed layers to weighted undirected graphs on both Louvain and Leiden
-#' (igraph's detectors are undirected-only). For detection that respects edge
-#' direction, use the Python package with \code{algorithm = "leiden"}.
+#' @return A list with detected communities per layer and node-level interlayer
+#' ties.
 #'
 #' @examples
 #' set.seed(123)
@@ -80,7 +43,6 @@ fit_multilayer_identity_ties <- function(
     algorithm = c("louvain", "leiden"),
     layer_links = NULL,
     resolution_parameter = 1,
-    omega = 1,
     directed = FALSE,
     objective = NULL
   ) {
@@ -135,24 +97,10 @@ fit_multilayer_identity_ties <- function(
   }
 
   # Compile multilayer identity fit object ----
-  # second-stage detection: group per-layer communities into cross-layer
-  # meta-communities from the interlayer ties (the tracked partition) ----
-  # node-level Mucha multislice: stack layers (intra = original adjacency) with
-  # identity interlayer ties, single detection on the supra-graph ----
-  meta_membership <- detect_multislice_communities(
-    graph_layers = graph_layers,
-    interlayer_ties = ties,
-    algorithm = algorithm,
-    omega = omega,
-    resolution_parameter = resolution_parameter
-  )
-
   multilayer_identity_ties <- structure(
     list(
       algorithm = algorithm,
       layer_communities = fit,
-      meta_communities = meta_membership,
-      meta_ids = NULL,
       layer_links = links,
       interlayer_ties = ties,
       directed = directed

@@ -9,6 +9,7 @@ fit_multilayer_identity_ties(
   algorithm = c("louvain", "leiden"),
   layer_links = NULL,
   resolution_parameter = 1,
+  omega = 1,
   directed = FALSE,
   objective = NULL
 )
@@ -22,7 +23,16 @@ fit_multilayer_identity_ties(
 with columns \code{from}, \code{to}, and optional \code{weight}. If \code{NULL}, adjacent layers
 are connected in sequence.}
 
-\item{resolution_parameter}{Leiden resolution parameter.}
+\item{resolution_parameter}{Leiden resolution parameter. Also forwarded to
+the multislice supra-graph detection as Mucha's modularity resolution
+(larger values yield more, smaller meta-communities).}
+
+\item{omega}{Interlayer coupling strength for the multislice supra-graph
+(Mucha's omega). Multiplies the interlayer identity-edge weights on top of
+any \code{layer_links} weights. Larger \code{omega} couples layers more strongly and,
+past a point, collapses everything into one meta-community; smaller \code{omega}
+decouples toward independent per-layer detection. Use to probe the
+omega-sensitivity / resolution-limit behavior of multislice modularity.}
 
 \item{directed}{Logical; if \code{TRUE}, build directed graphs from adjacency
 matrices. Directed layers are collapsed to undirected weighted graphs before

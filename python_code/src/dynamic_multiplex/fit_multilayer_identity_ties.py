@@ -16,10 +16,24 @@ def fit_multilayer_identity_ties(
     algorithm: str = "leiden",
     layer_links=None,
     resolution_parameter: float = 1.0,
+    omega: float = 1.0,
     directed: bool = False,
     objective: str | None = None,
 ):
     """Fit per-layer communities with identity (node-level) interlayer ties.
+
+    Parameters
+    ----------
+    omega : float
+        Interlayer coupling strength for the multislice supra-graph (Mucha's
+        omega). Multiplies the interlayer identity-edge weights on top of any
+        ``layer_links`` weights. Larger ``omega`` couples layers more strongly
+        and, past a point, collapses everything into one meta-community;
+        smaller ``omega`` decouples toward independent per-layer detection.
+    resolution_parameter : float
+        Also forwarded to the multislice supra-graph detection as Mucha's
+        modularity resolution (larger values yield more, smaller
+        meta-communities).
 
     Returns
     -------
@@ -70,6 +84,8 @@ def fit_multilayer_identity_ties(
         graph_layers=graph_layers,
         interlayer_ties=interlayer_ties,
         algorithm=algorithm,
+        omega=omega,
+        resolution_parameter=resolution_parameter,
     )
 
     return {

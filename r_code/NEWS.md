@@ -22,6 +22,18 @@ n = 50-400 nodes, 3-10 communities, 5-15 layers, 5 switching rates,
   with interlayer identity edges, and a single detection is run on the whole
   supra-graph. Custom `layer_links` set the coupling in both cases.
 
+* **Multislice omega / resolution-limit controls.**
+  `fit_multilayer_identity_ties()` gains an `omega` argument (Mucha's
+  interlayer coupling strength) alongside `resolution_parameter`, both
+  forwarded to the multislice supra-graph detection. `omega` scales the
+  interlayer identity-edge weights: small values decouple toward independent
+  per-layer detection, `omega = 1` recovers the planted partition on
+  well-separated networks, and large values drive the known multislice
+  degeneracy (temporal threads fragment or slices collapse). Together with
+  `resolution_parameter` (Mucha's modularity resolution) these expose the
+  omega-sensitivity and resolution-limit behavior of multislice modularity as
+  tunable knobs. Mirrored in the Python package.
+
 * **Uncertainty is now quantified on the meta-communities.**
   `bootstrap_multilayer()`, `co_assignment_ci()`, and `community_est()` operate
   on the cross-layer meta-communities rather than the independent per-layer

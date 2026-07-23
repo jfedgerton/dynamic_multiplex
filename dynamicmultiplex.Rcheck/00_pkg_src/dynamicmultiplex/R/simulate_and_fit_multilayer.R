@@ -1,0 +1,165 @@
+#' @title Simulate multiplex layers and fit interlayer models
+#'
+#' @description Generates synthetic multiplex network layers using a planted
+#' partition model, then fits one of the provided interlayer tie strategies.
+#'
+#' @param n_nodes Number of nodes per layer.
+#'
+#' @param n_layers Number of temporal layers.
+#'
+#' @param n_communities Number of latent communities.
+#'
+#' @param p_in Probability of an in-community edge.
+#'
+#' @param p_out Probability of an out-community edge.
+#'
+#' @param fit_type One of `"jaccard"`, `"overlap"`, or `"identity"`.
+#'
+#' @param algorithm Community algorithm for fitting: `"louvain"` or `"leiden"`.
+#'
+#' @param layer_links Optional layer connectivity specification.
+#'
+#' @param min_similarity Minimum similarity threshold for overlap-based methods.
+#'
+#' @param seed Optional random seed.
+#'
+#' @param directed Logical; if `TRUE`, simulate directed adjacency matrices.
+#'
+#' @return A list containing simulated layers, true memberships, and fit
+#' results.
+#'
+#' @examples
+#' sim <- simulate_and_fit_multilayer(
+#'   n_nodes = 30,
+#'   n_layers = 3,
+#'   n_communities = 3,
+#'   fit_type = "jaccard",
+#'   algorithm = "louvain",
+#'   seed = 123
+#' )
+#' names(sim)
+#'
+#' @export
+
+simulate_and_fit_multilayer <- function(
+    n_nodes = 100,
+    n_layers = 4,
+    n_communities = 4,
+    p_in = 0.2,
+    p_out = 0.05,
+    fit_type = c(
+      "jaccard",
+      "overlap",
+      "weighted_jaccard",
+      "weighted_overlap",
+      "identity"
+    ),
+    algorithm = c("louvain", "leiden"),
+    layer_links = NULL,
+    min_similarity = 0,
+    seed = NULL,
+    directed = FALSE
+  ) {
+
+  # check arguments ----
+  fit_type <- match.arg(fit_type)
+  algorithm <- match.arg(algorithm)
+
+  # assign seed unless a seed is provided ----
+  if (!is.null(seed)) set.seed(seed)
+
+  # sample node memberships ----
+  memberships <- sample(seq_len(n_communities), size = n_nodes, replace = TRUE)
+
+  # build simulated layers ----
+  layers <- lapply(seq_len(n_layers), function(layer_id) {
+    mat <- matrix(0, nrow = n_nodes, ncol = n_nodes)
+    if (directed) {
+
+      ## directed matrix probability assignment ----
+      for (i in seq_len(n_nodes)) {
+        for (j in seq_len(n_nodes)) {
+          if (i == j) {
+            next
+          }
+          prob <- if (memberships[i] == memberships[j]) p_in else p_out
+          mat[i, j] <- stats::rbinom(1, 1, prob)
+        }
+      }
+    } else {
+
+      ## undirected matrix probability assignment ----
+      for (i in seq_len(n_nodes - 1)) {
+        for (j in seq((i + 1), n_nodes)) {
+          prob <- if (memberships[i] == memberships[j]) p_in else p_out
+          tie <- stats::rbinom(1, 1, prob)
+          mat[i, j] <- tie
+          mat[j, i] <- tie
+        }
+      }
+    }
+
+    ## return simulated matrix layer ----
+    return(mat)
+  })
+
+  # assign multiplex fit ----
+  fit <- switch(
+    EXPR = fit_type,
+
+    ## multilayer jaccard ----
+    jaccard = fit_multilayer_jaccard(
+      layers,
+      algorithm = algorithm,
+      layer_links = layer_links,
+      min_similarity = min_similarity,
+      directed = directed
+    ),
+
+    ## multilayer overlap ----
+    overlap = fit_multilayer_overlap(
+      layers,
+      algorithm = algorithm,
+      layer_links = layer_links,
+      min_similarity = min_similarity,
+      directed = directed
+    ),
+
+    ## multilayer weighted jaccard ----
+    weighted_jaccard = fit_multilayer_weighted_jaccard(
+      layers,
+      algorithm = algorithm,
+      layer_links = layer_links,
+      min_similarity = min_similarity,
+      directed = directed
+    ),
+
+    ## multilayer weighted overlap ----
+    weighted_overlap = fit_multilayer_weighted_overlap(
+      layers,
+      algorithm = algorithm,
+      layer_links = layer_links,
+      min_similarity = min_similarity,
+      directed = directed
+    ),
+
+    ## multilayer identity ties ----
+    identity = fit_multilayer_identity_ties(
+      layers,
+      algorithm = algorithm,
+      layer_links = layer_links,
+      directed = directed
+    )
+  )
+
+  # compile simulated layers and fit ----
+  simulated_layers_and_fit <- list(
+    layers = layers,
+    true_membership = memberships,
+    fit = fit,
+    directed = directed
+  )
+
+  # return simulated layers and fit ----
+  return(simulated_layers_and_fit)
+}

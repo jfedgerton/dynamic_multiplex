@@ -483,6 +483,8 @@ def detect_multislice_communities(
     graph_layers: list[nx.Graph | nx.DiGraph],
     interlayer_ties: pd.DataFrame,
     algorithm: str = "leiden",
+    omega: float = 1.0,
+    resolution_parameter: float = 1.0,
 ) -> list[np.ndarray]:
     """Multislice (Mucha) meta-communities for node-identity coupling.
 
@@ -503,6 +505,15 @@ def detect_multislice_communities(
         ``node``, ``layer_weight``).
     algorithm : str
         ``"louvain"`` or ``"leiden"`` for the supra-graph detection.
+    omega : float
+        Interlayer coupling strength (Mucha's omega). Multiplies the
+        interlayer identity-edge weights on top of any ``layer_links`` weights.
+        Larger ``omega`` couples layers more strongly and, past a point,
+        collapses everything into one meta-community; smaller ``omega``
+        decouples toward independent per-layer detection.
+    resolution_parameter : float
+        Resolution for the supra-graph detection (Mucha's modularity
+        resolution). Larger values yield more, smaller meta-communities.
 
     Returns
     -------
@@ -566,7 +577,7 @@ def detect_multislice_communities(
             weight_col = [1.0] * len(node_col)
         for fl, tl, nd, w in zip(from_layer_col, to_layer_col, node_col, weight_col):
             edges.append(
-                (vkey(int(fl), nd), vkey(int(tl), nd), float(w))
+                (vkey(int(fl), nd), vkey(int(tl), nd), float(w) * omega)
             )
 
     # Single detection on the supra-graph.
@@ -588,7 +599,7 @@ def detect_multislice_communities(
             else:
                 cg.add_edge(u, v, weight=w)
         partition = community_louvain.best_partition(
-            cg, weight="weight", random_state=123
+            cg, weight="weight", random_state=123, resolution=resolution_parameter
         )
         meta = {node: comm + 1 for node, comm in partition.items()}
     else:
@@ -615,6 +626,7 @@ def detect_multislice_communities(
             weights=weights,
             seed=123,
             n_iterations=3,
+            resolution_parameter=resolution_parameter,
         )
         meta = {
             supra[idx]: comm + 1 for idx, comm in enumerate(partition.membership)

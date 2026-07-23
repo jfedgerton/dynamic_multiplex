@@ -49,8 +49,10 @@ A list of class \code{"multilayer_bootstrap"} with components:
 replicates in which each node was assigned to its modal community.}
 \item{modularity_samples}{Per-layer vectors of bootstrap modularity
 values.}
-\item{community_count_samples}{Per-layer vectors of bootstrap community
-counts.}
+\item{community_count_reproducibility}{Per-layer numeric vector: the share
+of completed replicates whose community count equals the observed-network
+count. A descriptive stability measure. The raw per-replicate community
+counts are intentionally not returned.}
 \item{point_estimate}{The fit result from the original data.}
 }
 }

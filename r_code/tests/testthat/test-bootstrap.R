@@ -25,7 +25,7 @@ test_that("bootstrap_multilayer smoke test", {
   expect_length(result$co_assignment, 3)
   expect_length(result$node_stability, 3)
   expect_length(result$modularity_samples, 3)
-  expect_length(result$community_count_samples, 3)
+  expect_length(result$community_count_reproducibility, 3)
   expect_true(!is.null(result$point_estimate))
 })
 
@@ -67,15 +67,14 @@ test_that("modularity samples have correct length", {
   }
 })
 
-test_that("community count samples are positive", {
+test_that("community count reproducibility is a share in [0, 1]", {
   layers <- make_planted_layers(n_nodes = 20, n_layers = 2)
   result <- bootstrap_multilayer(layers, fit_type = "jaccard", n_boot = 5,
                                   seed = 5)
 
-  for (count_s in result$community_count_samples) {
-    expect_length(count_s, result$n_boot)
-    expect_true(all(count_s >= 1))
-  }
+  r <- result$community_count_reproducibility
+  expect_length(r, 2)
+  expect_true(all(r >= 0 & r <= 1))
 })
 
 test_that("all fit types work with bootstrap", {
@@ -96,50 +95,64 @@ test_that("custom layer links are respected", {
   expect_equal(nrow(result$point_estimate$layer_links), 1)
 })
 
-test_that("community_ci returns correct structure", {
+test_that("community_est returns correct structure", {
   layers <- make_planted_layers(n_nodes = 20, n_layers = 3)
   boot <- bootstrap_multilayer(layers, fit_type = "jaccard", n_boot = 10,
                                 seed = 10)
-  expect_warning(ci <- community_ci(boot), "nodes")
+  est <- community_est(boot)
 
-  expect_false("modularity_ci" %in% names(ci))
-  expect_true("community_count_ci" %in% names(ci))
-  expect_true("mean_node_stability" %in% names(ci))
-  expect_true("node_stability" %in% names(ci))
-  expect_true("co_assignment" %in% names(ci))
+  expect_false("modularity_ci" %in% names(est))
+  expect_false("community_count_ci" %in% names(est))
+  expect_true("community_count" %in% names(est))
+  expect_true("report" %in% names(est))
+  expect_true("mean_node_stability" %in% names(est))
+  expect_true("node_stability" %in% names(est))
+  expect_true("co_assignment" %in% names(est))
 
-  expect_equal(nrow(ci$community_count_ci), 3)
-  expect_equal(nrow(ci$mean_node_stability), 3)
+  expect_equal(nrow(est$community_count), 3)
+  expect_equal(length(est$report), 3)
+  expect_equal(nrow(est$mean_node_stability), 3)
 })
 
-test_that("community_ci columns are correct", {
+test_that("community_est columns are correct", {
   layers <- make_planted_layers(n_nodes = 20, n_layers = 2)
   boot <- bootstrap_multilayer(layers, fit_type = "jaccard", n_boot = 10,
                                 seed = 11)
-  ci <- suppressWarnings(community_ci(boot))
+  est <- community_est(boot)
 
-  expected_cols <- c("layer", "estimate", "lower", "upper")
-  expect_true(all(expected_cols %in% names(ci$community_count_ci)))
+  expected_cols <- c("layer", "estimate", "reproducibility")
+  expect_true(all(expected_cols %in% names(est$community_count)))
 })
 
-test_that("CI lower <= upper", {
+test_that("community_est reproducibility is a share in [0, 1]", {
   layers <- make_planted_layers(n_nodes = 20, n_layers = 2)
   boot <- bootstrap_multilayer(layers, fit_type = "jaccard", n_boot = 20,
                                 seed = 12)
-  ci <- suppressWarnings(community_ci(boot))
+  est <- community_est(boot)
 
-  count <- ci$community_count_ci
-  expect_true(all(count$lower <= count$upper))
+  r <- est$community_count$reproducibility
+  expect_true(all(r >= 0 & r <= 1))
+})
+
+test_that("community_est report reads as reproducibility, not an interval", {
+  layers <- make_planted_layers(n_nodes = 20, n_layers = 2)
+  boot <- bootstrap_multilayer(layers, fit_type = "jaccard", n_boot = 10,
+                                seed = 13)
+  est <- community_est(boot)
+
+  expect_true(all(grepl("reproduced in", est$report)))
+  # no bracketed interval anywhere in the output
+  expect_false(any(grepl("\\[", est$report)))
 })
 
 test_that("mean stability is in [0, 1]", {
   layers <- make_planted_layers(n_nodes = 20, n_layers = 2)
   boot <- bootstrap_multilayer(layers, fit_type = "jaccard", n_boot = 10,
                                 seed = 14)
-  ci <- suppressWarnings(community_ci(boot))
+  est <- community_est(boot)
 
-  expect_true(all(ci$mean_node_stability$mean_stability >= 0))
-  expect_true(all(ci$mean_node_stability$mean_stability <= 1))
+  expect_true(all(est$mean_node_stability$mean_stability >= 0))
+  expect_true(all(est$mean_node_stability$mean_stability <= 1))
 })
 
 
@@ -172,13 +185,6 @@ test_that("co_assignment_ci intervals narrow as alpha grows", {
   w95 <- (pci_95[[1]]$upper - pci_95[[1]]$lower)[off]
   w50 <- (pci_50[[1]]$upper - pci_50[[1]]$lower)[off]
   expect_true(all(w50 <= w95 + 1e-12))
-})
-
-test_that("community_ci warns on small networks", {
-  layers <- make_planted_layers(n_nodes = 20, n_layers = 2)
-  boot <- bootstrap_multilayer(layers, fit_type = "jaccard", n_boot = 5,
-                                seed = 23)
-  expect_warning(community_ci(boot), "descriptive stability summaries")
 })
 
 test_that("edge-resampling bootstrap runs with valid probabilities", {

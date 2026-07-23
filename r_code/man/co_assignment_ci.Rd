@@ -68,6 +68,6 @@ pci[[1]]$lower[1:4, 1:4]
 
 }
 \seealso{
-\code{\link{community_ci}} for community count intervals and
+\code{\link{community_est}} for community-count point estimates and
 node stability summaries.
 }

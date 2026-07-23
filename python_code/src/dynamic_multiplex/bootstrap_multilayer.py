@@ -1,25 +1,26 @@
 """Bootstrap confidence intervals for multilayer community detection.
 
-Provides nonparametric bootstrap uncertainty quantification by resampling
-edge weights (Bayesian bootstrap), re-running community detection B times,
-and computing co-assignment probabilities, community count CIs, node-pair
-co-assignment intervals, and node-level stability measures.
+Provides parametric network-bootstrap uncertainty quantification by
+redrawing the full edge set B times, re-running community detection, and
+computing co-assignment probabilities, node-pair co-assignment intervals,
+community-count reproducibility, and node-level stability measures.
 
 .. warning::
-   A large simulation study found that the nominal 95% community count
-   interval covers the truth in only ~40% of simulations on small networks
-   (n = 50 nodes), recovering to nominal for n >= 100. A modularity CI was
-   removed in version 1.1.0 because its empirical coverage is never close
-   to nominal at any network size (community detection maximizes
+   The percentile community-count confidence interval was replaced in
+   version 1.1.0 with a descriptive reproducibility summary: a large
+   simulation study found its coverage collapsed under community-size skew
+   (~0.62) with no observable diagnostic to flag the failure. A modularity
+   CI was removed in the same release because its empirical coverage is
+   never close to nominal at any network size (community detection maximizes
    modularity, so the bootstrap interval concentrates around an upwardly
-   biased value). Raw ``modularity_samples`` remain available for
-   descriptive use.
+   biased value). The validated interval in this module is the node-pair
+   co-assignment interval (``co_assignment_ci``). Raw ``modularity_samples``
+   remain available for descriptive use.
 """
 
 from __future__ import annotations
 
-import warnings
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 import numpy as np
 import pandas as pd
@@ -55,8 +56,11 @@ class BootstrapResult:
         replicates in which each node was assigned to its modal community.
     modularity_samples : list[np.ndarray]
         Per-layer array of length n_boot with bootstrap modularity values.
-    community_count_samples : list[np.ndarray]
-        Per-layer array of length n_boot with bootstrap community counts.
+    community_count_reproducibility : list[float]
+        Per-layer share of completed replicates whose community count equals
+        the observed-network (point-estimate) count. A descriptive stability
+        measure. The raw per-replicate community counts are intentionally not
+        retained.
     point_estimate : dict
         The fit result from the original (unperturbed) data.
     """
@@ -65,7 +69,7 @@ class BootstrapResult:
     co_assignment: list[np.ndarray]
     node_stability: list[np.ndarray]
     modularity_samples: list[np.ndarray]
-    community_count_samples: list[np.ndarray]
+    community_count_reproducibility: list[float]
     point_estimate: dict
 
 
@@ -122,7 +126,8 @@ def bootstrap_multilayer(
     -------
     BootstrapResult
         Dataclass with co-assignment matrices, node stability, modularity
-        samples, community count samples, and the point estimate.
+        samples, per-layer community-count reproducibility, and the point
+        estimate.
     """
     if fit_type not in _FIT_FNS:
         raise ValueError(
@@ -279,52 +284,71 @@ def bootstrap_multilayer(
                 stab[node_idx] = counts.most_common(1)[0][1] / len(records)
         node_stability.append(stab)
 
+    # Per-layer bootstrap reproducibility of the community count: the share of
+    # completed replicates whose community count equals the observed-network
+    # (point-estimate) count. Computed here, from the raw per-replicate counts,
+    # so those raw counts are never retained on the returned object.
+    community_count_reproducibility = []
+    for layer_idx in range(n_layers):
+        est = len(point_estimate["layer_communities"][layer_idx].communities)
+        s = np.asarray(count_samples[layer_idx])
+        community_count_reproducibility.append(
+            float(np.mean(s == est)) if s.size else float("nan")
+        )
+
     return BootstrapResult(
         n_boot=n_completed,
         co_assignment=co_assignment,
         node_stability=node_stability,
         modularity_samples=[np.array(s) for s in mod_samples],
-        community_count_samples=[np.array(s) for s in count_samples],
+        community_count_reproducibility=community_count_reproducibility,
         point_estimate=point_estimate,
     )
 
 
-def community_ci(
+def community_est(
     boot_result: BootstrapResult,
-    alpha: float = 0.05,
 ) -> dict:
-    """Summarize bootstrap results into confidence intervals.
+    """Summarize bootstrap community-count reproducibility.
 
-    .. warning::
-       **Community count intervals undercover badly on small networks.**
-       In a simulation study on planted-partition multilayer networks
-       (n = 50-400 nodes, 3-10 communities, 5-15 layers), the nominal 95%
-       ``community_count_ci`` contained the true community count in only
-       ~40% of simulations at n = 50 nodes. Coverage recovers to at or
-       above nominal for n >= 100. A ``UserWarning`` is raised when layers
-       have fewer than 100 nodes; on such networks treat the intervals as
-       descriptive stability summaries, not calibrated CIs.
+    Reports, for each layer, the community count from the observed network
+    together with its *bootstrap reproducibility*: the proportion of
+    bootstrap replicates in which the fitted number of communities equals
+    the observed-network count. Also returns mean node stability, per-node
+    stability, and the co-assignment matrices.
 
-       Earlier versions also returned ``modularity_ci``. It was removed in
-       1.1.0: its empirical coverage is never close to nominal at any
-       network size (~0.40 at n = 50, 0.00 at n = 100, vacuously 1.00 at
-       n = 200) because community detection maximizes modularity and the
-       bootstrap interval concentrates around that optimized, upwardly
-       biased value. Raw draws remain in
-       ``BootstrapResult.modularity_samples``.
+    .. note::
+       **Why this is not a confidence interval.** Earlier versions returned
+       a percentile ``community_count_ci``. It was replaced in 1.1.0 with a
+       reproducibility summary because the interval's coverage is not robust
+       to model misspecification. In a large simulation study the nominal
+       95% community-count interval covered the truth at or above nominal on
+       well-specified planted-partition networks (~0.99 for n >= 100 nodes),
+       but coverage collapsed to ~0.62 when community sizes were strongly
+       skewed, and no observable diagnostic reliably separated the
+       trustworthy cases from the rest. Rather than ship an interval that
+       silently undercovers, the function now reports how often the
+       community count reproduces under resampling. This is a descriptive
+       stability measure, not a calibrated interval: it makes no claim about
+       the probability that any range contains the true community count. For
+       a validated interval, use :func:`co_assignment_ci`, whose node-pair
+       coverage held across the same misspecification stress tests. The raw
+       per-replicate community counts are intentionally not exposed anywhere
+       in the package output; only this reproducibility summary is returned.
 
     Parameters
     ----------
     boot_result : BootstrapResult
         Output from ``bootstrap_multilayer``.
-    alpha : float
-        Significance level (default 0.05 for 95% CIs).
 
     Returns
     -------
     dict
         Dictionary with keys:
-        - ``community_count_ci``: DataFrame with layer, estimate, lower, upper
+        - ``community_count``: DataFrame with layer, estimate (observed-network
+          community count), reproducibility (share of bootstrap replicates
+          whose community count equals estimate, in [0, 1])
+        - ``report``: list of one plain-language sentence per layer
         - ``mean_node_stability``: DataFrame with layer, mean_stability
         - ``node_stability``: list of per-layer stability arrays
         - ``co_assignment``: list of per-layer co-assignment matrices
@@ -336,39 +360,29 @@ def community_ci(
     if boot_result.n_boot == 0:
         raise ValueError("No completed bootstrap replicates.")
 
-    lower_q = alpha / 2
-    upper_q = 1 - alpha / 2
-
     n_layers = len(boot_result.modularity_samples)
     point = boot_result.point_estimate
 
-    # Warn loudly on small networks: coverage study showed ~40% empirical
-    # coverage for the nominal 95% community count CI at n = 50 nodes,
-    # recovering to nominal at n >= 100.
-    n_nodes = len(boot_result.node_stability[0])
-    if n_nodes < 100:
-        warnings.warn(
-            f"Layers have {n_nodes} nodes (< 100). In simulation studies the "
-            "nominal 95% community_count_ci covered the true community count "
-            "in only ~40% of small-network simulations (n = 50). Treat these "
-            "intervals as descriptive stability summaries, not calibrated "
-            "confidence intervals.",
-            UserWarning,
-            stacklevel=2,
-        )
-
-    # Community count CIs
+    # Per-layer community count and bootstrap reproducibility. Reproducibility
+    # is precomputed in bootstrap_multilayer from the raw per-replicate counts,
+    # which are deliberately not exposed.
     count_rows = []
     for i in range(n_layers):
         lc = point["layer_communities"][i]
         est = len(lc.communities)
-        samples = boot_result.community_count_samples[i]
-        lo, hi = np.quantile(samples, [lower_q, upper_q])
+        reproducibility = float(boot_result.community_count_reproducibility[i])
         count_rows.append(
-            {"layer": i + 1, "estimate": est, "lower": lo, "upper": hi}
+            {"layer": i + 1, "estimate": est, "reproducibility": reproducibility}
         )
 
-    # Mean node stability per layer
+    # One plain-language sentence per layer.
+    report = [
+        f"Layer {r['layer']}: community count (K = {r['estimate']}) "
+        f"reproduced in {round(100 * r['reproducibility'])}% of bootstrap resamples."
+        for r in count_rows
+    ]
+
+    # Mean node stability per layer.
     stab_rows = []
     for i in range(n_layers):
         stab_rows.append(
@@ -379,7 +393,8 @@ def community_ci(
         )
 
     return {
-        "community_count_ci": pd.DataFrame(count_rows),
+        "community_count": pd.DataFrame(count_rows),
+        "report": report,
         "mean_node_stability": pd.DataFrame(stab_rows),
         "node_stability": boot_result.node_stability,
         "co_assignment": boot_result.co_assignment,

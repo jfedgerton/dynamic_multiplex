@@ -55,7 +55,7 @@
 #' pci[[1]]$estimate[1:4, 1:4]
 #' pci[[1]]$lower[1:4, 1:4]
 #'
-#' @seealso \code{\link{community_ci}} for community count intervals and
+#' @seealso \code{\link{community_est}} for community-count point estimates and
 #' node stability summaries.
 #'
 #' @export

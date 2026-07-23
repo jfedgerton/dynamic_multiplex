@@ -106,7 +106,15 @@ def fit_layer_communities(
                 raise ImportError("Install optional dependency `python-louvain` for Louvain support.") from exc
 
             g_input = g.to_undirected() if directed else g
-            partition = community_louvain.best_partition(g_input, weight="weight", resolution=resolution_parameter)
+            # Fixed detection seed so the partition is a deterministic function
+            # of the graph: bootstrap variability then comes from the resampled
+            # data, not from solver tie-breaking. Without this, best_partition
+            # runs off unseeded global RNG and the pipeline is not reproducible
+            # at a fixed bootstrap seed.
+            partition = community_louvain.best_partition(
+                g_input, weight="weight", resolution=resolution_parameter,
+                random_state=123,
+            )
             communities = {}
             for node, comm in partition.items():
                 node_id = node + 1 if zero_indexed else node
@@ -144,11 +152,13 @@ def fit_layer_communities(
                 ig_graph.es["weight"] = weights
 
             partition_type = leidenalg.CPMVertexPartition if effective_objective == "cpm" else leidenalg.RBConfigurationVertexPartition
+            # Fixed detection seed for reproducibility (see the Louvain branch).
             partition = leidenalg.find_partition(
                 ig_graph,
                 partition_type,
                 weights=weights if weights else None,
                 resolution_parameter=resolution_parameter,
+                seed=123,
             )
 
             membership = {}

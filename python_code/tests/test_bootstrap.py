@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from dynamic_multiplex import bootstrap_multilayer, co_assignment_ci, community_ci
+from dynamic_multiplex import bootstrap_multilayer, co_assignment_ci, community_est
 
 
 def _make_planted_layers(n_nodes=30, n_layers=3, seed=42):
@@ -31,7 +31,7 @@ class TestBootstrapMultilayer:
         assert len(result.co_assignment) == 3
         assert len(result.node_stability) == 3
         assert len(result.modularity_samples) == 3
-        assert len(result.community_count_samples) == 3
+        assert len(result.community_count_reproducibility) == 3
         assert result.point_estimate is not None
 
     def test_co_assignment_shape_and_range(self):
@@ -63,13 +63,13 @@ class TestBootstrapMultilayer:
         for mod_s in result.modularity_samples:
             assert len(mod_s) == result.n_boot
 
-    def test_community_count_samples_positive(self):
+    def test_community_count_reproducibility_range(self):
         layers = _make_planted_layers(n_nodes=20, n_layers=2)
         result = bootstrap_multilayer(layers, fit_type="jaccard", n_boot=5, seed=5)
 
-        for count_s in result.community_count_samples:
-            assert len(count_s) == result.n_boot
-            assert np.all(count_s >= 1)
+        r = result.community_count_reproducibility
+        assert len(r) == 2
+        assert all(0.0 <= x <= 1.0 for x in r)
 
     def test_all_fit_types(self):
         layers = _make_planted_layers(n_nodes=20, n_layers=2)
@@ -97,62 +97,56 @@ class TestBootstrapMultilayer:
         assert result.point_estimate["layer_links"].shape[0] == 1
 
 
-class TestCommunityCi:
+class TestCommunityEst:
     def test_basic_output_structure(self):
         layers = _make_planted_layers(n_nodes=20, n_layers=3)
         boot = bootstrap_multilayer(layers, fit_type="jaccard", n_boot=10, seed=10)
-        with pytest.warns(UserWarning, match="fewer|nodes"):
-            ci = community_ci(boot)
+        est = community_est(boot)
 
-        assert "modularity_ci" not in ci
-        assert "community_count_ci" in ci
-        assert "mean_node_stability" in ci
-        assert "node_stability" in ci
-        assert "co_assignment" in ci
+        assert "modularity_ci" not in est
+        assert "community_count_ci" not in est
+        assert "community_count" in est
+        assert "report" in est
+        assert "mean_node_stability" in est
+        assert "node_stability" in est
+        assert "co_assignment" in est
 
-        # Check DataFrame shapes
-        assert ci["community_count_ci"].shape[0] == 3
-        assert ci["mean_node_stability"].shape[0] == 3
+        # Check shapes
+        assert est["community_count"].shape[0] == 3
+        assert len(est["report"]) == 3
+        assert est["mean_node_stability"].shape[0] == 3
 
-    def test_ci_columns(self):
+    def test_columns(self):
         layers = _make_planted_layers(n_nodes=20, n_layers=2)
         boot = bootstrap_multilayer(layers, fit_type="jaccard", n_boot=10, seed=11)
-        ci = community_ci(boot)
+        est = community_est(boot)
 
-        for df_name in ["community_count_ci"]:
-            df = ci[df_name]
-            assert set(df.columns) == {"layer", "estimate", "lower", "upper"}
+        df = est["community_count"]
+        assert set(df.columns) == {"layer", "estimate", "reproducibility"}
 
-    def test_lower_le_upper(self):
+    def test_reproducibility_range(self):
         layers = _make_planted_layers(n_nodes=20, n_layers=2)
         boot = bootstrap_multilayer(layers, fit_type="jaccard", n_boot=20, seed=12)
-        ci = community_ci(boot)
+        est = community_est(boot)
 
-        count = ci["community_count_ci"]
-        assert (count["lower"] <= count["upper"]).all()
+        r = est["community_count"]["reproducibility"]
+        assert (r >= 0).all() and (r <= 1).all()
 
-    def test_custom_alpha(self):
+    def test_report_reads_as_reproducibility_not_interval(self):
         layers = _make_planted_layers(n_nodes=20, n_layers=2)
-        boot = bootstrap_multilayer(layers, fit_type="jaccard", n_boot=20, seed=13)
+        boot = bootstrap_multilayer(layers, fit_type="jaccard", n_boot=10, seed=13)
+        est = community_est(boot)
 
-        ci_90 = community_ci(boot, alpha=0.10)
-        ci_50 = community_ci(boot, alpha=0.50)
-
-        # Wider alpha should give narrower intervals
-        for i in range(2):
-            width_90 = (ci_90["community_count_ci"].iloc[i]["upper"] -
-                        ci_90["community_count_ci"].iloc[i]["lower"])
-            width_50 = (ci_50["community_count_ci"].iloc[i]["upper"] -
-                        ci_50["community_count_ci"].iloc[i]["lower"])
-            if not np.isnan(width_90) and not np.isnan(width_50):
-                assert width_50 <= width_90 + 1e-10
+        assert all("reproduced in" in s for s in est["report"])
+        # no bracketed interval anywhere in the report
+        assert not any("[" in s for s in est["report"])
 
     def test_mean_stability_in_range(self):
         layers = _make_planted_layers(n_nodes=20, n_layers=2)
         boot = bootstrap_multilayer(layers, fit_type="jaccard", n_boot=10, seed=14)
-        ci = community_ci(boot)
+        est = community_est(boot)
 
-        stab = ci["mean_node_stability"]
+        stab = est["mean_node_stability"]
         assert (stab["mean_stability"] >= 0).all()
         assert (stab["mean_stability"] <= 1).all()
 
@@ -162,7 +156,7 @@ class TestCommunityCi:
         # Manually set n_boot to 0 to simulate failure
         boot.n_boot = 0
         with pytest.raises(ValueError, match="No completed"):
-            community_ci(boot)
+            community_est(boot)
 
 
 class TestCoAssignmentCi:

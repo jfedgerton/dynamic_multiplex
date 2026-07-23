@@ -8,6 +8,12 @@
 #' and each replicate redraws the full edge set from those estimates. This
 #' reproduces the variability of fresh data, including which edges exist.
 #'
+#' Uncertainty is quantified on the cross-layer \emph{meta-communities}
+#' (the tracked partition from the second-stage detection), not the
+#' independently-detected per-layer communities. Co-assignment therefore
+#' answers "do these two nodes belong to the same persistent community,"
+#' and the community count is the number of meta-communities per layer.
+#'
 #' Versions before 1.1.0 instead used a Bayesian bootstrap on edge weights
 #' (Exponential(1) multipliers on a fixed topology). That scheme was
 #' removed: because it never varies which edges exist, it understates the
@@ -40,14 +46,16 @@
 #' @return A list of class \code{"multilayer_bootstrap"} with components:
 #'   \describe{
 #'     \item{n_boot}{Number of completed bootstrap replicates.}
-#'     \item{co_assignment}{Per-layer co-assignment probability matrices.}
+#'     \item{co_assignment}{Per-layer co-assignment probability matrices on
+#'       the meta-communities (probability two nodes share a persistent
+#'       community).}
 #'     \item{node_stability}{Per-layer vectors giving the fraction of
 #'       replicates in which each node was assigned to its modal community.}
 #'     \item{modularity_samples}{Per-layer vectors of bootstrap modularity
 #'       values.}
 #'     \item{community_count_reproducibility}{Per-layer numeric vector: the
-#'       share of completed replicates whose community count equals the
-#'       observed-network count. A descriptive stability measure. The raw
+#'       share of completed replicates whose meta-community count equals
+#'       the observed-network count. A descriptive stability measure. The raw
 #'       per-replicate community counts are intentionally not returned.}
 #'     \item{point_estimate}{The fit result from the original data.}
 #'   }
@@ -226,8 +234,11 @@ bootstrap_multilayer <- function(
     ## define outputs for each layer ----
     for (layer_idx in seq_len(n_layers)) {
       lc <- boot_fit$layer_communities[[layer_idx]]
-      mem <- lc$membership
-      comms <- lc$communities
+
+      ### meta (cross-layer) membership is the validated partition; the
+      ### co-assignment and community counts below are computed on it ----
+      mem <- boot_fit$meta_communities[[layer_idx]]
+      comms <- split(seq_along(mem), mem)
 
       ### define co-assignment ----
       for (comm_nodes in comms) {
@@ -290,7 +301,7 @@ bootstrap_multilayer <- function(
   # (point-estimate) count. Computed here, from the raw per-replicate counts,
   # so those raw counts are never exposed on the returned object. ----
   community_count_reproducibility <- vapply(seq_len(n_layers), function(layer_idx) {
-    est <- length(point_estimate$layer_communities[[layer_idx]]$communities)
+    est <- length(unique(point_estimate$meta_communities[[layer_idx]]))
     s <- count_samples[[layer_idx]]
     if (length(s) == 0) return(NA_real_)
     mean(s == est)
@@ -314,7 +325,7 @@ bootstrap_multilayer <- function(
 }
 
 
-#' @title Summarize bootstrap community-count reproducibility
+#' @title Summarize bootstrap community-count reproducibility (meta-communities)
 #'
 #' @description Reports, for each layer, the community count from the
 #' observed network together with its \emph{bootstrap reproducibility}: the
@@ -346,7 +357,7 @@ bootstrap_multilayer <- function(
 #' @return A list with components:
 #'   \describe{
 #'     \item{community_count}{Data frame with columns layer, estimate (the
-#'       observed-network community count), and reproducibility (share of
+#'       observed-network meta-community count), and reproducibility (share of
 #'       bootstrap replicates whose community count equals estimate, in
 #'       [0, 1]).}
 #'     \item{report}{Character vector, one plain-language sentence per layer.}
@@ -394,8 +405,7 @@ community_est <- function(boot_result) {
   count_rows <- lapply(seq_len(n_layers), function(i) {
 
     ## observed-network community count for this layer (the anchor) ----
-    lc <- point$layer_communities[[i]]
-    est <- length(lc$communities)
+    est <- length(unique(point$meta_communities[[i]]))
 
     ## reproducibility = share of bootstrap replicates whose community count
     ## equals the observed-network count. Descriptive stability, not a

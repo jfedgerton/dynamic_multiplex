@@ -2,7 +2,7 @@
 % Please edit documentation in R/bootstrap_multilayer.R
 \name{community_est}
 \alias{community_est}
-\title{Summarize bootstrap community-count reproducibility}
+\title{Summarize bootstrap community-count reproducibility (meta-communities)}
 \usage{
 community_est(boot_result)
 }
@@ -13,9 +13,9 @@ community_est(boot_result)
 A list with components:
 \describe{
 \item{community_count}{Data frame with columns layer, estimate (the
-observed-network community count), and reproducibility (share of
+observed-network meta-community count), and reproducibility (share of
 bootstrap replicates whose community count equals estimate, in
-[0, 1]).}
+\link{0, 1}).}
 \item{report}{Character vector, one plain-language sentence per layer.}
 \item{mean_node_stability}{Data frame with columns layer, mean_stability.}
 \item{node_stability}{Per-layer stability vectors.}
@@ -23,11 +23,11 @@ bootstrap replicates whose community count equals estimate, in
 }
 }
 \description{
-Reports, for each layer, the community count from the observed network
-together with its \emph{bootstrap reproducibility}: the proportion of
-bootstrap replicates in which the fitted number of communities equals the
-observed-network count. It also returns mean node stability, per-node
-stability, and the co-assignment matrices.
+Reports, for each layer, the community count from the
+observed network together with its \emph{bootstrap reproducibility}: the
+proportion of bootstrap replicates in which the fitted number of
+communities equals the observed-network count. It also returns mean node
+stability, per-node stability, and the co-assignment matrices.
 }
 \section{Why this is not a confidence interval}{
 
@@ -35,15 +35,16 @@ Earlier versions returned a percentile \code{community_count_ci}. It was
 replaced in version 1.1.0 with a reproducibility summary because the
 interval's coverage is not robust to model misspecification. In a large
 simulation study the nominal 95 percent community-count interval covered
-the truth at or above the nominal level on well-specified planted-partition
-networks (about 0.99 for n >= 100 nodes), but coverage collapsed to about
-0.62 when community sizes were strongly skewed, and no observable diagnostic
-reliably separated the trustworthy cases from the rest. Rather than ship an
-interval that silently undercovers, the function now reports how often the
-community count reproduces under resampling. This is a descriptive stability
-measure, not a calibrated interval: it makes no claim about the probability
-that any range contains the true community count. For a validated interval,
-use \code{\link{co_assignment_ci}}, whose node-pair coverage held across the
+the truth at or above the nominal level on well-specified
+planted-partition networks (about 0.99 for n >= 100 nodes), but coverage
+collapsed to about 0.62 when community sizes were strongly skewed, and no
+observable diagnostic reliably separated the trustworthy cases from the
+rest. Rather than ship an interval that silently undercovers, the
+function now reports how often the community count reproduces under
+resampling. This is a descriptive stability measure, not a calibrated
+interval: it makes no claim about the probability that any range contains
+the true community count. For a validated interval, use
+\code{\link{co_assignment_ci}}, whose node-pair coverage held across the
 same misspecification stress tests. The raw per-replicate community counts
 are intentionally not exposed anywhere in the package output; only this
 reproducibility summary is returned.

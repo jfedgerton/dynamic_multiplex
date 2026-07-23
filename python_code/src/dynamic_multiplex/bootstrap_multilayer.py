@@ -50,7 +50,9 @@ class BootstrapResult:
     n_boot : int
         Number of bootstrap replicates completed.
     co_assignment : list[np.ndarray]
-        Per-layer n_nodes x n_nodes matrices of co-assignment probabilities.
+        Per-layer n_nodes x n_nodes matrices of co-assignment probabilities
+        on the cross-layer meta-communities (probability two nodes share a
+        persistent community).
     node_stability : list[np.ndarray]
         Per-layer array of length n_nodes giving the fraction of bootstrap
         replicates in which each node was assigned to its modal community.
@@ -76,7 +78,7 @@ class BootstrapResult:
 def bootstrap_multilayer(
     layers,
     fit_type: str = "jaccard",
-    algorithm: str = "louvain",
+    algorithm: str = "leiden",
     n_boot: int = 100,
     layer_links=None,
     min_similarity: float = 0.0,
@@ -93,6 +95,12 @@ def bootstrap_multilayer(
     observed network using the point-estimate partition; each replicate
     redraws the full edge set from those estimates, reproducing the
     variability of fresh data, including which edges exist.
+
+    Uncertainty is quantified on the cross-layer *meta-communities* (the
+    tracked partition from the second-stage detection), not the
+    independently-detected per-layer communities. Co-assignment therefore
+    answers "do these two nodes belong to the same persistent community,"
+    and the community count is the number of meta-communities per layer.
 
     Versions before 1.1.0 instead used a Bayesian bootstrap on edge
     weights (Exponential(1) multipliers on a fixed topology). That scheme
@@ -235,29 +243,36 @@ def bootstrap_multilayer(
 
         for layer_idx in range(n_layers):
             lc = boot_fit["layer_communities"][layer_idx]
-            mem = lc.membership  # dict: node_id (1-indexed) -> community
 
-            # Co-assignment matrix
-            for comm_nodes in lc.communities.values():
+            # Meta (cross-layer) membership is the validated partition; the
+            # co-assignment and community counts below are computed on it.
+            # mem is an array in node order (index i -> node i+1).
+            mem = np.asarray(boot_fit["meta_communities"][layer_idx])
+
+            # Co-assignment matrix (on meta labels)
+            comms: dict[int, list[int]] = {}
+            for node_pos, meta_id in enumerate(mem):
+                comms.setdefault(int(meta_id), []).append(node_pos)
+            for comm_nodes in comms.values():
                 for i_pos in range(len(comm_nodes)):
                     for j_pos in range(i_pos + 1, len(comm_nodes)):
-                        ni = comm_nodes[i_pos] - 1  # 0-indexed
-                        nj = comm_nodes[j_pos] - 1
+                        ni = comm_nodes[i_pos]
+                        nj = comm_nodes[j_pos]
                         co_assign_accum[layer_idx][ni, nj] += 1
                         co_assign_accum[layer_idx][nj, ni] += 1
 
-            # Record membership for each node
-            for node_id, comm_id in mem.items():
-                membership_records[layer_idx][node_id - 1].append(comm_id)
+            # Record meta membership for each node
+            for node_pos, meta_id in enumerate(mem):
+                membership_records[layer_idx][node_pos].append(int(meta_id))
 
-            # Modularity
+            # Modularity (per-layer detection value, descriptive)
             mod_val = lc.modularity
             mod_samples[layer_idx].append(
                 mod_val if mod_val is not None else np.nan
             )
 
-            # Community count
-            count_samples[layer_idx].append(len(lc.communities))
+            # Community count = number of distinct meta communities in layer
+            count_samples[layer_idx].append(len(comms))
 
     # Completed bootstrap count (some may have failed)
     n_completed = len(mod_samples[0]) if mod_samples[0] else 0
@@ -290,7 +305,7 @@ def bootstrap_multilayer(
     # so those raw counts are never retained on the returned object.
     community_count_reproducibility = []
     for layer_idx in range(n_layers):
-        est = len(point_estimate["layer_communities"][layer_idx].communities)
+        est = len(np.unique(point_estimate["meta_communities"][layer_idx]))
         s = np.asarray(count_samples[layer_idx])
         community_count_reproducibility.append(
             float(np.mean(s == est)) if s.size else float("nan")
@@ -309,10 +324,10 @@ def bootstrap_multilayer(
 def community_est(
     boot_result: BootstrapResult,
 ) -> dict:
-    """Summarize bootstrap community-count reproducibility.
+    """Summarize bootstrap community-count reproducibility (meta-communities).
 
-    Reports, for each layer, the community count from the observed network
-    together with its *bootstrap reproducibility*: the proportion of
+    Reports, for each layer, the meta-community count from the observed
+    network together with its *bootstrap reproducibility*: the proportion of
     bootstrap replicates in which the fitted number of communities equals
     the observed-network count. Also returns mean node stability, per-node
     stability, and the co-assignment matrices.
@@ -368,8 +383,7 @@ def community_est(
     # which are deliberately not exposed.
     count_rows = []
     for i in range(n_layers):
-        lc = point["layer_communities"][i]
-        est = len(lc.communities)
+        est = len(np.unique(point["meta_communities"][i]))
         reproducibility = float(boot_result.community_count_reproducibility[i])
         count_rows.append(
             {"layer": i + 1, "estimate": est, "reproducibility": reproducibility}

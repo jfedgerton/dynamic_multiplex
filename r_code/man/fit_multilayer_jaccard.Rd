@@ -31,8 +31,9 @@ interlayer tie.}
 \item{resolution_parameter}{Leiden resolution parameter.}
 
 \item{directed}{Logical; if \code{TRUE}, build directed graphs from adjacency
-matrices. For \code{algorithm = "louvain"}, directed layers are collapsed to
-undirected weighted graphs before community detection.}
+matrices. Directed layers are collapsed to undirected weighted graphs before
+community detection (igraph supports Leiden on undirected graphs only;
+a warning is issued for \code{algorithm = "leiden"}).}
 
 \item{add_self_loops}{Logical; if \code{TRUE}, add intra-layer community
 self-loop ties after similarity computation to mimic aggregation behavior.}
@@ -45,13 +46,36 @@ networks, following the Louvain/Leiden community aggregation convention.}
 \item{objective}{One of "cpm" or "modularity" for directed networks only}
 }
 \value{
-A list with detected communities per layer and interlayer ties.
+A list of class \code{"multilayer_community_fit"} with components:
+\describe{
+\item{layer_communities}{Per-layer community detection (each with
+\code{membership} and \code{communities}). Detected independently
+per layer.}
+\item{meta_communities}{The cross-layer tracked partition from the
+second-stage detection: one integer vector per layer giving each
+node's meta-community. This is the membership that reflects the
+interlayer ties and any custom \code{layer_links}, and the one
+validated by \code{\link{bootstrap_multilayer}}. See
+\code{\link{extract_meta_membership}}.}
+\item{interlayer_ties}{Interlayer similarity edges between communities
+(plus self-loops).}
+\item{layer_links}{The layer connectivity used.}
+}
 }
 \description{
 Runs Louvain or Leiden community detection for each layer and
 creates interlayer ties between communities in selected layer pairs using
 weighted Jaccard similarity.
 }
+\section{Directed networks}{
+
+Directed layers are stored as directed graphs and the interlayer self-loop
+weighting is directed-aware, but community \emph{detection} collapses
+directed layers to weighted undirected graphs on both Louvain and Leiden
+(igraph's detectors are undirected-only). For detection that respects edge
+direction, use the Python package with \code{algorithm = "leiden"}.
+}
+
 \examples{
 set.seed(123)
 layers <- lapply(1:3, function(i) {

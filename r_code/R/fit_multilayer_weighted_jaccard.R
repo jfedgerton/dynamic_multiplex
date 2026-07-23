@@ -29,7 +29,28 @@
 #'
 #' @param objective One of "cpm" or "modularity" for directed networks only
 #'
-#' @return A list with detected communities per layer and interlayer ties.
+#' @return A list of class \code{"multilayer_community_fit"} with components:
+#'   \describe{
+#'     \item{layer_communities}{Per-layer community detection (each with
+#'       \code{membership} and \code{communities}). Detected independently
+#'       per layer.}
+#'     \item{meta_communities}{The cross-layer tracked partition from the
+#'       second-stage detection: one integer vector per layer giving each
+#'       node's meta-community. This is the membership that reflects the
+#'       interlayer ties and any custom \code{layer_links}, and the one
+#'       validated by \code{\link{bootstrap_multilayer}}. See
+#'       \code{\link{extract_meta_membership}}.}
+#'     \item{interlayer_ties}{Interlayer similarity edges between communities
+#'       (plus self-loops).}
+#'     \item{layer_links}{The layer connectivity used.}
+#'   }
+#'
+#' @section Directed networks:
+#' Directed layers are stored as directed graphs and the interlayer self-loop
+#' weighting is directed-aware, but community \emph{detection} collapses
+#' directed layers to weighted undirected graphs on both Louvain and Leiden
+#' (igraph's detectors are undirected-only). For detection that respects edge
+#' direction, use the Python package with \code{algorithm = "leiden"}.
 #'
 #' @examples
 #' set.seed(123)
@@ -97,10 +118,21 @@ fit_multilayer_weighted_jaccard <- function(
   }
 
   # Compile multilayer community fit object ----
+  # second-stage detection: group per-layer communities into cross-layer
+  # meta-communities from the interlayer ties (the tracked partition) ----
+  meta <- detect_interlayer_communities(
+    layer_communities = fit,
+    interlayer_ties = interlayer_ties,
+    algorithm = algorithm,
+    resolution_parameter = resolution_parameter
+  )
+
   multilayer_weighted_jaccard <- structure(
     list(
       algorithm = algorithm,
       layer_communities = fit,
+      meta_communities = meta$membership,
+      meta_ids = meta$meta_ids,
       layer_links = links,
       interlayer_ties = interlayer_ties,
       directed = directed,

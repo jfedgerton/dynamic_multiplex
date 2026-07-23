@@ -1,7 +1,14 @@
 import numpy as np
 import pytest
 
-from dynamic_multiplex import bootstrap_multilayer, co_assignment_ci, community_est
+from dynamic_multiplex import (
+    bootstrap_multilayer,
+    co_assignment_ci,
+    community_est,
+    extract_meta_membership,
+    fit_multilayer_identity_ties,
+    fit_multilayer_jaccard,
+)
 
 
 def _make_planted_layers(n_nodes=30, n_layers=3, seed=42):
@@ -215,3 +222,73 @@ class TestEdgeResampling:
             bootstrap_multilayer(
                 _make_planted_layers(n_nodes=15, n_layers=2),
                 fit_type="jaccard", n_boot=3, resample="weights")
+
+
+class TestMetaCommunities:
+    def test_fit_returns_meta_communities(self):
+        layers = _make_planted_layers(n_nodes=20, n_layers=4)
+        fit = fit_multilayer_jaccard(layers, algorithm="leiden")
+        assert "meta_communities" in fit
+        assert fit["meta_communities"] is not None
+        assert len(fit["meta_communities"]) == 4
+        assert all(len(v) == 20 for v in fit["meta_communities"])
+        # Meta communities cannot exceed the total per-layer communities.
+        total_layer_comms = sum(
+            len(lc.communities) for lc in fit["layer_communities"]
+        )
+        all_meta = np.concatenate(fit["meta_communities"])
+        assert len(np.unique(all_meta)) <= total_layer_comms
+
+    def test_extract_meta_membership(self):
+        layers = _make_planted_layers(n_nodes=20, n_layers=3)
+        fit = fit_multilayer_jaccard(layers, algorithm="leiden")
+        mm = extract_meta_membership(fit)
+        assert mm is fit["meta_communities"]
+        assert len(mm) == 3
+
+    def test_extract_meta_membership_missing_raises(self):
+        with pytest.raises(ValueError, match="meta_communities"):
+            extract_meta_membership({"layer_communities": []})
+
+    def test_custom_layer_links_flow_through(self):
+        layers = _make_planted_layers(n_nodes=20, n_layers=4)
+        links = [{"from": 1, "to": 3, "weight": 1.0},
+                 {"from": 2, "to": 4, "weight": 1.0}]
+        fit = fit_multilayer_jaccard(
+            layers, algorithm="leiden", layer_links=links
+        )
+        assert len(fit["meta_communities"]) == 4
+        assert all(np.all(v >= 1) for v in fit["meta_communities"])
+
+    def test_bootstrap_and_cis_run_on_meta(self):
+        layers = _make_planted_layers(n_nodes=20, n_layers=3)
+        boot = bootstrap_multilayer(
+            layers, fit_type="jaccard", algorithm="leiden",
+            n_boot=6, seed=123,
+        )
+        assert boot.n_boot == 6
+        est = community_est(boot)
+        pe = boot.point_estimate["meta_communities"]
+        expected = [len(np.unique(v)) for v in pe]
+        assert list(est["community_count"]["estimate"]) == expected
+        ci = co_assignment_ci(boot)
+        assert len(ci) == 3
+
+    def test_identity_fit_falls_back_without_error(self):
+        layers = _make_planted_layers(n_nodes=20, n_layers=3)
+        fit = fit_multilayer_identity_ties(layers, algorithm="leiden")
+        # Fallback: node-level identity ties have no community columns.
+        assert fit["meta_ids"] is None
+        assert len(fit["meta_communities"]) == 3
+        assert all(len(v) == 20 for v in fit["meta_communities"])
+        # Fallback offsets labels so layers do not collide.
+        all_meta = np.concatenate(fit["meta_communities"])
+        assert len(np.unique(all_meta)) >= 1
+
+    def test_identity_bootstrap_runs(self):
+        layers = _make_planted_layers(n_nodes=20, n_layers=2)
+        boot = bootstrap_multilayer(
+            layers, fit_type="identity", algorithm="leiden",
+            n_boot=3, seed=9,
+        )
+        assert boot.n_boot == 3

@@ -493,3 +493,119 @@ add_community_self_loops <- function(
   # return community self loops ----
   return(community_self_loops)
 }
+
+
+#' @title Detect cross-layer (meta) communities from interlayer ties
+#'
+#' @description Second-stage community detection. Treats each per-layer
+#' community as a node in a community graph whose edges are the interlayer
+#' similarity ties (plus the community self-loops), then runs community
+#' detection on that graph to group per-layer communities into cross-layer
+#' \emph{meta-communities}. The result is the tracked partition: which
+#' communities persist, merge, or split across layers. This is the step that
+#' makes custom \code{layer_links} and the interlayer coupling actually affect
+#' the membership that is returned and validated.
+#'
+#' @param layer_communities The \code{layer_communities} element of a fit
+#'   (per-layer detection results, each with \code{membership} and
+#'   \code{communities}).
+#'
+#' @param interlayer_ties The \code{interlayer_ties} data frame of a fit
+#'   (columns \code{from_layer}, \code{to_layer}, \code{from_community},
+#'   \code{to_community}, \code{weighted_similarity}), including self-loops.
+#'
+#' @param algorithm Community algorithm for the second stage: \code{"louvain"}
+#'   or \code{"leiden"} (match the per-layer algorithm).
+#'
+#' @param resolution_parameter Resolution for the second-stage detection.
+#'
+#' @return A list with \describe{
+#'   \item{meta_ids}{Named integer vector mapping each per-layer community
+#'     (key \code{"L<layer>C<community>"}) to its meta-community id.}
+#'   \item{membership}{List with one integer vector per layer giving each
+#'     node's meta-community assignment (node order).}
+#' }
+#'
+#' @noRd
+detect_interlayer_communities <- function(
+    layer_communities,
+    interlayer_ties,
+    algorithm = c("louvain", "leiden"),
+    resolution_parameter = 1
+  ) {
+
+  algorithm <- match.arg(algorithm)
+  key <- function(l, c) paste0("L", l, "C", c)
+  n_layers <- length(layer_communities)
+
+  # The second stage needs community-level ties. Node-level identity ties are
+  # not handled here (their multislice form is a separate node-level build);
+  # fall back to per-layer communities made globally distinct, i.e. no
+  # cross-layer merging. ----
+  has_comm_ties <- !is.null(interlayer_ties) && nrow(interlayer_ties) > 0 &&
+    all(c("from_community", "to_community", "weighted_similarity") %in%
+          names(interlayer_ties))
+  if (!has_comm_ties) {
+    offset <- 0L
+    membership <- vector("list", n_layers)
+    for (t in seq_len(n_layers)) {
+      mem <- as.integer(layer_communities[[t]]$membership)
+      membership[[t]] <- mem + offset
+      offset <- offset + max(mem)
+    }
+    return(list(meta_ids = NULL, membership = membership))
+  }
+
+  # enumerate every per-layer community as a super-node ----
+  supernodes <- unique(unlist(lapply(seq_len(n_layers), function(t) {
+    key(t, as.integer(names(layer_communities[[t]]$communities)))
+  })))
+
+  # build the community graph from interlayer ties (incl. self-loops) ----
+  if (!is.null(interlayer_ties) && nrow(interlayer_ties) > 0) {
+    edge_df <- data.frame(
+      from = key(interlayer_ties$from_layer, interlayer_ties$from_community),
+      to = key(interlayer_ties$to_layer, interlayer_ties$to_community),
+      weight = interlayer_ties$weighted_similarity,
+      stringsAsFactors = FALSE
+    )
+  } else {
+    edge_df <- data.frame(from = character(0), to = character(0),
+                          weight = numeric(0), stringsAsFactors = FALSE)
+  }
+
+  g <- igraph::graph_from_data_frame(
+    d = edge_df,
+    directed = FALSE,
+    vertices = data.frame(name = supernodes, stringsAsFactors = FALSE)
+  )
+
+  # second-stage detection on the community graph ----
+  if (igraph::ecount(g) == 0) {
+    # no ties: every per-layer community is its own meta-community
+    meta_ids <- stats::setNames(seq_along(supernodes), supernodes)
+  } else {
+    if (algorithm == "louvain") {
+      cl <- igraph::cluster_louvain(
+        graph = g, weights = igraph::E(g)$weight,
+        resolution = resolution_parameter
+      )
+    } else {
+      cl <- igraph::cluster_leiden(
+        graph = g, objective_function = "modularity",
+        weights = igraph::E(g)$weight,
+        resolution = resolution_parameter, n_iterations = 3
+      )
+    }
+    meta_ids <- as.integer(igraph::membership(cl))
+    names(meta_ids) <- igraph::V(g)$name
+  }
+
+  # map each node to its meta-community, per layer ----
+  membership <- lapply(seq_len(n_layers), function(t) {
+    mem <- layer_communities[[t]]$membership
+    as.integer(meta_ids[key(t, as.integer(mem))])
+  })
+
+  list(meta_ids = meta_ids, membership = membership)
+}

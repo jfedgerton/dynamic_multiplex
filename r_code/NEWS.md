@@ -5,6 +5,27 @@ study of empirical CI coverage (planted-partition multilayer networks;
 n = 50-400 nodes, 3-10 communities, 5-15 layers, 5 switching rates,
 3 density regimes, Louvain and Leiden, all similarity couplings).
 
+## New features
+
+* **Cross-layer community tracking (second-stage detection).** The
+  `fit_multilayer_*()` functions now run a second community detection on the
+  interlayer/community graph (the similarity ties plus self-loops) and return
+  `meta_communities`: the tracked partition grouping per-layer communities into
+  cross-layer meta-communities. This is what makes custom `layer_links` and the
+  interlayer coupling actually affect the returned membership; previously the
+  output equalled independent per-layer detection. Access it with the new
+  exported `extract_meta_membership()`. The per-layer `layer_communities` are
+  unchanged and still returned.
+
+* **Uncertainty is now quantified on the meta-communities.**
+  `bootstrap_multilayer()`, `co_assignment_ci()`, and `community_est()` operate
+  on the cross-layer meta-communities rather than the independent per-layer
+  partitions. Co-assignment now answers "do two nodes belong to the same
+  *persistent* community," and the community count is the number of
+  meta-communities per layer. (Coverage of these meta-community intervals must
+  be re-validated in simulation; the earlier per-layer coverage numbers do not
+  transfer.)
+
 ## Breaking changes
 
 * `community_ci()` is renamed `community_est()` and no longer returns a

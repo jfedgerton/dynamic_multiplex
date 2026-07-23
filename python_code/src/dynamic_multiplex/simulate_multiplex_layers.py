@@ -16,7 +16,7 @@ def simulate_and_fit_multilayer(
     p_in: float = 0.2,
     p_out: float = 0.05,
     fit_type: str = "jaccard",
-    algorithm: str = "louvain",
+    algorithm: str = "leiden",
     layer_links=None,
     min_similarity: float = 0.0,
     seed: int | None = None,

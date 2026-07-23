@@ -195,3 +195,44 @@ test_that("edge-resampling bootstrap runs with valid probabilities", {
   expect_equal(dim(boot_e$co_assignment[[1]]), c(20, 20))
   expect_true(all(boot_e$co_assignment[[1]] >= 0 & boot_e$co_assignment[[1]] <= 1))
 })
+
+test_that("fit returns meta_communities (cross-layer tracking)", {
+  layers <- make_planted_layers(n_nodes = 20, n_layers = 4)
+  fit <- fit_multilayer_jaccard(layers, algorithm = "leiden")
+  expect_true("meta_communities" %in% names(fit))
+  expect_length(fit$meta_communities, 4)
+  expect_true(all(vapply(fit$meta_communities, length, integer(1)) == 20))
+  total_layer_comms <- sum(vapply(fit$layer_communities,
+                                  function(x) length(x$communities), integer(1)))
+  expect_true(length(unique(unlist(fit$meta_communities))) <= total_layer_comms)
+})
+
+test_that("extract_meta_membership returns the meta partition", {
+  layers <- make_planted_layers(n_nodes = 20, n_layers = 3)
+  fit <- fit_multilayer_jaccard(layers, algorithm = "leiden")
+  mm <- extract_meta_membership(fit)
+  expect_identical(mm, fit$meta_communities)
+  expect_length(mm, 3)
+})
+
+test_that("custom layer_links flow through the second stage", {
+  layers <- make_planted_layers(n_nodes = 20, n_layers = 4)
+  links <- data.frame(from = c(1, 2), to = c(3, 4), weight = 1)
+  fit <- fit_multilayer_jaccard(layers, algorithm = "leiden", layer_links = links)
+  expect_length(fit$meta_communities, 4)
+  expect_true(all(vapply(fit$meta_communities,
+                         function(v) all(v >= 1), logical(1))))
+})
+
+test_that("bootstrap and CIs run on the meta communities", {
+  layers <- make_planted_layers(n_nodes = 20, n_layers = 3)
+  boot <- bootstrap_multilayer(layers, fit_type = "jaccard", algorithm = "leiden",
+                                n_boot = 6, seed = 123)
+  expect_equal(boot$n_boot, 6)
+  est <- community_est(boot)
+  pe <- boot$point_estimate$meta_communities
+  expect_equal(est$community_count$estimate,
+               vapply(pe, function(v) length(unique(v)), integer(1)))
+  ci <- co_assignment_ci(boot)
+  expect_length(ci, 3)
+})

@@ -64,7 +64,7 @@ def make_layer_links(n_layers: int, layer_links: list[dict] | pd.DataFrame | Non
 
 def fit_layer_communities(
     graph_layers: list[nx.Graph | nx.DiGraph],
-    algorithm: str = "louvain",
+    algorithm: str = "leiden",
     resolution_parameter: float = 1.0,
     directed: bool = False,
     objective: str | None = None,
@@ -323,3 +323,157 @@ def add_community_self_loops(
         return edge_df
 
     return pd.concat([edge_df, pd.DataFrame(rows)], ignore_index=True)
+
+
+def detect_interlayer_communities(
+    layer_communities: list[LayerCommunityFit],
+    interlayer_ties: pd.DataFrame,
+    algorithm: str = "leiden",
+    resolution_parameter: float = 1.0,
+) -> dict:
+    """Detect cross-layer (meta) communities from interlayer ties.
+
+    Second-stage community detection. Treats each per-layer community as a
+    node in a "community graph" whose edges are the interlayer similarity
+    ties (plus the community self-loops), then runs community detection on
+    that graph to group per-layer communities into cross-layer
+    *meta-communities*. This is the step that makes custom ``layer_links``
+    and the interlayer coupling actually affect the returned membership.
+
+    Parameters
+    ----------
+    layer_communities : list[LayerCommunityFit]
+        Per-layer detection results (each with ``membership`` and
+        ``communities``).
+    interlayer_ties : pandas.DataFrame
+        Interlayer ties with columns ``from_layer``, ``to_layer``,
+        ``from_community``, ``to_community``, ``weighted_similarity``
+        (including self-loops).
+    algorithm : str
+        Second-stage algorithm: ``"louvain"`` or ``"leiden"`` (match the
+        per-layer algorithm).
+    resolution_parameter : float
+        Resolution for the second-stage detection.
+
+    Returns
+    -------
+    dict
+        Dictionary with keys:
+        - ``meta_ids``: dict mapping each supernode key ``"L<layer>C<community>"``
+          to its meta-community id (or ``None`` in the fallback path).
+        - ``membership``: list with one ``np.ndarray`` per layer giving each
+          node's meta-community assignment (node order).
+    """
+    algorithm = algorithm.lower()
+    n_layers = len(layer_communities)
+
+    def key(layer: int, comm: int) -> str:
+        return f"L{layer}C{comm}"
+
+    # The second stage needs community-level ties. Node-level identity ties
+    # have different columns (from_layer, to_layer, node, layer_weight) and are
+    # not handled here; fall back to per-layer communities made globally
+    # distinct (offset each layer's labels), i.e. no cross-layer merging.
+    has_comm_ties = (
+        interlayer_ties is not None
+        and len(interlayer_ties) > 0
+        and {"from_community", "to_community", "weighted_similarity"}.issubset(
+            interlayer_ties.columns
+        )
+    )
+    if not has_comm_ties:
+        membership = []
+        offset = 0
+        for t in range(n_layers):
+            mem_dict = layer_communities[t].membership
+            node_ids = sorted(mem_dict.keys())
+            mem = np.array([mem_dict[nid] for nid in node_ids], dtype=int)
+            membership.append(mem + offset)
+            offset += int(mem.max()) if mem.size else 0
+        return {"meta_ids": None, "membership": membership}
+
+    # Enumerate every per-layer community as a super-node (1-indexed layers).
+    supernodes: list[str] = []
+    seen = set()
+    for t in range(n_layers):
+        for comm_id in layer_communities[t].communities.keys():
+            k = key(t + 1, int(comm_id))
+            if k not in seen:
+                seen.add(k)
+                supernodes.append(k)
+
+    # Build the community graph from interlayer ties (incl. self-loops).
+    edges = []  # (from_key, to_key, weight)
+    for _, row in interlayer_ties.iterrows():
+        edges.append(
+            (
+                key(int(row["from_layer"]), int(row["from_community"])),
+                key(int(row["to_layer"]), int(row["to_community"])),
+                float(row["weighted_similarity"]),
+            )
+        )
+
+    if len(edges) == 0:
+        # No ties: every per-layer community is its own meta-community.
+        meta_ids = {k: i + 1 for i, k in enumerate(supernodes)}
+    else:
+        if algorithm == "louvain":
+            try:
+                import community as community_louvain
+                import networkx as nx
+            except ImportError as exc:
+                raise ImportError(
+                    "Install optional dependency `python-louvain` for Louvain support."
+                ) from exc
+
+            cg = nx.Graph()
+            cg.add_nodes_from(supernodes)
+            for u, v, w in edges:
+                if cg.has_edge(u, v):
+                    cg[u][v]["weight"] += w
+                else:
+                    cg.add_edge(u, v, weight=w)
+            partition = community_louvain.best_partition(
+                cg, weight="weight", resolution=resolution_parameter,
+                random_state=123,
+            )
+            meta_ids = {node: comm + 1 for node, comm in partition.items()}
+        else:
+            try:
+                import igraph as ig
+                import leidenalg
+            except ImportError as exc:
+                raise ImportError(
+                    "Install optional dependencies `python-igraph` and `leidenalg` "
+                    "for Leiden support."
+                ) from exc
+
+            node_to_idx = {k: i for i, k in enumerate(supernodes)}
+            ig_edges = [(node_to_idx[u], node_to_idx[v]) for u, v, _ in edges]
+            weights = [w for _, _, w in edges]
+            ig_graph = ig.Graph(n=len(supernodes), edges=ig_edges, directed=False)
+            ig_graph.es["weight"] = weights
+            partition = leidenalg.find_partition(
+                ig_graph,
+                leidenalg.RBConfigurationVertexPartition,
+                weights=weights,
+                resolution_parameter=resolution_parameter,
+                seed=123,
+            )
+            meta_ids = {
+                supernodes[idx]: comm + 1
+                for idx, comm in enumerate(partition.membership)
+            }
+
+    # Map each node to its meta-community, per layer (node order).
+    membership = []
+    for t in range(n_layers):
+        mem_dict = layer_communities[t].membership
+        node_ids = sorted(mem_dict.keys())
+        mem = np.array(
+            [meta_ids[key(t + 1, int(mem_dict[nid]))] for nid in node_ids],
+            dtype=int,
+        )
+        membership.append(mem)
+
+    return {"meta_ids": meta_ids, "membership": membership}

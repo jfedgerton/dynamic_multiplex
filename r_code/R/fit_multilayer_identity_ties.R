@@ -6,6 +6,13 @@
 #' a linked pair receive interlayer edges. Nodes are matched by
 #' \code{V(g)$name} when available, or by vertex index otherwise.
 #'
+#' For this specification the cross-layer \code{meta_communities} are obtained
+#' by \strong{Mucha (2010) multislice modularity}: the layers are stacked into a
+#' single supra-graph (intra-layer edges are each layer's own adjacency) with
+#' interlayer identity edges joining each node to its copies in the coupled
+#' layers (weighted by \code{layer_links}), and one community detection is run
+#' on the whole supra-graph. The coupling strength is the layer-link weight.
+#'
 #' @param layers List of `igraph` objects or square adjacency matrices.
 #'
 #' @param algorithm Community algorithm: `"louvain"` or `"leiden"`.
@@ -120,19 +127,20 @@ fit_multilayer_identity_ties <- function(
   # Compile multilayer identity fit object ----
   # second-stage detection: group per-layer communities into cross-layer
   # meta-communities from the interlayer ties (the tracked partition) ----
-  meta <- detect_interlayer_communities(
-    layer_communities = fit,
+  # node-level Mucha multislice: stack layers (intra = original adjacency) with
+  # identity interlayer ties, single detection on the supra-graph ----
+  meta_membership <- detect_multislice_communities(
+    graph_layers = graph_layers,
     interlayer_ties = ties,
-    algorithm = algorithm,
-    resolution_parameter = resolution_parameter
+    algorithm = algorithm
   )
 
   multilayer_identity_ties <- structure(
     list(
       algorithm = algorithm,
       layer_communities = fit,
-      meta_communities = meta$membership,
-      meta_ids = meta$meta_ids,
+      meta_communities = meta_membership,
+      meta_ids = NULL,
       layer_links = links,
       interlayer_ties = ties,
       directed = directed

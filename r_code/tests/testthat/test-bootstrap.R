@@ -236,3 +236,19 @@ test_that("bootstrap and CIs run on the meta communities", {
   ci <- co_assignment_ci(boot)
   expect_length(ci, 3)
 })
+
+test_that("identity spec produces multislice meta communities", {
+  layers <- make_planted_layers(n_nodes = 20, n_layers = 4)
+  fit <- fit_multilayer_identity_ties(layers, algorithm = "leiden")
+  expect_length(fit$meta_communities, 4)
+  expect_true(all(vapply(fit$meta_communities, length, integer(1)) == 20))
+  # multislice is not degenerate: more than one meta community overall
+  expect_gt(length(unique(unlist(fit$meta_communities))), 1)
+  # coupling matters: all-to-all links change the meta partition vs adjacent
+  links_all <- expand.grid(from = 1:4, to = 1:4)
+  links_all <- links_all[links_all$from < links_all$to, ]
+  links_all$weight <- 1
+  fit_all <- fit_multilayer_identity_ties(layers, algorithm = "leiden",
+                                          layer_links = links_all)
+  expect_false(identical(fit$meta_communities, fit_all$meta_communities))
+})

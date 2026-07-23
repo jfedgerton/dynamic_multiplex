@@ -54,6 +54,13 @@ creates interlayer ties between the same node in selected adjacent layers.
 Layers may contain different node sets; only nodes present in both layers of
 a linked pair receive interlayer edges. Nodes are matched by
 \code{V(g)$name} when available, or by vertex index otherwise.
+
+For this specification the cross-layer \code{meta_communities} are obtained
+by \strong{Mucha (2010) multislice modularity}: the layers are stacked into a
+single supra-graph (intra-layer edges are each layer's own adjacency) with
+interlayer identity edges joining each node to its copies in the coupled
+layers (weighted by \code{layer_links}), and one community detection is run
+on the whole supra-graph. The coupling strength is the layer-link weight.
 }
 \section{Directed networks}{
 

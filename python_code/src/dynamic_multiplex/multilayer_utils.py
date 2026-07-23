@@ -477,3 +477,155 @@ def detect_interlayer_communities(
         membership.append(mem)
 
     return {"meta_ids": meta_ids, "membership": membership}
+
+
+def detect_multislice_communities(
+    graph_layers: list[nx.Graph | nx.DiGraph],
+    interlayer_ties: pd.DataFrame,
+    algorithm: str = "leiden",
+) -> list[np.ndarray]:
+    """Multislice (Mucha) meta-communities for node-identity coupling.
+
+    Node-level second stage for the identity specification. Builds a single
+    supra-graph by stacking the layers (intra-layer edges are each layer's own
+    adjacency) and adding interlayer identity edges (each node tied to its own
+    copies in the coupled layers, weighted by the layer-link weight), then runs
+    one community detection on the whole supra-graph. This is Mucha et al.
+    (2010) multislice modularity with the coupling given by ``layer_links``: a
+    node's meta-community can be pulled across layers through the identity ties.
+
+    Parameters
+    ----------
+    graph_layers : list[networkx.Graph | networkx.DiGraph]
+        Per-layer graphs, as produced by ``prepare_multilayer_graphs``.
+    interlayer_ties : pandas.DataFrame
+        Node-level identity ties (columns ``from_layer``, ``to_layer``,
+        ``node``, ``layer_weight``).
+    algorithm : str
+        ``"louvain"`` or ``"leiden"`` for the supra-graph detection.
+
+    Returns
+    -------
+    list[np.ndarray]
+        One array per layer giving each node's meta-community assignment
+        (node order).
+    """
+    algorithm = algorithm.lower()
+    n_layers = len(graph_layers)
+
+    def vkey(layer: int, node) -> str:
+        return f"L{layer}N{node}"
+
+    # Per-layer canonical node ids: match the ids used in the per-layer
+    # membership dict (node + 1 when the layer is zero-indexed, else the node
+    # name). The identity ties' `node` values are built the same way in
+    # fit_multilayer_identity_ties, so intra and inter keys line up.
+    layer_nodes = []  # per layer: list of (graph_node, canonical_id) in node order
+    for g in graph_layers:
+        zero = _is_zero_indexed(g)
+        nodes_sorted = sorted(g.nodes())
+        layer_nodes.append(
+            [(n, (n + 1 if zero else n)) for n in nodes_sorted]
+        )
+
+    # Supra vertices: one per (layer, node), layers 1-indexed.
+    supra: list[str] = []
+    seen = set()
+    for t in range(n_layers):
+        for _, cid in layer_nodes[t]:
+            k = vkey(t + 1, cid)
+            if k not in seen:
+                seen.add(k)
+                supra.append(k)
+
+    edges = []  # (from_key, to_key, weight)
+
+    # Intra-layer edges: each layer's own adjacency (original network).
+    for t in range(n_layers):
+        g = graph_layers[t]
+        cid_map = {n: cid for n, cid in layer_nodes[t]}
+        for u, v, d in g.edges(data=True):
+            edges.append(
+                (
+                    vkey(t + 1, cid_map[u]),
+                    vkey(t + 1, cid_map[v]),
+                    float(d.get("weight", 1.0)),
+                )
+            )
+
+    # Interlayer edges: identity ties (node to its own copy), weighted by omega.
+    # Access columns directly (not iterrows, which upcasts a mixed-dtype row to
+    # a single dtype and would turn integer node ids into floats).
+    if interlayer_ties is not None and len(interlayer_ties) > 0:
+        from_layer_col = interlayer_ties["from_layer"].tolist()
+        to_layer_col = interlayer_ties["to_layer"].tolist()
+        node_col = interlayer_ties["node"].tolist()
+        if "layer_weight" in interlayer_ties.columns:
+            weight_col = interlayer_ties["layer_weight"].tolist()
+        else:
+            weight_col = [1.0] * len(node_col)
+        for fl, tl, nd, w in zip(from_layer_col, to_layer_col, node_col, weight_col):
+            edges.append(
+                (vkey(int(fl), nd), vkey(int(tl), nd), float(w))
+            )
+
+    # Single detection on the supra-graph.
+    if len(edges) == 0:
+        meta = {k: i + 1 for i, k in enumerate(supra)}
+    elif algorithm == "louvain":
+        try:
+            import community as community_louvain
+        except ImportError as exc:
+            raise ImportError(
+                "Install optional dependency `python-louvain` for Louvain support."
+            ) from exc
+
+        cg = nx.Graph()
+        cg.add_nodes_from(supra)
+        for u, v, w in edges:
+            if cg.has_edge(u, v):
+                cg[u][v]["weight"] += w
+            else:
+                cg.add_edge(u, v, weight=w)
+        partition = community_louvain.best_partition(
+            cg, weight="weight", random_state=123
+        )
+        meta = {node: comm + 1 for node, comm in partition.items()}
+    else:
+        try:
+            import igraph as ig
+            import leidenalg
+        except ImportError as exc:
+            raise ImportError(
+                "Install optional dependencies `python-igraph` and `leidenalg` "
+                "for Leiden support."
+            ) from exc
+
+        node_to_idx = {k: i for i, k in enumerate(supra)}
+        ig_edges = [(node_to_idx[u], node_to_idx[v]) for u, v, _ in edges]
+        weights = [w for _, _, w in edges]
+        ig_graph = ig.Graph(n=len(supra), edges=ig_edges, directed=False)
+        ig_graph.es["weight"] = weights
+        # n_iterations=3 mirrors the R cluster_leiden call and gives the
+        # supra-graph optimizer enough refinement passes to avoid collapsing a
+        # whole slice into a single community.
+        partition = leidenalg.find_partition(
+            ig_graph,
+            leidenalg.RBConfigurationVertexPartition,
+            weights=weights,
+            seed=123,
+            n_iterations=3,
+        )
+        meta = {
+            supra[idx]: comm + 1 for idx, comm in enumerate(partition.membership)
+        }
+
+    # Map back to per-layer node order.
+    membership = []
+    for t in range(n_layers):
+        arr = np.array(
+            [meta[vkey(t + 1, cid)] for _, cid in layer_nodes[t]],
+            dtype=int,
+        )
+        membership.append(arr)
+    return membership

@@ -277,13 +277,10 @@ class TestMetaCommunities:
     def test_identity_fit_falls_back_without_error(self):
         layers = _make_planted_layers(n_nodes=20, n_layers=3)
         fit = fit_multilayer_identity_ties(layers, algorithm="leiden")
-        # Fallback: node-level identity ties have no community columns.
+        # Identity now uses the node-level Mucha multislice; meta_ids is None.
         assert fit["meta_ids"] is None
         assert len(fit["meta_communities"]) == 3
         assert all(len(v) == 20 for v in fit["meta_communities"])
-        # Fallback offsets labels so layers do not collide.
-        all_meta = np.concatenate(fit["meta_communities"])
-        assert len(np.unique(all_meta)) >= 1
 
     def test_identity_bootstrap_runs(self):
         layers = _make_planted_layers(n_nodes=20, n_layers=2)
@@ -292,3 +289,40 @@ class TestMetaCommunities:
             n_boot=3, seed=9,
         )
         assert boot.n_boot == 3
+
+
+class TestMultisliceIdentity:
+    def test_identity_meta_shapes(self):
+        layers = _make_planted_layers(n_nodes=20, n_layers=4)
+        fit = fit_multilayer_identity_ties(layers, algorithm="leiden")
+        assert fit["meta_ids"] is None
+        assert len(fit["meta_communities"]) == 4
+        assert all(len(v) == 20 for v in fit["meta_communities"])
+
+    def test_multislice_not_degenerate(self):
+        # A single supra-graph detection should recover more than one
+        # meta-community overall (not collapse to one giant community).
+        layers = _make_planted_layers(n_nodes=30, n_layers=4)
+        fit = fit_multilayer_identity_ties(layers, algorithm="leiden")
+        all_meta = np.concatenate(fit["meta_communities"])
+        assert len(np.unique(all_meta)) > 1
+
+    def test_custom_layer_links_change_partition(self):
+        # All-to-all coupling ties nodes across every layer pair, so the meta
+        # partition differs from the adjacent-only default coupling.
+        layers = _make_planted_layers(n_nodes=25, n_layers=4)
+        fit_default = fit_multilayer_identity_ties(layers, algorithm="leiden")
+
+        n = 4
+        all_to_all = [
+            {"from": a, "to": b, "weight": 1.0}
+            for a in range(1, n + 1)
+            for b in range(a + 1, n + 1)
+        ]
+        fit_full = fit_multilayer_identity_ties(
+            layers, algorithm="leiden", layer_links=all_to_all
+        )
+
+        default_meta = [v.tolist() for v in fit_default["meta_communities"]]
+        full_meta = [v.tolist() for v in fit_full["meta_communities"]]
+        assert default_meta != full_meta

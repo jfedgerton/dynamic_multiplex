@@ -4,7 +4,7 @@ import pandas as pd
 
 from .multilayer_utils import (
     _is_zero_indexed,
-    detect_interlayer_communities,
+    detect_multislice_communities,
     fit_layer_communities,
     make_layer_links,
     prepare_multilayer_graphs,
@@ -25,10 +25,11 @@ def fit_multilayer_identity_ties(
     -------
     dict
         Keys include ``layer_communities`` (per-layer detection),
-        ``meta_communities`` (the cross-layer tracked partition; identity
-        ties are node-level and lack community columns, so the second stage
-        falls back to per-layer communities made globally distinct),
-        ``meta_ids``, ``interlayer_ties``, and ``layer_links``.
+        ``meta_communities`` (the node-level Mucha multislice partition: one
+        supra-graph stacking each layer's adjacency plus identity interlayer
+        ties, detected in a single pass, so a node's meta-community can be
+        pulled across layers through the coupling), ``meta_ids`` (``None``),
+        ``interlayer_ties``, and ``layer_links``.
     """
     graph_layers = prepare_multilayer_graphs(layers, directed=directed)
     links = make_layer_links(len(graph_layers), layer_links)
@@ -61,23 +62,21 @@ def fit_multilayer_identity_ties(
 
     interlayer_ties = pd.DataFrame(ties)
 
-    # Second-stage detection. Identity ties are node-level (columns
-    # from_layer, to_layer, node, layer_weight) and lack community columns, so
-    # detect_interlayer_communities falls back to per-layer communities made
-    # globally distinct (no cross-layer merging). Resolution has no argument
-    # here, so pass 1.0.
-    meta = detect_interlayer_communities(
-        layer_communities=fit,
+    # Node-level Mucha multislice second stage: stack layers (intra = original
+    # adjacency) with identity interlayer ties and run a single detection on
+    # the supra-graph, so a node's meta-community can be pulled across layers
+    # through the coupling. Per-layer detection (layer_communities) is unchanged.
+    meta_membership = detect_multislice_communities(
+        graph_layers=graph_layers,
         interlayer_ties=interlayer_ties,
         algorithm=algorithm,
-        resolution_parameter=1.0,
     )
 
     return {
         "algorithm": algorithm,
         "layer_communities": fit,
-        "meta_communities": meta["membership"],
-        "meta_ids": meta["meta_ids"],
+        "meta_communities": meta_membership,
+        "meta_ids": None,
         "layer_links": links,
         "interlayer_ties": interlayer_ties,
         "directed": directed,

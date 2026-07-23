@@ -15,7 +15,12 @@ n = 50-400 nodes, 3-10 communities, 5-15 layers, 5 switching rates,
   interlayer coupling actually affect the returned membership; previously the
   output equalled independent per-layer detection. Access it with the new
   exported `extract_meta_membership()`. The per-layer `layer_communities` are
-  unchanged and still returned.
+  unchanged and still returned. For the Jaccard/overlap specifications the
+  second stage runs on the community-similarity graph; for the **identity**
+  specification it is **Mucha (2010) multislice modularity** — the layers are
+  stacked into one supra-graph (intra-layer edges = each layer's own adjacency)
+  with interlayer identity edges, and a single detection is run on the whole
+  supra-graph. Custom `layer_links` set the coupling in both cases.
 
 * **Uncertainty is now quantified on the meta-communities.**
   `bootstrap_multilayer()`, `co_assignment_ci()`, and `community_est()` operate

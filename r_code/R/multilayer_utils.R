@@ -609,3 +609,93 @@ detect_interlayer_communities <- function(
 
   list(meta_ids = meta_ids, membership = membership)
 }
+
+
+#' @title Multislice (Mucha) meta-communities for node-identity coupling
+#'
+#' @description Node-level second stage for the identity specification: builds a
+#' single supra-graph by stacking the layers (intra-layer edges are each
+#' layer's own adjacency) and adding interlayer identity edges (each node tied
+#' to its own copies in the coupled layers, weighted by the layer-link weight),
+#' then runs one community detection on the whole supra-graph. This is Mucha et
+#' al. (2010) multislice modularity with the coupling given by
+#' \code{layer_links}. A node's meta-community can therefore be pulled across
+#' layers through the identity ties.
+#'
+#' @param graph_layers List of per-layer \code{igraph} objects.
+#'
+#' @param interlayer_ties Node-level identity ties (columns \code{from_layer},
+#'   \code{to_layer}, \code{node}, \code{layer_weight}).
+#'
+#' @param algorithm \code{"louvain"} or \code{"leiden"} for the supra-graph.
+#'
+#' @return List with one integer vector per layer giving each node's
+#'   meta-community assignment (node order).
+#'
+#' @noRd
+detect_multislice_communities <- function(
+    graph_layers,
+    interlayer_ties,
+    algorithm = c("louvain", "leiden")
+  ) {
+
+  algorithm <- match.arg(algorithm)
+  vkey <- function(l, node) paste0("L", l, "N", node)
+  n_layers <- length(graph_layers)
+
+  layer_nodes <- lapply(graph_layers, function(g) {
+    nm <- igraph::V(g)$name
+    if (is.null(nm)) as.character(seq_len(igraph::vcount(g))) else as.character(nm)
+  })
+
+  # supra vertices: one per (layer, node) ----
+  verts <- unlist(lapply(seq_len(n_layers), function(t) vkey(t, layer_nodes[[t]])))
+
+  # intra-layer edges: each layer's own adjacency (original network) ----
+  intra <- do.call(rbind, lapply(seq_len(n_layers), function(t) {
+    g <- graph_layers[[t]]
+    el <- igraph::as_edgelist(g, names = TRUE)
+    if (nrow(el) == 0) return(NULL)
+    w <- igraph::E(g)$weight
+    if (is.null(w)) w <- rep(1, nrow(el))
+    data.frame(from = vkey(t, el[, 1]), to = vkey(t, el[, 2]),
+               weight = w, stringsAsFactors = FALSE)
+  }))
+
+  # interlayer edges: identity ties (node to its own copy), weighted by omega ----
+  if (!is.null(interlayer_ties) && nrow(interlayer_ties) > 0) {
+    w <- interlayer_ties$layer_weight
+    if (is.null(w)) w <- rep(1, nrow(interlayer_ties))
+    inter <- data.frame(
+      from = vkey(interlayer_ties$from_layer, interlayer_ties$node),
+      to = vkey(interlayer_ties$to_layer, interlayer_ties$node),
+      weight = w, stringsAsFactors = FALSE
+    )
+  } else {
+    inter <- NULL
+  }
+
+  edges <- rbind(intra, inter)
+  g_supra <- igraph::graph_from_data_frame(
+    d = if (is.null(edges)) data.frame(from = character(0), to = character(0),
+                                       weight = numeric(0)) else edges,
+    directed = FALSE,
+    vertices = data.frame(name = unique(verts), stringsAsFactors = FALSE)
+  )
+
+  # single detection on the supra-graph ----
+  if (igraph::ecount(g_supra) == 0) {
+    meta <- stats::setNames(seq_along(igraph::V(g_supra)), igraph::V(g_supra)$name)
+  } else if (algorithm == "louvain") {
+    cl <- igraph::cluster_louvain(g_supra, weights = igraph::E(g_supra)$weight)
+    meta <- stats::setNames(as.integer(igraph::membership(cl)), igraph::V(g_supra)$name)
+  } else {
+    cl <- igraph::cluster_leiden(g_supra, objective_function = "modularity",
+                                 weights = igraph::E(g_supra)$weight,
+                                 n_iterations = 3)
+    meta <- stats::setNames(as.integer(igraph::membership(cl)), igraph::V(g_supra)$name)
+  }
+
+  # map back to per-layer node order ----
+  lapply(seq_len(n_layers), function(t) as.integer(meta[vkey(t, layer_nodes[[t]])]))
+}

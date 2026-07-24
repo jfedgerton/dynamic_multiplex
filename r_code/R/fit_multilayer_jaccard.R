@@ -101,6 +101,7 @@ fit_multilayer_jaccard <- function(
   interlayer_ties <- community_overlap_edges(
     fit = fit,
     layer_links = links,
+    graph_layers = graph_layers,
     metric = "jaccard",
     min_similarity = min_similarity
   )

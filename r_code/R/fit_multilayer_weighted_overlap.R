@@ -100,6 +100,7 @@ fit_multilayer_weighted_overlap <- function(
   interlayer_ties <- community_overlap_edges(
     fit = fit,
     layer_links = links,
+    graph_layers = graph_layers,
     metric = "overlap",
     min_similarity = min_similarity,
     node_weights_by_layer = node_weights

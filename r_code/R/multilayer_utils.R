@@ -343,7 +343,8 @@ community_overlap_edges <- function(
     layer_links,
     metric = c("jaccard", "overlap"),
     min_similarity = 0,
-    node_weights_by_layer = NULL
+    node_weights_by_layer = NULL,
+    graph_layers = NULL
   ) {
 
   # check metric argument ----
@@ -353,8 +354,20 @@ community_overlap_edges <- function(
   sim_fun <- if (metric == "jaccard") weighted_jaccard else weighted_overlap
   weighted_sim_fun <- if (metric == "jaccard") weighted_jaccard_similarity else weighted_overlap_similarity
 
+  # per-layer node identity: community index-sets are positions in each layer's
+  # own graph, so across layers with different node sets they must be translated
+  # to node NAMES before overlap is computed. Falls back to positions when the
+  # graphs carry no names (e.g. fixed-node simulations, where positions align). ----
+  node_ids <- function(l) {
+    if (!is.null(graph_layers)) {
+      nm <- igraph::V(graph_layers[[l]])$name
+      if (!is.null(nm)) return(as.character(nm))
+    }
+    NULL
+  }
+
   # build overlap edges for each layer link ----
-  edge_rows <- list()
+  edge_rows <- vector("list", nrow(layer_links))
   for (i in seq_len(nrow(layer_links))) {
 
     ## extract layer link information ----
@@ -363,46 +376,57 @@ community_overlap_edges <- function(
     layer_weight <- layer_links$weight[i]
     from_comms <- fit[[from_idx]]$communities
     to_comms <- fit[[to_idx]]$communities
-    from_ids <- as.integer(names(from_comms))
-    to_ids <- as.integer(names(to_comms))
+    fnm <- node_ids(from_idx); tnm <- node_ids(to_idx)
 
-    ## calculate overlap for each community edge ----
-    for (from_c in from_ids) {
-      for (to_c in to_ids) {
-        from_c_str <- as.character(from_c)
-        to_c_str <- as.character(to_c)
+    ## translate community position-sets to node ids (names when available) ----
+    fset <- if (!is.null(fnm)) lapply(from_comms, function(p) fnm[p]) else lapply(from_comms, as.integer)
+    tset <- if (!is.null(tnm)) lapply(to_comms,   function(p) tnm[p]) else lapply(to_comms,   as.integer)
 
-        ### calculate similarity ----
-        if (is.null(node_weights_by_layer)) {
-          sim <- sim_fun(from_comms[[from_c_str]], to_comms[[to_c_str]])
-        } else {
-          sim <- weighted_sim_fun(
-            from_comms[[from_c_str]],
-            to_comms[[to_c_str]],
-            node_weights_by_layer[[from_idx]],
-            node_weights_by_layer[[to_idx]]
-          )
-        }
-
-        ### calculate weighted similarity ----
-        weighted_sim <- sim * layer_weight
-
-        ### compile edge parameters ----
-        if (weighted_sim >= min_similarity) {
-          edge_rows[[length(edge_rows) + 1]] <- data.frame(
-            from_layer = from_idx,
-            to_layer = to_idx,
-            from_community = from_c,
-            to_community = to_c,
-            similarity = sim,
-            layer_weight = layer_weight,
-            weighted_similarity = weighted_sim,
-            stringsAsFactors = FALSE
-          )
+    if (is.null(node_weights_by_layer)) {
+      ## FAST unweighted path: only co-occurring community pairs contribute a
+      ## non-zero overlap. Map each shared node to its (from_comm, to_comm) and
+      ## count co-occurrences = intersection sizes -- O(n), not O(C x C). ----
+      fsize <- lengths(fset); tsize <- lengths(tset)
+      node2f <- stats::setNames(rep(names(fset), fsize), unlist(fset, use.names = FALSE))
+      node2t <- stats::setNames(rep(names(tset), tsize), unlist(tset, use.names = FALSE))
+      shared <- intersect(unlist(fset, use.names = FALSE), unlist(tset, use.names = FALSE))
+      if (length(shared) == 0L) next
+      pair <- paste(node2f[shared], node2t[shared], sep = "\r")
+      ct <- table(pair)
+      pk <- do.call(rbind, strsplit(names(ct), "\r", fixed = TRUE))
+      fc_id <- as.integer(pk[, 1]); tc_id <- as.integer(pk[, 2]); inter <- as.integer(ct)
+      sz_f <- fsize[as.character(fc_id)]; sz_t <- tsize[as.character(tc_id)]
+      sim <- if (metric == "jaccard") inter / (sz_f + sz_t - inter) else inter / pmin(sz_f, sz_t)
+      weighted_sim <- sim * layer_weight
+      keep <- weighted_sim >= min_similarity & inter > 0L
+      if (any(keep)) {
+        edge_rows[[i]] <- data.frame(
+          from_layer = from_idx, to_layer = to_idx,
+          from_community = fc_id[keep], to_community = tc_id[keep],
+          similarity = sim[keep], layer_weight = layer_weight,
+          weighted_similarity = weighted_sim[keep], stringsAsFactors = FALSE)
+      }
+    } else {
+      ## weighted path: only iterate co-occurring pairs (name-based), call the
+      ## weighted similarity on the node-id sets. ----
+      wf <- node_weights_by_layer[[from_idx]]; wt <- node_weights_by_layer[[to_idx]]
+      rows <- list()
+      for (fc in names(fset)) {
+        cand <- names(tset)[vapply(tset, function(s) length(intersect(fset[[fc]], s)) > 0, logical(1))]
+        for (tc in cand) {
+          sim <- weighted_sim_fun(fset[[fc]], tset[[tc]], wf, wt)
+          weighted_sim <- sim * layer_weight
+          if (weighted_sim >= min_similarity)
+            rows[[length(rows) + 1]] <- data.frame(from_layer = from_idx, to_layer = to_idx,
+              from_community = as.integer(fc), to_community = as.integer(tc),
+              similarity = sim, layer_weight = layer_weight,
+              weighted_similarity = weighted_sim, stringsAsFactors = FALSE)
         }
       }
+      if (length(rows)) edge_rows[[i]] <- do.call(rbind, rows)
     }
   }
+  edge_rows <- edge_rows[!vapply(edge_rows, is.null, logical(1))]
 
   # compile overlap edges data ----
   if (length(edge_rows) == 0) {

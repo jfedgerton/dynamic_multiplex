@@ -1,20 +1,25 @@
 # =============================================================================
-# replication/extended/06_regime_comparison.R
+# replication/extended/09_dynamic_regimes.R
 #
-# HEAD-TO-HEAD METHOD COMPARISON ACROSS FOUR DYNAMIC-COMMUNITY REGIMES.
+# HEAD-TO-HEAD METHOD COMPARISON ACROSS FOUR DYNAMIC-COMMUNITY REGIMES,
+# focused on RECURRING and CHANGE-POINT structure (where DynMux's interlayer
+# coupling should pay off) with a transition-layer metric (nmi_change).
 #
 # Four synthetic generators exercise qualitatively different kinds of dynamic
 # community structure, and every available method is scored on the SAME
 # simulated networks, on the TRACKED (meta / cross-layer) partition:
 #
 #   seasonality : a small bank of latent partitions recur on a period, each
-#                 lightly drifting when revisited (custom same-season coupling).
-#   edgechurn   : one fixed partition, but every layer is an independent SBM
-#                 draw (communities identical, edges churn layer to layer).
-#   splitmerge  : the true number of communities changes mid-series
-#                 (3->4->3 "small" or 3->6->3 "large"); one fixed K cannot fit.
-#   openpop     : a fixed node pool where each layer only a subset is ACTIVE;
-#                 inactive nodes are isolates. Metrics use ACTIVE nodes only.
+#                 lightly drifting when revisited (period-lagged coupling) --
+#                 DynMux's designed win. Ported from 06 so it is scored with the
+#                 same specs (incl. weighted) and metrics (incl. nmi_change).
+#   churnswitch : edge churn PLUS Markov switching between latent partitions.
+#   birthdeath  : open population where whole communities are born / die over
+#                 the series (membership enters and exits existence).
+#   regimeshift : an abrupt CHANGE-POINT at t* -- era-1 K1 communities give way
+#                 to era-2 K2 DISJOINT communities, so a single pooled partition
+#                 cannot fit both eras (the Cold-War-end / bipolar->multipolar
+#                 case).
 #
 # Density parameterization (all regimes): given separation ratio r, target
 # density rho = 0.10 and community count K,
@@ -58,8 +63,8 @@
 # available method on that one sim.
 #
 # Usage (local smoke, one config, fast methods + dynsbm if installed):
-#   CMP_MINI=1 CMP_CFG=1 Rscript replication/extended/06_regime_comparison.R
-# Array: one SLURM_ARRAY_TASK_ID per config (1..72). See slurm/06_*.sbatch.
+#   CMP_MINI=1 CMP_CFG=1 Rscript replication/extended/09_dynamic_regimes.R
+# Array: one SLURM_ARRAY_TASK_ID per config (1..72). See slurm/09_dynamic_regimes.sbatch.
 # The code is intentionally sequential (a plain rep loop) to stay debuggable.
 # =============================================================================
 
@@ -201,9 +206,38 @@ sim_regimeshift <- function(n, r, intensity, seed) {
   list(layers = layers, truth = truth, links = links)
 }
 
+# 4. seasonality: a small bank of latent partitions RECUR on a period (each
+#    era returns to a prior configuration), with light drift on each visit and
+#    period-lagged (non-adjacent) interlayer links -- DynMux's designed use
+#    case, where similarity coupling that bridges non-adjacent recurrences
+#    beats pooling and adjacent-only methods. Ported from 06 so seasonality is
+#    scored with the same specs (incl. weighted) and metrics (incl. nmi_change)
+#    as the change-point regimes.
+sim_seasonality <- function(n, K, period, r, seed) {
+  set.seed(seed)
+  dp <- dens_params(r, K)
+  cur <- lapply(seq_len(period), function(s) sample(seq_len(K), n, replace = TRUE))
+  T_  <- 4L * period
+  truth <- vector("list", T_); layers <- vector("list", T_)
+  for (t in seq_len(T_)) {
+    s <- ((t - 1L) %% period) + 1L
+    mask <- runif(n) < 0.02                       # light drift each visit
+    if (any(mask)) cur[[s]][mask] <- sample(seq_len(K), sum(mask), replace = TRUE)
+    m <- cur[[s]]
+    truth[[t]]  <- m
+    layers[[t]] <- build_layer(m, dp$p_in, dp$p_out)
+  }
+  tt <- (period + 1L):T_
+  links <- data.frame(from = tt - period, to = tt, weight = 1)
+  list(layers = layers, truth = truth, links = links)
+}
+
 # Dispatch a config row to its generator (intensity / N / r wired per regime).
 simulate_regime <- function(cfg, seed) {
   switch(cfg$regime,
+    seasonality = sim_seasonality(cfg$n, K = 4L,
+                                  period = if (cfg$intensity == "high") 4L else 2L,
+                                  r = cfg$r, seed = seed),
     churnswitch = sim_churnswitch(cfg$n, K = 4L, r = cfg$r, intensity = cfg$intensity, seed = seed),
     birthdeath  = sim_birthdeath (cfg$n, K0 = 4L, r = cfg$r, intensity = cfg$intensity, seed = seed),
     regimeshift = sim_regimeshift(cfg$n, r = cfg$r, intensity = cfg$intensity, seed = seed),
@@ -426,13 +460,13 @@ eval_method <- function(det, sim) {
 # CONFIG GRID  (72) + fixed shuffle so early array indices sample everything
 # =============================================================================
 cfgs <- expand.grid(
-  regime    = c("churnswitch", "birthdeath", "regimeshift"),
+  regime    = c("seasonality", "churnswitch", "birthdeath", "regimeshift"),
   n         = c(50L, 100L, 200L),
   r         = c(1.5, 3, 6),
   intensity = c("low", "high"),
   stringsAsFactors = FALSE
 )
-stopifnot(nrow(cfgs) == 54L)
+stopifnot(nrow(cfgs) == 72L)
 
 set.seed(123)
 ord <- sample(nrow(cfgs))

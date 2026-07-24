@@ -1,6 +1,6 @@
 #!/bin/bash
 # =============================================================================
-# replication/extended/slurm/07_meta_coverage.sbatch
+# replication/extended/slurm/05_meta_coverage.sbatch
 #
 # Meta co-membership interval coverage re-validation, one array task per
 # (deployment x config) cell (1..150). Each task runs all sims for its cell:
@@ -10,7 +10,7 @@
 # RANDOMIZED CONDITION ORDER: the 150-row task grid
 # (10 deployments {jaccard,overlap,weighted_jaccard,weighted_overlap,identity}
 #  x {leiden,louvain}, each over 15 configs = 9 balanced + 3 skewed + 3 misspec)
-# is shuffled once inside 07_meta_coverage.R with
+# is shuffled once inside 05_meta_coverage.R with
 # `set.seed(123); ord <- sample(150)` and the array index selects tasks[ord[TASK],].
 # Because the order is randomized, even a PARTIAL run (only the first handful of
 # array indices) already samples every deployment, every block (balanced /
@@ -38,4 +38,4 @@ cd "${SLURM_SUBMIT_DIR:-.}"
 module load r/4.5.0
 export R_LIBS_USER="${R_LIBS_USER:-$HOME/R/libs}"
 mkdir -p replication/extended/slurm/logs replication/extended/output/coverage
-Rscript replication/extended/07_meta_coverage.R
+Rscript replication/extended/05_meta_coverage.R

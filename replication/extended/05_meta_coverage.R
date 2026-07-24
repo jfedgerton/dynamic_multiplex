@@ -1,5 +1,5 @@
 # =============================================================================
-# replication/extended/07_meta_coverage.R
+# replication/extended/05_meta_coverage.R
 #
 # META CO-MEMBERSHIP INTERVAL COVERAGE -- re-validation on the NEW cross-layer
 # (meta) communities, across ALL TEN DynMux deployments.
@@ -48,7 +48,7 @@
 # The code is sequential (a plain sim loop) to stay debuggable.
 #
 # Usage (local smoke, one task, MINI):
-#   COV_MINI=1 COV_TASK=1 Rscript replication/extended/07_meta_coverage.R
+#   COV_MINI=1 COV_TASK=1 Rscript replication/extended/05_meta_coverage.R
 # Array: one SLURM_ARRAY_TASK_ID per task (1..150). See slurm/07_*.sbatch.
 # =============================================================================
 

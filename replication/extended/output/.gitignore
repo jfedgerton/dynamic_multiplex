@@ -2,3 +2,4 @@
 comparison/*.csv
 coverage/*.csv
 !.gitkeep
+dynamic/*.csv

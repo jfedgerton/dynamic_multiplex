@@ -33,6 +33,8 @@
 #   DynMux multislice (custom)     identity coupling, generator's layer_links
 #   DynMux Jaccard                 Jaccard coupling + generator's layer_links
 #   DynMux Overlap                 overlap coupling + generator's layer_links
+#   DynMux weighted Jaccard        degree-weighted Jaccard coupling
+#   DynMux weighted Overlap        degree-weighted overlap coupling
 #   Pooled Leiden                  one partition on Reduce("+", L), replicated
 #   Cross-sectional + Hungarian    per-layer Leiden + optimal (Hungarian) label
 #                                  matching across consecutive layers
@@ -345,6 +347,12 @@ METHODS <- list(
   "DynMux Overlap"               = function(sim)
     extract_meta_membership(fit_multilayer_overlap(sim$layers, algorithm = "leiden",
                                                    layer_links = sim$links)),
+  "DynMux weighted Jaccard"      = function(sim)
+    extract_meta_membership(fit_multilayer_weighted_jaccard(sim$layers, algorithm = "leiden",
+                                                            layer_links = sim$links)),
+  "DynMux weighted Overlap"      = function(sim)
+    extract_meta_membership(fit_multilayer_weighted_overlap(sim$layers, algorithm = "leiden",
+                                                            layer_links = sim$links)),
   "Pooled Leiden"                = function(sim) method_pooled(sim, "leiden"),
   "Cross-sectional + Hungarian"  = function(sim)
     match_labels_hungarian(lapply(sim$layers, leiden_layer)),
@@ -359,6 +367,12 @@ METHODS <- list(
   "DynMux Overlap (Louvain)"     = function(sim)
     extract_meta_membership(fit_multilayer_overlap(sim$layers, algorithm = "louvain",
                                                    layer_links = sim$links)),
+  "DynMux weighted Jaccard (Louvain)" = function(sim)
+    extract_meta_membership(fit_multilayer_weighted_jaccard(sim$layers, algorithm = "louvain",
+                                                            layer_links = sim$links)),
+  "DynMux weighted Overlap (Louvain)" = function(sim)
+    extract_meta_membership(fit_multilayer_weighted_overlap(sim$layers, algorithm = "louvain",
+                                                            layer_links = sim$links)),
   "Pooled Louvain"               = function(sim) method_pooled(sim, "louvain")
 )
 

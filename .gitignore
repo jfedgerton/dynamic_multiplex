@@ -18,3 +18,7 @@ restyled_figures/
 # Build artifacts
 *.tar.gz
 python_code/dist/
+*.Rcheck/
+
+# Generated manuscript output (data lives on ROAR, not the repo)
+manuscript/output/

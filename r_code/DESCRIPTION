@@ -6,12 +6,13 @@ Authors@R:
            family = "Edgerton",
            role = c("aut", "cre"),
            email = "jared.edgerton@gmail.com")
-Description: Multiplex temporal community detection with customizable interlayer coupling. Runs Louvain or Leiden community detection on each network layer and constructs interlayer ties using Jaccard similarity, overlap coefficient, node-strength weighted variants, or direct node identity links. Supports user-specified layer connectivity via the layer_links argument, enabling adjacent-only temporal coupling that avoids the long-range pooling problem in standard multislice approaches.
+Description: Multiplex temporal community detection with customizable interlayer coupling. Runs Louvain or Leiden community detection on each network layer and constructs interlayer ties using Jaccard similarity, overlap coefficient, node-strength weighted variants, or direct node identity links, and also provides a two-stage snapshot-and-match tracker that aligns independently detected per-layer communities across time with the Hungarian assignment algorithm. Supports user-specified layer connectivity via the layer_links argument, enabling adjacent-only temporal coupling that avoids the long-range pooling problem in standard multislice approaches.
 License: MIT + file LICENSE
 Encoding: UTF-8
 Depends:
     R (>= 4.1.0)
-Imports: 
+Imports:
+    clue,
     igraph (>= 2.0.0),
     rlang
 Suggests:

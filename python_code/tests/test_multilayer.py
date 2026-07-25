@@ -1,6 +1,7 @@
 import numpy as np
 
 from dynamic_multiplex import (
+    fit_multilayer_hungarian,
     fit_multilayer_identity_ties,
     fit_multilayer_jaccard,
     fit_multilayer_overlap,
@@ -177,3 +178,21 @@ def test_louvain_cpm_raises():
     layer = np.eye(4)
     with pytest.raises(ValueError, match="Louvain does not support the CPM objective"):
         fit_multilayer_jaccard([layer, layer], algorithm="louvain", objective="cpm")
+
+
+def test_hungarian_tracker_stable_labels():
+    import networkx as nx
+
+    block = np.zeros((6, 6), dtype=int)
+    block[:3, :3] = 1
+    block[3:, 3:] = 1
+    np.fill_diagonal(block, 0)
+    g = nx.from_numpy_array(block)
+
+    fit = fit_multilayer_hungarian([g, g, g], algorithm="louvain")
+    assert fit["method"] == "hungarian"
+    assert fit["interlayer_ties"] is None
+    mm = fit["meta_communities"]
+    assert len(mm) == 3
+    assert np.array_equal(mm[0], mm[1])
+    assert np.array_equal(mm[1], mm[2])

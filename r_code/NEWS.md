@@ -7,6 +7,18 @@ n = 50-400 nodes, 3-10 communities, 5-15 layers, 5 switching rates,
 
 ## New features
 
+* **New method: `fit_multilayer_hungarian()`.** A two-stage
+  snapshot-and-match tracker that detects communities independently per layer
+  and then aligns their labels across consecutive layers with the Hungarian
+  (optimal linear-sum assignment) algorithm on the community overlap matrix
+  (`clue::solve_LSAP`; SciPy's `linear_sum_assignment` in the Python package).
+  This is the standard "independent detection + optimal label matching"
+  baseline, now exported as a first-class method with the same
+  `multilayer_community_fit` interface (`layer_communities`,
+  `meta_communities`, `extract_meta_membership()`). It complements the
+  coupling-based fits: those jointly optimise on a coupled supra-graph, this
+  one matches post hoc. `interlayer_ties` is `NULL` for this method.
+
 * **Cross-layer community tracking (second-stage detection).** The
   `fit_multilayer_*()` functions now run a second community detection on the
   interlayer/community graph (the similarity ties plus self-loops) and return

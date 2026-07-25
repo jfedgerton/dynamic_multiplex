@@ -183,3 +183,21 @@ test_that("directed leiden collapses to undirected with a warning", {
   expect_true(all(vapply(fit$layer_communities,
                          function(x) length(x$membership) == n, logical(1))))
 })
+
+test_that("hungarian tracker aligns labels across identical layers", {
+  block <- rbind(cbind(matrix(1, 3, 3), matrix(0, 3, 3)),
+                 cbind(matrix(0, 3, 3), matrix(1, 3, 3)))
+  diag(block) <- 0
+  layers <- list(block, block, block)
+  fit <- fit_multilayer_hungarian(layers, algorithm = "louvain")
+
+  expect_s3_class(fit, "multilayer_community_fit")
+  expect_equal(fit$method, "hungarian")
+  expect_null(fit$interlayer_ties)
+
+  mm <- extract_meta_membership(fit)
+  expect_length(mm, 3)
+  # identical layers -> Hungarian matching keeps labels stable across time
+  expect_identical(mm[[1]], mm[[2]])
+  expect_identical(mm[[2]], mm[[3]])
+})

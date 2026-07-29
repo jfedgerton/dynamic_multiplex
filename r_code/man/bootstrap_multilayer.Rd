@@ -44,21 +44,41 @@ bootstrap_multilayer(
 A list of class \code{"multilayer_bootstrap"} with components:
 \describe{
 \item{n_boot}{Number of completed bootstrap replicates.}
-\item{co_assignment}{Per-layer co-assignment probability matrices.}
+\item{co_assignment}{Per-layer co-assignment probability matrices on
+the meta-communities (probability two nodes share a persistent
+community).}
 \item{node_stability}{Per-layer vectors giving the fraction of
 replicates in which each node was assigned to its modal community.}
 \item{modularity_samples}{Per-layer vectors of bootstrap modularity
 values.}
-\item{community_count_samples}{Per-layer vectors of bootstrap community
-counts.}
+\item{community_count_reproducibility}{Per-layer numeric vector: the
+share of completed replicates whose meta-community count equals
+the observed-network count. A descriptive stability measure. The raw
+per-replicate community counts are intentionally not returned.}
 \item{point_estimate}{The fit result from the original data.}
 }
 }
 \description{
-Uses a Bayesian bootstrap on edge weights: each bootstrap
-replicate multiplies every edge weight by an independent Exponential(1)
-draw, preserving graph topology while perturbing the weighting that drives
-community detection.
+Quantifies the uncertainty of multilayer community detection
+by refitting communities on \code{n_boot} resampled networks, using a
+parametric network bootstrap: within- and between-community edge
+probabilities (and, for weighted networks, edge-weight pools) are
+estimated from the observed network using the point-estimate partition,
+and each replicate redraws the full edge set from those estimates. This
+reproduces the variability of fresh data, including which edges exist.
+
+Uncertainty is quantified on the cross-layer \emph{meta-communities}
+(the tracked partition from the second-stage detection), not the
+independently-detected per-layer communities. Co-assignment therefore
+answers "do these two nodes belong to the same persistent community,"
+and the community count is the number of meta-communities per layer.
+
+Versions before 1.1.0 instead used a Bayesian bootstrap on edge weights
+(Exponential(1) multipliers on a fixed topology). That scheme was
+removed: because it never varies which edges exist, it understates the
+variability of fresh data, and in simulation studies confidence
+intervals built from it undercovered substantially (pairwise
+co-assignment intervals covered ~45-48 percent at a nominal 95 percent).
 }
 \examples{
 set.seed(123)

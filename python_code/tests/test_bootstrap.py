@@ -1,7 +1,14 @@
 import numpy as np
 import pytest
 
-from dynamic_multiplex import bootstrap_multilayer, community_ci
+from dynamic_multiplex import (
+    bootstrap_multilayer,
+    co_assignment_ci,
+    community_est,
+    extract_meta_membership,
+    fit_multilayer_identity_ties,
+    fit_multilayer_jaccard,
+)
 
 
 def _make_planted_layers(n_nodes=30, n_layers=3, seed=42):
@@ -31,7 +38,7 @@ class TestBootstrapMultilayer:
         assert len(result.co_assignment) == 3
         assert len(result.node_stability) == 3
         assert len(result.modularity_samples) == 3
-        assert len(result.community_count_samples) == 3
+        assert len(result.community_count_reproducibility) == 3
         assert result.point_estimate is not None
 
     def test_co_assignment_shape_and_range(self):
@@ -63,13 +70,13 @@ class TestBootstrapMultilayer:
         for mod_s in result.modularity_samples:
             assert len(mod_s) == result.n_boot
 
-    def test_community_count_samples_positive(self):
+    def test_community_count_reproducibility_range(self):
         layers = _make_planted_layers(n_nodes=20, n_layers=2)
         result = bootstrap_multilayer(layers, fit_type="jaccard", n_boot=5, seed=5)
 
-        for count_s in result.community_count_samples:
-            assert len(count_s) == result.n_boot
-            assert np.all(count_s >= 1)
+        r = result.community_count_reproducibility
+        assert len(r) == 2
+        assert all(0.0 <= x <= 1.0 for x in r)
 
     def test_all_fit_types(self):
         layers = _make_planted_layers(n_nodes=20, n_layers=2)
@@ -97,66 +104,56 @@ class TestBootstrapMultilayer:
         assert result.point_estimate["layer_links"].shape[0] == 1
 
 
-class TestCommunityCi:
+class TestCommunityEst:
     def test_basic_output_structure(self):
         layers = _make_planted_layers(n_nodes=20, n_layers=3)
         boot = bootstrap_multilayer(layers, fit_type="jaccard", n_boot=10, seed=10)
-        ci = community_ci(boot)
+        est = community_est(boot)
 
-        assert "modularity_ci" in ci
-        assert "community_count_ci" in ci
-        assert "mean_node_stability" in ci
-        assert "node_stability" in ci
-        assert "co_assignment" in ci
+        assert "modularity_ci" not in est
+        assert "community_count_ci" not in est
+        assert "community_count" in est
+        assert "report" in est
+        assert "mean_node_stability" in est
+        assert "node_stability" in est
+        assert "co_assignment" in est
 
-        # Check DataFrame shapes
-        assert ci["modularity_ci"].shape[0] == 3
-        assert ci["community_count_ci"].shape[0] == 3
-        assert ci["mean_node_stability"].shape[0] == 3
+        # Check shapes
+        assert est["community_count"].shape[0] == 3
+        assert len(est["report"]) == 3
+        assert est["mean_node_stability"].shape[0] == 3
 
-    def test_ci_columns(self):
+    def test_columns(self):
         layers = _make_planted_layers(n_nodes=20, n_layers=2)
         boot = bootstrap_multilayer(layers, fit_type="jaccard", n_boot=10, seed=11)
-        ci = community_ci(boot)
+        est = community_est(boot)
 
-        for df_name in ["modularity_ci", "community_count_ci"]:
-            df = ci[df_name]
-            assert set(df.columns) == {"layer", "estimate", "lower", "upper"}
+        df = est["community_count"]
+        assert set(df.columns) == {"layer", "estimate", "reproducibility"}
 
-    def test_lower_le_upper(self):
+    def test_reproducibility_range(self):
         layers = _make_planted_layers(n_nodes=20, n_layers=2)
         boot = bootstrap_multilayer(layers, fit_type="jaccard", n_boot=20, seed=12)
-        ci = community_ci(boot)
+        est = community_est(boot)
 
-        mod = ci["modularity_ci"]
-        valid = mod.dropna(subset=["lower", "upper"])
-        assert (valid["lower"] <= valid["upper"]).all()
+        r = est["community_count"]["reproducibility"]
+        assert (r >= 0).all() and (r <= 1).all()
 
-        count = ci["community_count_ci"]
-        assert (count["lower"] <= count["upper"]).all()
-
-    def test_custom_alpha(self):
+    def test_report_reads_as_reproducibility_not_interval(self):
         layers = _make_planted_layers(n_nodes=20, n_layers=2)
-        boot = bootstrap_multilayer(layers, fit_type="jaccard", n_boot=20, seed=13)
+        boot = bootstrap_multilayer(layers, fit_type="jaccard", n_boot=10, seed=13)
+        est = community_est(boot)
 
-        ci_90 = community_ci(boot, alpha=0.10)
-        ci_50 = community_ci(boot, alpha=0.50)
-
-        # Wider alpha should give narrower intervals
-        for i in range(2):
-            width_90 = (ci_90["modularity_ci"].iloc[i]["upper"] -
-                        ci_90["modularity_ci"].iloc[i]["lower"])
-            width_50 = (ci_50["modularity_ci"].iloc[i]["upper"] -
-                        ci_50["modularity_ci"].iloc[i]["lower"])
-            if not np.isnan(width_90) and not np.isnan(width_50):
-                assert width_50 <= width_90 + 1e-10
+        assert all("reproduced in" in s for s in est["report"])
+        # no bracketed interval anywhere in the report
+        assert not any("[" in s for s in est["report"])
 
     def test_mean_stability_in_range(self):
         layers = _make_planted_layers(n_nodes=20, n_layers=2)
         boot = bootstrap_multilayer(layers, fit_type="jaccard", n_boot=10, seed=14)
-        ci = community_ci(boot)
+        est = community_est(boot)
 
-        stab = ci["mean_node_stability"]
+        stab = est["mean_node_stability"]
         assert (stab["mean_stability"] >= 0).all()
         assert (stab["mean_stability"] <= 1).all()
 
@@ -166,4 +163,166 @@ class TestCommunityCi:
         # Manually set n_boot to 0 to simulate failure
         boot.n_boot = 0
         with pytest.raises(ValueError, match="No completed"):
-            community_ci(boot)
+            community_est(boot)
+
+
+class TestCoAssignmentCi:
+    def test_structure_and_bounds(self):
+        layers = _make_planted_layers(n_nodes=20, n_layers=2)
+        boot = bootstrap_multilayer(layers, fit_type="jaccard", n_boot=10, seed=21)
+        pci = co_assignment_ci(boot)
+
+        assert len(pci) == 2
+        for layer_ci in pci:
+            est = layer_ci["estimate"]
+            lo = layer_ci["lower"]
+            hi = layer_ci["upper"]
+            assert est.shape == (20, 20)
+            assert lo.shape == (20, 20)
+            assert hi.shape == (20, 20)
+            # bounds ordered and inside [0, 1]
+            off = ~np.eye(20, dtype=bool)
+            assert (lo[off] <= est[off] + 1e-12).all()
+            assert (est[off] <= hi[off] + 1e-12).all()
+            assert (lo >= 0).all() and (hi <= 1).all()
+            # diagonal is degenerate at 1
+            assert (np.diag(lo) == 1).all()
+            assert (np.diag(hi) == 1).all()
+
+    def test_narrower_with_smaller_alpha_inverse(self):
+        layers = _make_planted_layers(n_nodes=20, n_layers=2)
+        boot = bootstrap_multilayer(layers, fit_type="jaccard", n_boot=20, seed=22)
+        pci_95 = co_assignment_ci(boot, alpha=0.05)
+        pci_50 = co_assignment_ci(boot, alpha=0.50)
+        off = ~np.eye(20, dtype=bool)
+        w95 = (pci_95[0]["upper"] - pci_95[0]["lower"])[off]
+        w50 = (pci_50[0]["upper"] - pci_50[0]["lower"])[off]
+        assert (w50 <= w95 + 1e-12).all()
+
+    def test_zero_boot_raises(self):
+        layers = _make_planted_layers(n_nodes=15, n_layers=2)
+        boot = bootstrap_multilayer(layers, fit_type="jaccard", n_boot=5, seed=23)
+        boot.n_boot = 0
+        with pytest.raises(ValueError):
+            co_assignment_ci(boot)
+
+
+class TestEdgeResampling:
+    def test_edge_bootstrap_runs(self):
+        layers = _make_planted_layers(n_nodes=20, n_layers=2)
+        boot = bootstrap_multilayer(
+            layers, fit_type="jaccard", n_boot=6, seed=41)
+        assert boot.n_boot == 6
+        assert (boot.co_assignment[0] >= 0).all()
+        assert (boot.co_assignment[0] <= 1).all()
+
+    def test_no_resample_argument(self):
+        # the legacy weights scheme was removed entirely in 1.1.0
+        with pytest.raises(TypeError):
+            bootstrap_multilayer(
+                _make_planted_layers(n_nodes=15, n_layers=2),
+                fit_type="jaccard", n_boot=3, resample="weights")
+
+
+class TestMetaCommunities:
+    def test_fit_returns_meta_communities(self):
+        layers = _make_planted_layers(n_nodes=20, n_layers=4)
+        fit = fit_multilayer_jaccard(layers, algorithm="leiden")
+        assert "meta_communities" in fit
+        assert fit["meta_communities"] is not None
+        assert len(fit["meta_communities"]) == 4
+        assert all(len(v) == 20 for v in fit["meta_communities"])
+        # Meta communities cannot exceed the total per-layer communities.
+        total_layer_comms = sum(
+            len(lc.communities) for lc in fit["layer_communities"]
+        )
+        all_meta = np.concatenate(fit["meta_communities"])
+        assert len(np.unique(all_meta)) <= total_layer_comms
+
+    def test_extract_meta_membership(self):
+        layers = _make_planted_layers(n_nodes=20, n_layers=3)
+        fit = fit_multilayer_jaccard(layers, algorithm="leiden")
+        mm = extract_meta_membership(fit)
+        assert mm is fit["meta_communities"]
+        assert len(mm) == 3
+
+    def test_extract_meta_membership_missing_raises(self):
+        with pytest.raises(ValueError, match="meta_communities"):
+            extract_meta_membership({"layer_communities": []})
+
+    def test_custom_layer_links_flow_through(self):
+        layers = _make_planted_layers(n_nodes=20, n_layers=4)
+        links = [{"from": 1, "to": 3, "weight": 1.0},
+                 {"from": 2, "to": 4, "weight": 1.0}]
+        fit = fit_multilayer_jaccard(
+            layers, algorithm="leiden", layer_links=links
+        )
+        assert len(fit["meta_communities"]) == 4
+        assert all(np.all(v >= 1) for v in fit["meta_communities"])
+
+    def test_bootstrap_and_cis_run_on_meta(self):
+        layers = _make_planted_layers(n_nodes=20, n_layers=3)
+        boot = bootstrap_multilayer(
+            layers, fit_type="jaccard", algorithm="leiden",
+            n_boot=6, seed=123,
+        )
+        assert boot.n_boot == 6
+        est = community_est(boot)
+        pe = boot.point_estimate["meta_communities"]
+        expected = [len(np.unique(v)) for v in pe]
+        assert list(est["community_count"]["estimate"]) == expected
+        ci = co_assignment_ci(boot)
+        assert len(ci) == 3
+
+    def test_identity_fit_falls_back_without_error(self):
+        layers = _make_planted_layers(n_nodes=20, n_layers=3)
+        fit = fit_multilayer_identity_ties(layers, algorithm="leiden")
+        # Identity now uses the node-level Mucha multislice; meta_ids is None.
+        assert fit["meta_ids"] is None
+        assert len(fit["meta_communities"]) == 3
+        assert all(len(v) == 20 for v in fit["meta_communities"])
+
+    def test_identity_bootstrap_runs(self):
+        layers = _make_planted_layers(n_nodes=20, n_layers=2)
+        boot = bootstrap_multilayer(
+            layers, fit_type="identity", algorithm="leiden",
+            n_boot=3, seed=9,
+        )
+        assert boot.n_boot == 3
+
+
+class TestMultisliceIdentity:
+    def test_identity_meta_shapes(self):
+        layers = _make_planted_layers(n_nodes=20, n_layers=4)
+        fit = fit_multilayer_identity_ties(layers, algorithm="leiden")
+        assert fit["meta_ids"] is None
+        assert len(fit["meta_communities"]) == 4
+        assert all(len(v) == 20 for v in fit["meta_communities"])
+
+    def test_multislice_not_degenerate(self):
+        # A single supra-graph detection should recover more than one
+        # meta-community overall (not collapse to one giant community).
+        layers = _make_planted_layers(n_nodes=30, n_layers=4)
+        fit = fit_multilayer_identity_ties(layers, algorithm="leiden")
+        all_meta = np.concatenate(fit["meta_communities"])
+        assert len(np.unique(all_meta)) > 1
+
+    def test_custom_layer_links_change_partition(self):
+        # All-to-all coupling ties nodes across every layer pair, so the meta
+        # partition differs from the adjacent-only default coupling.
+        layers = _make_planted_layers(n_nodes=25, n_layers=4)
+        fit_default = fit_multilayer_identity_ties(layers, algorithm="leiden")
+
+        n = 4
+        all_to_all = [
+            {"from": a, "to": b, "weight": 1.0}
+            for a in range(1, n + 1)
+            for b in range(a + 1, n + 1)
+        ]
+        fit_full = fit_multilayer_identity_ties(
+            layers, algorithm="leiden", layer_links=all_to_all
+        )
+
+        default_meta = [v.tolist() for v in fit_default["meta_communities"]]
+        full_meta = [v.tolist() for v in fit_full["meta_communities"]]
+        assert default_meta != full_meta

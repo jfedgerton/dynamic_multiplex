@@ -3,6 +3,7 @@ from __future__ import annotations
 from .multilayer_utils import (
     add_community_self_loops,
     community_overlap_edges,
+    detect_interlayer_communities,
     fit_layer_communities,
     make_layer_links,
     prepare_multilayer_graphs,
@@ -11,7 +12,7 @@ from .multilayer_utils import (
 
 def fit_multilayer_jaccard(
     layers,
-    algorithm: str = "louvain",
+    algorithm: str = "leiden",
     layer_links=None,
     min_similarity: float = 0.0,
     resolution_parameter: float = 1.0,
@@ -19,7 +20,21 @@ def fit_multilayer_jaccard(
     add_self_loops: bool = True,
     self_loop_multiplier: float = 1.0,
     objective: str | None = None,
+    seed: int | None = 123,
 ):
+    """Fit per-layer communities and interlayer weighted Jaccard ties.
+
+    Returns
+    -------
+    dict
+        Keys include ``layer_communities`` (per-layer detection, detected
+        independently), ``meta_communities`` (the cross-layer tracked
+        partition from the second-stage detection -- one array per layer of
+        each node's meta-community, reflecting the interlayer ties and any
+        custom ``layer_links``, and the membership validated by
+        ``bootstrap_multilayer``; see ``extract_meta_membership``),
+        ``meta_ids``, ``interlayer_ties``, and ``layer_links``.
+    """
     graph_layers = prepare_multilayer_graphs(layers, directed=directed)
     links = make_layer_links(len(graph_layers), layer_links)
     fit = fit_layer_communities(
@@ -28,6 +43,7 @@ def fit_multilayer_jaccard(
         resolution_parameter=resolution_parameter,
         directed=directed,
         objective=objective,
+        seed=seed,
     )
 
     interlayer_ties = community_overlap_edges(
@@ -47,10 +63,23 @@ def fit_multilayer_jaccard(
             directed=directed,
         )
 
+    # Second-stage detection: group per-layer communities into cross-layer
+    # meta-communities from the interlayer ties (the tracked partition).
+    meta = detect_interlayer_communities(
+        layer_communities=fit,
+        interlayer_ties=interlayer_ties,
+        algorithm=algorithm,
+        resolution_parameter=resolution_parameter,
+        seed=seed,
+    )
+
     return {
         "algorithm": algorithm,
         "layer_communities": fit,
+        "meta_communities": meta["membership"],
+        "meta_ids": meta["meta_ids"],
         "layer_links": links,
         "interlayer_ties": interlayer_ties,
         "directed": directed,
+        "node_labels": graph_layers[0].graph.get("node_labels"),
     }

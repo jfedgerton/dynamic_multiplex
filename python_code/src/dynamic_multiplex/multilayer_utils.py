@@ -32,11 +32,47 @@ def _as_graph(layer, directed: bool) -> nx.Graph | nx.DiGraph:
     return graph
 
 
-def prepare_multilayer_graphs(layers: list, directed: bool = False) -> list[nx.Graph | nx.DiGraph]:
+def prepare_multilayer_graphs(
+    layers: list,
+    directed: bool = False,
+    require_same_nodes: bool = True,
+) -> list[nx.Graph | nx.DiGraph]:
     if not isinstance(layers, list) or len(layers) < 2:
         raise ValueError("`layers` must be a list with at least two network layers.")
 
-    return [_as_graph(layer, directed=directed) for layer in layers]
+    graphs = [_as_graph(layer, directed=directed) for layer in layers]
+
+    # Validate a shared node universe across all layers. Layers with
+    # different node sets (or adjacency matrices of different sizes) cannot
+    # be coupled: interlayer ties and meta-communities assume node i in one
+    # layer is node i in every other layer.
+    node_sets = [set(g.nodes()) for g in graphs]
+    aligned = all(ns == node_sets[0] for ns in node_sets[1:])
+    if not aligned:
+        if require_same_nodes:
+            raise ValueError(
+                "All layers must share the same node set. "
+                "Found layers with different nodes; align the node universe "
+                "(adding isolates where needed) before fitting, or, for "
+                "identity ties only, pass allow_unequal_nodes=True."
+            )
+        # Unequal universes explicitly allowed (identity ties): keep raw
+        # labels so nodes match across layers by name; no canonical remap.
+        return graphs
+
+    # Normalize arbitrary node labels (strings, non-contiguous integers) to
+    # canonical 0..n-1 integers for internal processing, eliminating numeric
+    # +1 assumptions on raw labels. The original labels are preserved on each
+    # graph as ``graph.graph["node_labels"]`` (index i -> original label of
+    # internal node i, i.e. of node id i+1 in the returned membership).
+    reference_nodes = sorted(node_sets[0], key=lambda x: (type(x).__name__, x))
+    if reference_nodes != list(range(len(reference_nodes))):
+        mapping = {node: i for i, node in enumerate(reference_nodes)}
+        graphs = [nx.relabel_nodes(g, mapping, copy=True) for g in graphs]
+        for g in graphs:
+            g.graph["node_labels"] = list(reference_nodes)
+
+    return graphs
 
 
 def make_layer_links(n_layers: int, layer_links: list[dict] | pd.DataFrame | None = None) -> pd.DataFrame:
@@ -64,10 +100,11 @@ def make_layer_links(n_layers: int, layer_links: list[dict] | pd.DataFrame | Non
 
 def fit_layer_communities(
     graph_layers: list[nx.Graph | nx.DiGraph],
-    algorithm: str = "louvain",
+    algorithm: str = "leiden",
     resolution_parameter: float = 1.0,
     directed: bool = False,
     objective: str | None = None,
+    seed: int | None = 123,
 ) -> list[LayerCommunityFit]:
     algorithm = algorithm.lower()
     if algorithm not in {"louvain", "leiden"}:
@@ -106,7 +143,14 @@ def fit_layer_communities(
                 raise ImportError("Install optional dependency `python-louvain` for Louvain support.") from exc
 
             g_input = g.to_undirected() if directed else g
-            partition = community_louvain.best_partition(g_input, weight="weight", resolution=resolution_parameter)
+            # Seeded detection (default 123) so the partition is a deterministic
+            # function of the graph: bootstrap variability then comes from the
+            # resampled data, not from solver tie-breaking. Pass seed=None for
+            # unseeded (non-reproducible) detection.
+            partition = community_louvain.best_partition(
+                g_input, weight="weight", resolution=resolution_parameter,
+                random_state=seed,
+            )
             communities = {}
             for node, comm in partition.items():
                 node_id = node + 1 if zero_indexed else node
@@ -144,11 +188,13 @@ def fit_layer_communities(
                 ig_graph.es["weight"] = weights
 
             partition_type = leidenalg.CPMVertexPartition if effective_objective == "cpm" else leidenalg.RBConfigurationVertexPartition
+            # Seeded detection for reproducibility (see the Louvain branch).
             partition = leidenalg.find_partition(
                 ig_graph,
                 partition_type,
                 weights=weights if weights else None,
                 resolution_parameter=resolution_parameter,
+                seed=seed,
             )
 
             membership = {}
@@ -313,3 +359,323 @@ def add_community_self_loops(
         return edge_df
 
     return pd.concat([edge_df, pd.DataFrame(rows)], ignore_index=True)
+
+
+def detect_interlayer_communities(
+    layer_communities: list[LayerCommunityFit],
+    interlayer_ties: pd.DataFrame,
+    algorithm: str = "leiden",
+    resolution_parameter: float = 1.0,
+    seed: int | None = 123,
+) -> dict:
+    """Detect cross-layer (meta) communities from interlayer ties.
+
+    Second-stage community detection. Treats each per-layer community as a
+    node in a "community graph" whose edges are the interlayer similarity
+    ties (plus the community self-loops), then runs community detection on
+    that graph to group per-layer communities into cross-layer
+    *meta-communities*. This is the step that makes custom ``layer_links``
+    and the interlayer coupling actually affect the returned membership.
+
+    Parameters
+    ----------
+    layer_communities : list[LayerCommunityFit]
+        Per-layer detection results (each with ``membership`` and
+        ``communities``).
+    interlayer_ties : pandas.DataFrame
+        Interlayer ties with columns ``from_layer``, ``to_layer``,
+        ``from_community``, ``to_community``, ``weighted_similarity``
+        (including self-loops).
+    algorithm : str
+        Second-stage algorithm: ``"louvain"`` or ``"leiden"`` (match the
+        per-layer algorithm).
+    resolution_parameter : float
+        Resolution for the second-stage detection.
+
+    Returns
+    -------
+    dict
+        Dictionary with keys:
+        - ``meta_ids``: dict mapping each supernode key ``"L<layer>C<community>"``
+          to its meta-community id (or ``None`` in the fallback path).
+        - ``membership``: list with one ``np.ndarray`` per layer giving each
+          node's meta-community assignment (node order).
+    """
+    algorithm = algorithm.lower()
+    n_layers = len(layer_communities)
+
+    def key(layer: int, comm: int) -> str:
+        return f"L{layer}C{comm}"
+
+    # The second stage needs community-level ties. Node-level identity ties
+    # have different columns (from_layer, to_layer, node, layer_weight) and are
+    # not handled here; fall back to per-layer communities made globally
+    # distinct (offset each layer's labels), i.e. no cross-layer merging.
+    has_comm_ties = (
+        interlayer_ties is not None
+        and len(interlayer_ties) > 0
+        and {"from_community", "to_community", "weighted_similarity"}.issubset(
+            interlayer_ties.columns
+        )
+    )
+    if not has_comm_ties:
+        membership = []
+        offset = 0
+        for t in range(n_layers):
+            mem_dict = layer_communities[t].membership
+            node_ids = sorted(mem_dict.keys())
+            mem = np.array([mem_dict[nid] for nid in node_ids], dtype=int)
+            membership.append(mem + offset)
+            offset += int(mem.max()) if mem.size else 0
+        return {"meta_ids": None, "membership": membership}
+
+    # Enumerate every per-layer community as a super-node (1-indexed layers).
+    supernodes: list[str] = []
+    seen = set()
+    for t in range(n_layers):
+        for comm_id in layer_communities[t].communities.keys():
+            k = key(t + 1, int(comm_id))
+            if k not in seen:
+                seen.add(k)
+                supernodes.append(k)
+
+    # Build the community graph from interlayer ties (incl. self-loops).
+    edges = []  # (from_key, to_key, weight)
+    for _, row in interlayer_ties.iterrows():
+        edges.append(
+            (
+                key(int(row["from_layer"]), int(row["from_community"])),
+                key(int(row["to_layer"]), int(row["to_community"])),
+                float(row["weighted_similarity"]),
+            )
+        )
+
+    if len(edges) == 0:
+        # No ties: every per-layer community is its own meta-community.
+        meta_ids = {k: i + 1 for i, k in enumerate(supernodes)}
+    else:
+        if algorithm == "louvain":
+            try:
+                import community as community_louvain
+                import networkx as nx
+            except ImportError as exc:
+                raise ImportError(
+                    "Install optional dependency `python-louvain` for Louvain support."
+                ) from exc
+
+            cg = nx.Graph()
+            cg.add_nodes_from(supernodes)
+            for u, v, w in edges:
+                if cg.has_edge(u, v):
+                    cg[u][v]["weight"] += w
+                else:
+                    cg.add_edge(u, v, weight=w)
+            partition = community_louvain.best_partition(
+                cg, weight="weight", resolution=resolution_parameter,
+                random_state=seed,
+            )
+            meta_ids = {node: comm + 1 for node, comm in partition.items()}
+        else:
+            try:
+                import igraph as ig
+                import leidenalg
+            except ImportError as exc:
+                raise ImportError(
+                    "Install optional dependencies `python-igraph` and `leidenalg` "
+                    "for Leiden support."
+                ) from exc
+
+            node_to_idx = {k: i for i, k in enumerate(supernodes)}
+            ig_edges = [(node_to_idx[u], node_to_idx[v]) for u, v, _ in edges]
+            weights = [w for _, _, w in edges]
+            ig_graph = ig.Graph(n=len(supernodes), edges=ig_edges, directed=False)
+            ig_graph.es["weight"] = weights
+            partition = leidenalg.find_partition(
+                ig_graph,
+                leidenalg.RBConfigurationVertexPartition,
+                weights=weights,
+                resolution_parameter=resolution_parameter,
+                seed=seed,
+            )
+            meta_ids = {
+                supernodes[idx]: comm + 1
+                for idx, comm in enumerate(partition.membership)
+            }
+
+    # Map each node to its meta-community, per layer (node order).
+    membership = []
+    for t in range(n_layers):
+        mem_dict = layer_communities[t].membership
+        node_ids = sorted(mem_dict.keys())
+        mem = np.array(
+            [meta_ids[key(t + 1, int(mem_dict[nid]))] for nid in node_ids],
+            dtype=int,
+        )
+        membership.append(mem)
+
+    return {"meta_ids": meta_ids, "membership": membership}
+
+
+def detect_multislice_communities(
+    graph_layers: list[nx.Graph | nx.DiGraph],
+    interlayer_ties: pd.DataFrame,
+    algorithm: str = "leiden",
+    omega: float = 1.0,
+    resolution_parameter: float = 1.0,
+    seed: int | None = 123,
+) -> list[np.ndarray]:
+    """Multislice (Mucha) meta-communities for node-identity coupling.
+
+    Node-level second stage for the identity specification. Builds a single
+    supra-graph by stacking the layers (intra-layer edges are each layer's own
+    adjacency) and adding interlayer identity edges (each node tied to its own
+    copies in the coupled layers, weighted by the layer-link weight), then runs
+    one community detection on the whole supra-graph. This is Mucha et al.
+    (2010) multislice modularity with the coupling given by ``layer_links``: a
+    node's meta-community can be pulled across layers through the identity ties.
+
+    Parameters
+    ----------
+    graph_layers : list[networkx.Graph | networkx.DiGraph]
+        Per-layer graphs, as produced by ``prepare_multilayer_graphs``.
+    interlayer_ties : pandas.DataFrame
+        Node-level identity ties (columns ``from_layer``, ``to_layer``,
+        ``node``, ``layer_weight``).
+    algorithm : str
+        ``"louvain"`` or ``"leiden"`` for the supra-graph detection.
+    omega : float
+        Interlayer coupling strength (Mucha's omega). Multiplies the
+        interlayer identity-edge weights on top of any ``layer_links`` weights.
+        Larger ``omega`` couples layers more strongly and, past a point,
+        collapses everything into one meta-community; smaller ``omega``
+        decouples toward independent per-layer detection.
+    resolution_parameter : float
+        Resolution for the supra-graph detection (Mucha's modularity
+        resolution). Larger values yield more, smaller meta-communities.
+
+    Returns
+    -------
+    list[np.ndarray]
+        One array per layer giving each node's meta-community assignment
+        (node order).
+    """
+    algorithm = algorithm.lower()
+    n_layers = len(graph_layers)
+
+    def vkey(layer: int, node) -> str:
+        return f"L{layer}N{node}"
+
+    # Per-layer canonical node ids: match the ids used in the per-layer
+    # membership dict (node + 1 when the layer is zero-indexed, else the node
+    # name). The identity ties' `node` values are built the same way in
+    # fit_multilayer_identity_ties, so intra and inter keys line up.
+    layer_nodes = []  # per layer: list of (graph_node, canonical_id) in node order
+    for g in graph_layers:
+        zero = _is_zero_indexed(g)
+        nodes_sorted = sorted(g.nodes())
+        layer_nodes.append(
+            [(n, (n + 1 if zero else n)) for n in nodes_sorted]
+        )
+
+    # Supra vertices: one per (layer, node), layers 1-indexed.
+    supra: list[str] = []
+    seen = set()
+    for t in range(n_layers):
+        for _, cid in layer_nodes[t]:
+            k = vkey(t + 1, cid)
+            if k not in seen:
+                seen.add(k)
+                supra.append(k)
+
+    edges = []  # (from_key, to_key, weight)
+
+    # Intra-layer edges: each layer's own adjacency (original network).
+    for t in range(n_layers):
+        g = graph_layers[t]
+        cid_map = {n: cid for n, cid in layer_nodes[t]}
+        for u, v, d in g.edges(data=True):
+            edges.append(
+                (
+                    vkey(t + 1, cid_map[u]),
+                    vkey(t + 1, cid_map[v]),
+                    float(d.get("weight", 1.0)),
+                )
+            )
+
+    # Interlayer edges: identity ties (node to its own copy), weighted by omega.
+    # Access columns directly (not iterrows, which upcasts a mixed-dtype row to
+    # a single dtype and would turn integer node ids into floats).
+    if interlayer_ties is not None and len(interlayer_ties) > 0:
+        from_layer_col = interlayer_ties["from_layer"].tolist()
+        to_layer_col = interlayer_ties["to_layer"].tolist()
+        node_col = interlayer_ties["node"].tolist()
+        if "layer_weight" in interlayer_ties.columns:
+            weight_col = interlayer_ties["layer_weight"].tolist()
+        else:
+            weight_col = [1.0] * len(node_col)
+        for fl, tl, nd, w in zip(from_layer_col, to_layer_col, node_col, weight_col):
+            edges.append(
+                (vkey(int(fl), nd), vkey(int(tl), nd), float(w) * omega)
+            )
+
+    # Single detection on the supra-graph.
+    if len(edges) == 0:
+        meta = {k: i + 1 for i, k in enumerate(supra)}
+    elif algorithm == "louvain":
+        try:
+            import community as community_louvain
+        except ImportError as exc:
+            raise ImportError(
+                "Install optional dependency `python-louvain` for Louvain support."
+            ) from exc
+
+        cg = nx.Graph()
+        cg.add_nodes_from(supra)
+        for u, v, w in edges:
+            if cg.has_edge(u, v):
+                cg[u][v]["weight"] += w
+            else:
+                cg.add_edge(u, v, weight=w)
+        partition = community_louvain.best_partition(
+            cg, weight="weight", random_state=seed, resolution=resolution_parameter
+        )
+        meta = {node: comm + 1 for node, comm in partition.items()}
+    else:
+        try:
+            import igraph as ig
+            import leidenalg
+        except ImportError as exc:
+            raise ImportError(
+                "Install optional dependencies `python-igraph` and `leidenalg` "
+                "for Leiden support."
+            ) from exc
+
+        node_to_idx = {k: i for i, k in enumerate(supra)}
+        ig_edges = [(node_to_idx[u], node_to_idx[v]) for u, v, _ in edges]
+        weights = [w for _, _, w in edges]
+        ig_graph = ig.Graph(n=len(supra), edges=ig_edges, directed=False)
+        ig_graph.es["weight"] = weights
+        # n_iterations=3 mirrors the R cluster_leiden call and gives the
+        # supra-graph optimizer enough refinement passes to avoid collapsing a
+        # whole slice into a single community.
+        partition = leidenalg.find_partition(
+            ig_graph,
+            leidenalg.RBConfigurationVertexPartition,
+            weights=weights,
+            seed=seed,
+            n_iterations=3,
+            resolution_parameter=resolution_parameter,
+        )
+        meta = {
+            supra[idx]: comm + 1 for idx, comm in enumerate(partition.membership)
+        }
+
+    # Map back to per-layer node order.
+    membership = []
+    for t in range(n_layers):
+        arr = np.array(
+            [meta[vkey(t + 1, cid)] for _, cid in layer_nodes[t]],
+            dtype=int,
+        )
+        membership.append(arr)
+    return membership

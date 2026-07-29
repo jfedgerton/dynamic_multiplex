@@ -18,8 +18,9 @@
 #' @param resolution_parameter Leiden resolution parameter.
 #'
 #' @param directed Logical; if `TRUE`, build directed graphs from adjacency
-#' matrices. For `algorithm = "louvain"`, directed layers are collapsed to
-#' undirected weighted graphs before community detection.
+#' matrices. Directed layers are collapsed to undirected weighted graphs before
+#' community detection (igraph supports Leiden on undirected graphs only;
+#' a warning is issued for `algorithm = "leiden"`).
 #'
 #' @param add_self_loops Logical; if `TRUE`, add intra-layer community
 #' self-loop ties after similarity computation to mimic aggregation behavior.
@@ -31,7 +32,35 @@
 #'
 #' @param objective One of "cpm" or "modularity" for directed networks only
 #'
-#' @return A list with detected communities per layer and interlayer ties.
+#' @param seed Optional integer seed for reproducible community detection.
+#' When supplied, the global RNG state is saved, the RNG is seeded for the
+#' duration of the call, and the previous state is restored on exit, so the
+#' caller's random number stream (e.g. bootstrap resampling) is unaffected.
+#' Defaults to `NULL` (detection inherits the caller's RNG stream, matching
+#' previous behavior; call `set.seed()` beforehand for reproducibility).
+#'
+#' @return A list of class \code{"multilayer_community_fit"} with components:
+#'   \describe{
+#'     \item{layer_communities}{Per-layer community detection (each with
+#'       \code{membership} and \code{communities}). Detected independently
+#'       per layer.}
+#'     \item{meta_communities}{The cross-layer tracked partition from the
+#'       second-stage detection: one integer vector per layer giving each
+#'       node's meta-community. This is the membership that reflects the
+#'       interlayer ties and any custom \code{layer_links}, and the one
+#'       validated by \code{\link{bootstrap_multilayer}}. See
+#'       \code{\link{extract_meta_membership}}.}
+#'     \item{interlayer_ties}{Interlayer similarity edges between communities
+#'       (plus self-loops).}
+#'     \item{layer_links}{The layer connectivity used.}
+#'   }
+#'
+#' @section Directed networks:
+#' Directed layers are stored as directed graphs and the interlayer self-loop
+#' weighting is directed-aware, but community \emph{detection} collapses
+#' directed layers to weighted undirected graphs on both Louvain and Leiden
+#' (igraph's detectors are undirected-only). For detection that respects edge
+#' direction, use the Python package with \code{algorithm = "leiden"}.
 #'
 #' @examples
 #' set.seed(123)
@@ -56,11 +85,19 @@ fit_multilayer_jaccard <- function(
     directed = FALSE,
     add_self_loops = TRUE,
     self_loop_multiplier = 1,
-    objective = NULL
+    objective = NULL,
+    seed = NULL
   ) {
 
   # Check arguments ----
   algorithm <- match.arg(algorithm)
+
+  # Scoped seed for reproducible detection (restores caller RNG state) ----
+  if (!is.null(seed)) {
+    rng_state <- save_rng_state()
+    on.exit(restore_rng_state(rng_state), add = TRUE)
+    set.seed(seed)
+  }
 
   # Prepare graph layers and layer links ----
   graph_layers <- prepare_multilayer_graphs(layers, directed = directed)
@@ -79,6 +116,7 @@ fit_multilayer_jaccard <- function(
   interlayer_ties <- community_overlap_edges(
     fit = fit,
     layer_links = links,
+    graph_layers = graph_layers,
     metric = "jaccard",
     min_similarity = min_similarity
   )
@@ -96,10 +134,21 @@ fit_multilayer_jaccard <- function(
   }
 
   # Compile multilayer community fit object ----
+  # second-stage detection: group per-layer communities into cross-layer
+  # meta-communities from the interlayer ties (the tracked partition) ----
+  meta <- detect_interlayer_communities(
+    layer_communities = fit,
+    interlayer_ties = interlayer_ties,
+    algorithm = algorithm,
+    resolution_parameter = resolution_parameter
+  )
+
   multilayer_jaccard <- structure(
     list(
       algorithm = algorithm,
       layer_communities = fit,
+      meta_communities = meta$membership,
+      meta_ids = meta$meta_ids,
       layer_links = links,
       interlayer_ties = interlayer_ties,
       directed = directed

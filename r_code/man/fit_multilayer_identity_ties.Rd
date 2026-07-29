@@ -9,8 +9,11 @@ fit_multilayer_identity_ties(
   algorithm = c("louvain", "leiden"),
   layer_links = NULL,
   resolution_parameter = 1,
+  omega = 1,
   directed = FALSE,
-  objective = NULL
+  objective = NULL,
+  seed = NULL,
+  allow_unequal_nodes = FALSE
 )
 }
 \arguments{
@@ -22,25 +25,78 @@ fit_multilayer_identity_ties(
 with columns \code{from}, \code{to}, and optional \code{weight}. If \code{NULL}, adjacent layers
 are connected in sequence.}
 
-\item{resolution_parameter}{Leiden resolution parameter.}
+\item{resolution_parameter}{Leiden resolution parameter. Also forwarded to
+the multislice supra-graph detection as Mucha's modularity resolution
+(larger values yield more, smaller meta-communities).}
+
+\item{omega}{Interlayer coupling strength for the multislice supra-graph
+(Mucha's omega). Multiplies the interlayer identity-edge weights on top of
+any \code{layer_links} weights. Larger \code{omega} couples layers more strongly and,
+past a point, collapses everything into one meta-community; smaller \code{omega}
+decouples toward independent per-layer detection. Use to probe the
+omega-sensitivity / resolution-limit behavior of multislice modularity.}
 
 \item{directed}{Logical; if \code{TRUE}, build directed graphs from adjacency
-matrices. For \code{algorithm = "louvain"}, directed layers are collapsed to
-undirected weighted graphs before community detection.}
+matrices. Directed layers are collapsed to undirected weighted graphs before
+community detection (igraph supports Leiden on undirected graphs only;
+a warning is issued for \code{algorithm = "leiden"}).}
 
 \item{objective}{One of "cpm" or "modularity" for directed networks only}
+
+\item{seed}{Optional integer seed for reproducible community detection.
+When supplied, the global RNG state is saved, the RNG is seeded for the
+duration of the call, and the previous state is restored on exit, so the
+caller's random number stream (e.g. bootstrap resampling) is unaffected.
+Defaults to \code{NULL} (detection inherits the caller's RNG stream, matching
+previous behavior; call \code{set.seed()} beforehand for reproducibility).}
+
+\item{allow_unequal_nodes}{Logical; if \code{TRUE}, layers may contain
+different node sets (nodes entering or exiting the system), and only nodes
+present in both layers of a linked pair receive interlayer edges. Defaults
+to \code{FALSE}: layers must share the same node universe, as in the other fit
+functions.}
 }
 \value{
-A list with detected communities per layer and node-level interlayer
-ties.
+A list of class \code{"multilayer_community_fit"} with components:
+\describe{
+\item{layer_communities}{Per-layer community detection (each with
+\code{membership} and \code{communities}). Detected independently
+per layer.}
+\item{meta_communities}{The cross-layer tracked partition from the
+second-stage detection: one integer vector per layer giving each
+node's meta-community. This is the membership that reflects the
+interlayer ties and any custom \code{layer_links}, and the one
+validated by \code{\link{bootstrap_multilayer}}. See
+\code{\link{extract_meta_membership}}.}
+\item{interlayer_ties}{Interlayer similarity edges between communities
+(plus self-loops).}
+\item{layer_links}{The layer connectivity used.}
+}
 }
 \description{
 Runs Louvain or Leiden community detection for each layer and
 creates interlayer ties between the same node in selected adjacent layers.
-Layers may contain different node sets; only nodes present in both layers of
-a linked pair receive interlayer edges. Nodes are matched by
-\code{V(g)$name} when available, or by vertex index otherwise.
+With \code{allow_unequal_nodes = TRUE}, layers may contain different node sets;
+only nodes present in both layers of a linked pair receive interlayer
+edges. Nodes are matched by \code{V(g)$name} when available, or by vertex
+index otherwise.
+
+For this specification the cross-layer \code{meta_communities} are obtained
+by \strong{Mucha (2010) multislice modularity}: the layers are stacked into a
+single supra-graph (intra-layer edges are each layer's own adjacency) with
+interlayer identity edges joining each node to its copies in the coupled
+layers (weighted by \code{layer_links}), and one community detection is run
+on the whole supra-graph. The coupling strength is the layer-link weight.
 }
+\section{Directed networks}{
+
+Directed layers are stored as directed graphs and the interlayer self-loop
+weighting is directed-aware, but community \emph{detection} collapses
+directed layers to weighted undirected graphs on both Louvain and Leiden
+(igraph's detectors are undirected-only). For detection that respects edge
+direction, use the Python package with \code{algorithm = "leiden"}.
+}
+
 \examples{
 set.seed(123)
 layers <- lapply(1:3, function(i) {

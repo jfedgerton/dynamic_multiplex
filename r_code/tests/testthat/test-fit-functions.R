@@ -29,7 +29,9 @@ test_that("identity ties handle variable node sets across layers", {
   g3 <- igraph::add_vertices(g3, 3, name = c("A", "C", "D"))
   g3 <- igraph::add_edges(g3, c("A", "C", "A", "D", "C", "D"))
 
-  fit <- fit_multilayer_identity_ties(list(g1, g2, g3), algorithm = "louvain")
+  fit <- fit_multilayer_identity_ties(
+    list(g1, g2, g3), algorithm = "louvain", allow_unequal_nodes = TRUE
+  )
 
   # Layer 1->2: shared = B, C (2 ties)
   # Layer 2->3: shared = C, D (2 ties)
@@ -167,4 +169,37 @@ test_that("louvain with cpm objective raises error", {
                             objective = "cpm"),
     "Louvain does not support the CPM objective"
   )
+})
+
+test_that("directed leiden collapses to undirected with a warning", {
+  set.seed(123)
+  n <- 30
+  A1 <- matrix(rbinom(n * n, 1, 0.2), n, n); diag(A1) <- 0
+  A2 <- matrix(rbinom(n * n, 1, 0.2), n, n); diag(A2) <- 0
+  expect_warning(
+    fit <- fit_multilayer_jaccard(list(A1, A2), directed = TRUE,
+                                  algorithm = "leiden"),
+    "does not support directed"
+  )
+  expect_length(fit$layer_communities, 2)
+  expect_true(all(vapply(fit$layer_communities,
+                         function(x) length(x$membership) == n, logical(1))))
+})
+
+test_that("hungarian tracker aligns labels across identical layers", {
+  block <- rbind(cbind(matrix(1, 3, 3), matrix(0, 3, 3)),
+                 cbind(matrix(0, 3, 3), matrix(1, 3, 3)))
+  diag(block) <- 0
+  layers <- list(block, block, block)
+  fit <- fit_multilayer_hungarian(layers, algorithm = "louvain")
+
+  expect_s3_class(fit, "multilayer_community_fit")
+  expect_equal(fit$method, "hungarian")
+  expect_null(fit$interlayer_ties)
+
+  mm <- extract_meta_membership(fit)
+  expect_length(mm, 3)
+  # identical layers -> Hungarian matching keeps labels stable across time
+  expect_identical(mm[[1]], mm[[2]])
+  expect_identical(mm[[2]], mm[[3]])
 })

@@ -8,7 +8,7 @@ animate_multilayer_gif(
   layers,
   fit = NULL,
   community_memberships = NULL,
-  output_file = "multilayer_animation.gif",
+  output_file,
   directed = FALSE,
   fps = 2,
   width = 800,
@@ -26,7 +26,9 @@ animate_multilayer_gif(
 \item{community_memberships}{Optional list of membership vectors
 (one per layer). Ignored when \code{fit} is provided.}
 
-\item{output_file}{Output GIF file path.}
+\item{output_file}{Output GIF file path. Required; the function writes the
+animation to this location and nowhere else. Use
+\code{tempfile(fileext = ".gif")} to write to the session temporary directory.}
 
 \item{directed}{Logical; if \code{TRUE}, adjacency matrices are treated as
 directed.}
@@ -49,9 +51,10 @@ Creates one frame per layer and colors nodes by community using
 colorblind-friendly ColorBrewer palettes (\code{Set2} or \code{Dark2}).
 }
 \examples{
-\dontrun{
+\donttest{
 if (requireNamespace("ggplot2", quietly = TRUE) &&
-    requireNamespace("gganimate", quietly = TRUE)) {
+    requireNamespace("gganimate", quietly = TRUE) &&
+    requireNamespace("gifski", quietly = TRUE)) {
   set.seed(123)
   layers <- lapply(1:3, function(i) {
     m <- matrix(rbinom(64, 1, 0.35), nrow = 8)
@@ -63,7 +66,10 @@ if (requireNamespace("ggplot2", quietly = TRUE) &&
   gif_path <- animate_multilayer_gif(
     layers,
     fit = fit,
-    output_file = tempfile(fileext = ".gif")
+    output_file = tempfile(fileext = ".gif"),
+    fps = 2,
+    width = 200,
+    height = 150
   )
 }
 }

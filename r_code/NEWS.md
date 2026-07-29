@@ -78,6 +78,12 @@ n = 50-400 nodes, 3-10 communities, 5-15 layers, 5 switching rates,
   (previously assumed aligned without checking). For identity ties, opt back
   in with `allow_unequal_nodes = TRUE`.
 
+* `animate_multilayer_gif()` no longer has a default `output_file`
+  (previously `"multilayer_animation.gif"` in the working directory). An
+  explicit path is now required, per CRAN policy that functions must not
+  write to the user's filespace by default; use
+  `tempfile(fileext = ".gif")` for a temporary location.
+
 * `community_ci()` is renamed `community_est()` and no longer returns a
   community-count confidence interval. The percentile `community_count_ci`
   (estimate/lower/upper) is replaced by a `community_count` data frame that

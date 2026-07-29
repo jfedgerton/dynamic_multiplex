@@ -111,7 +111,9 @@ plot_multilayer_series <- function(
 #' @param community_memberships Optional list of membership vectors
 #' (one per layer). Ignored when `fit` is provided.
 #'
-#' @param output_file Output GIF file path.
+#' @param output_file Output GIF file path. Required; the function writes the
+#' animation to this location and nowhere else. Use
+#' `tempfile(fileext = ".gif")` to write to the session temporary directory.
 #'
 #' @param directed Logical; if `TRUE`, adjacency matrices are treated as
 #' directed.
@@ -130,9 +132,10 @@ plot_multilayer_series <- function(
 #' @importFrom rlang .data
 #'
 #' @examples
-#' \dontrun{
+#' \donttest{
 #' if (requireNamespace("ggplot2", quietly = TRUE) &&
-#'     requireNamespace("gganimate", quietly = TRUE)) {
+#'     requireNamespace("gganimate", quietly = TRUE) &&
+#'     requireNamespace("gifski", quietly = TRUE)) {
 #'   set.seed(123)
 #'   layers <- lapply(1:3, function(i) {
 #'     m <- matrix(rbinom(64, 1, 0.35), nrow = 8)
@@ -144,7 +147,10 @@ plot_multilayer_series <- function(
 #'   gif_path <- animate_multilayer_gif(
 #'     layers,
 #'     fit = fit,
-#'     output_file = tempfile(fileext = ".gif")
+#'     output_file = tempfile(fileext = ".gif"),
+#'     fps = 2,
+#'     width = 200,
+#'     height = 150
 #'   )
 #' }
 #' }
@@ -155,7 +161,7 @@ animate_multilayer_gif <- function(
     layers,
     fit = NULL,
     community_memberships = NULL,
-    output_file = "multilayer_animation.gif",
+    output_file,
     directed = FALSE,
     fps = 2,
     width = 800,
@@ -168,6 +174,16 @@ animate_multilayer_gif <- function(
   if (!requireNamespace("ggplot2", quietly = TRUE) ||
       !requireNamespace("gganimate", quietly = TRUE)) {
     stop("Packages 'ggplot2' and 'gganimate' are required.", call. = FALSE)
+  }
+
+  # require an explicit output path: the function must never write to the
+  # user's filespace by default (CRAN policy) ----
+  if (missing(output_file)) {
+    stop(
+      "`output_file` must be supplied; there is no default write location. ",
+      'Use tempfile(fileext = ".gif") to write to the temporary directory.',
+      call. = FALSE
+    )
   }
 
   # assign graph layers and memberships ----

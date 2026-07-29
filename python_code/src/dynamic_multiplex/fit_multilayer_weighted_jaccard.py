@@ -21,6 +21,7 @@ def fit_multilayer_weighted_jaccard(
     add_self_loops: bool = True,
     self_loop_multiplier: float = 1.0,
     objective: str | None = None,
+    seed: int | None = 123,
 ):
     """Fit per-layer communities and node-strength-weighted Jaccard ties.
 
@@ -41,6 +42,7 @@ def fit_multilayer_weighted_jaccard(
         resolution_parameter=resolution_parameter,
         directed=directed,
         objective=objective,
+        seed=seed,
     )
 
     node_weights = layer_node_strengths(graph_layers, directed=directed)
@@ -70,6 +72,7 @@ def fit_multilayer_weighted_jaccard(
         interlayer_ties=interlayer_ties,
         algorithm=algorithm,
         resolution_parameter=resolution_parameter,
+        seed=seed,
     )
 
     return {

@@ -32,6 +32,13 @@
 #'
 #' @param objective One of "cpm" or "modularity" for directed networks only
 #'
+#' @param seed Optional integer seed for reproducible community detection.
+#' When supplied, the global RNG state is saved, the RNG is seeded for the
+#' duration of the call, and the previous state is restored on exit, so the
+#' caller's random number stream (e.g. bootstrap resampling) is unaffected.
+#' Defaults to `NULL` (detection inherits the caller's RNG stream, matching
+#' previous behavior; call `set.seed()` beforehand for reproducibility).
+#'
 #' @return A list of class \code{"multilayer_community_fit"} with components:
 #'   \describe{
 #'     \item{layer_communities}{Per-layer community detection (each with
@@ -78,11 +85,19 @@ fit_multilayer_jaccard <- function(
     directed = FALSE,
     add_self_loops = TRUE,
     self_loop_multiplier = 1,
-    objective = NULL
+    objective = NULL,
+    seed = NULL
   ) {
 
   # Check arguments ----
   algorithm <- match.arg(algorithm)
+
+  # Scoped seed for reproducible detection (restores caller RNG state) ----
+  if (!is.null(seed)) {
+    rng_state <- save_rng_state()
+    on.exit(restore_rng_state(rng_state), add = TRUE)
+    set.seed(seed)
+  }
 
   # Prepare graph layers and layer links ----
   graph_layers <- prepare_multilayer_graphs(layers, directed = directed)

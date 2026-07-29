@@ -32,11 +32,47 @@ def _as_graph(layer, directed: bool) -> nx.Graph | nx.DiGraph:
     return graph
 
 
-def prepare_multilayer_graphs(layers: list, directed: bool = False) -> list[nx.Graph | nx.DiGraph]:
+def prepare_multilayer_graphs(
+    layers: list,
+    directed: bool = False,
+    require_same_nodes: bool = True,
+) -> list[nx.Graph | nx.DiGraph]:
     if not isinstance(layers, list) or len(layers) < 2:
         raise ValueError("`layers` must be a list with at least two network layers.")
 
-    return [_as_graph(layer, directed=directed) for layer in layers]
+    graphs = [_as_graph(layer, directed=directed) for layer in layers]
+
+    # Validate a shared node universe across all layers. Layers with
+    # different node sets (or adjacency matrices of different sizes) cannot
+    # be coupled: interlayer ties and meta-communities assume node i in one
+    # layer is node i in every other layer.
+    node_sets = [set(g.nodes()) for g in graphs]
+    aligned = all(ns == node_sets[0] for ns in node_sets[1:])
+    if not aligned:
+        if require_same_nodes:
+            raise ValueError(
+                "All layers must share the same node set. "
+                "Found layers with different nodes; align the node universe "
+                "(adding isolates where needed) before fitting, or, for "
+                "identity ties only, pass allow_unequal_nodes=True."
+            )
+        # Unequal universes explicitly allowed (identity ties): keep raw
+        # labels so nodes match across layers by name; no canonical remap.
+        return graphs
+
+    # Normalize arbitrary node labels (strings, non-contiguous integers) to
+    # canonical 0..n-1 integers for internal processing, eliminating numeric
+    # +1 assumptions on raw labels. The original labels are preserved on each
+    # graph as ``graph.graph["node_labels"]`` (index i -> original label of
+    # internal node i, i.e. of node id i+1 in the returned membership).
+    reference_nodes = sorted(node_sets[0], key=lambda x: (type(x).__name__, x))
+    if reference_nodes != list(range(len(reference_nodes))):
+        mapping = {node: i for i, node in enumerate(reference_nodes)}
+        graphs = [nx.relabel_nodes(g, mapping, copy=True) for g in graphs]
+        for g in graphs:
+            g.graph["node_labels"] = list(reference_nodes)
+
+    return graphs
 
 
 def make_layer_links(n_layers: int, layer_links: list[dict] | pd.DataFrame | None = None) -> pd.DataFrame:
@@ -68,6 +104,7 @@ def fit_layer_communities(
     resolution_parameter: float = 1.0,
     directed: bool = False,
     objective: str | None = None,
+    seed: int | None = 123,
 ) -> list[LayerCommunityFit]:
     algorithm = algorithm.lower()
     if algorithm not in {"louvain", "leiden"}:
@@ -106,14 +143,13 @@ def fit_layer_communities(
                 raise ImportError("Install optional dependency `python-louvain` for Louvain support.") from exc
 
             g_input = g.to_undirected() if directed else g
-            # Fixed detection seed so the partition is a deterministic function
-            # of the graph: bootstrap variability then comes from the resampled
-            # data, not from solver tie-breaking. Without this, best_partition
-            # runs off unseeded global RNG and the pipeline is not reproducible
-            # at a fixed bootstrap seed.
+            # Seeded detection (default 123) so the partition is a deterministic
+            # function of the graph: bootstrap variability then comes from the
+            # resampled data, not from solver tie-breaking. Pass seed=None for
+            # unseeded (non-reproducible) detection.
             partition = community_louvain.best_partition(
                 g_input, weight="weight", resolution=resolution_parameter,
-                random_state=123,
+                random_state=seed,
             )
             communities = {}
             for node, comm in partition.items():
@@ -152,13 +188,13 @@ def fit_layer_communities(
                 ig_graph.es["weight"] = weights
 
             partition_type = leidenalg.CPMVertexPartition if effective_objective == "cpm" else leidenalg.RBConfigurationVertexPartition
-            # Fixed detection seed for reproducibility (see the Louvain branch).
+            # Seeded detection for reproducibility (see the Louvain branch).
             partition = leidenalg.find_partition(
                 ig_graph,
                 partition_type,
                 weights=weights if weights else None,
                 resolution_parameter=resolution_parameter,
-                seed=123,
+                seed=seed,
             )
 
             membership = {}
@@ -330,6 +366,7 @@ def detect_interlayer_communities(
     interlayer_ties: pd.DataFrame,
     algorithm: str = "leiden",
     resolution_parameter: float = 1.0,
+    seed: int | None = 123,
 ) -> dict:
     """Detect cross-layer (meta) communities from interlayer ties.
 
@@ -435,7 +472,7 @@ def detect_interlayer_communities(
                     cg.add_edge(u, v, weight=w)
             partition = community_louvain.best_partition(
                 cg, weight="weight", resolution=resolution_parameter,
-                random_state=123,
+                random_state=seed,
             )
             meta_ids = {node: comm + 1 for node, comm in partition.items()}
         else:
@@ -458,7 +495,7 @@ def detect_interlayer_communities(
                 leidenalg.RBConfigurationVertexPartition,
                 weights=weights,
                 resolution_parameter=resolution_parameter,
-                seed=123,
+                seed=seed,
             )
             meta_ids = {
                 supernodes[idx]: comm + 1
@@ -485,6 +522,7 @@ def detect_multislice_communities(
     algorithm: str = "leiden",
     omega: float = 1.0,
     resolution_parameter: float = 1.0,
+    seed: int | None = 123,
 ) -> list[np.ndarray]:
     """Multislice (Mucha) meta-communities for node-identity coupling.
 
@@ -599,7 +637,7 @@ def detect_multislice_communities(
             else:
                 cg.add_edge(u, v, weight=w)
         partition = community_louvain.best_partition(
-            cg, weight="weight", random_state=123, resolution=resolution_parameter
+            cg, weight="weight", random_state=seed, resolution=resolution_parameter
         )
         meta = {node: comm + 1 for node, comm in partition.items()}
     else:
@@ -624,7 +662,7 @@ def detect_multislice_communities(
             ig_graph,
             leidenalg.RBConfigurationVertexPartition,
             weights=weights,
-            seed=123,
+            seed=seed,
             n_iterations=3,
             resolution_parameter=resolution_parameter,
         )

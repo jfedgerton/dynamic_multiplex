@@ -19,6 +19,8 @@ def fit_multilayer_identity_ties(
     omega: float = 1.0,
     directed: bool = False,
     objective: str | None = None,
+    seed: int | None = 123,
+    allow_unequal_nodes: bool = False,
 ):
     """Fit per-layer communities with identity (node-level) interlayer ties.
 
@@ -45,7 +47,9 @@ def fit_multilayer_identity_ties(
         pulled across layers through the coupling), ``meta_ids`` (``None``),
         ``interlayer_ties``, and ``layer_links``.
     """
-    graph_layers = prepare_multilayer_graphs(layers, directed=directed)
+    graph_layers = prepare_multilayer_graphs(
+        layers, directed=directed, require_same_nodes=not allow_unequal_nodes
+    )
     links = make_layer_links(len(graph_layers), layer_links)
     fit = fit_layer_communities(
         graph_layers,
@@ -53,6 +57,7 @@ def fit_multilayer_identity_ties(
         resolution_parameter=resolution_parameter,
         directed=directed,
         objective=objective,
+        seed=seed,
     )
 
     ties = []
@@ -86,6 +91,7 @@ def fit_multilayer_identity_ties(
         algorithm=algorithm,
         omega=omega,
         resolution_parameter=resolution_parameter,
+        seed=seed,
     )
 
     return {
@@ -96,4 +102,5 @@ def fit_multilayer_identity_ties(
         "layer_links": links,
         "interlayer_ties": interlayer_ties,
         "directed": directed,
+        "node_labels": graph_layers[0].graph.get("node_labels"),
     }

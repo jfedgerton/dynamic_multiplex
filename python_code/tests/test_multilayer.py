@@ -46,7 +46,9 @@ def test_identity_ties_variable_node_sets():
     g3.add_nodes_from(["A", "C", "D"])
     g3.add_edges_from([("A", "C"), ("A", "D"), ("C", "D")])
 
-    out = fit_multilayer_identity_ties([g1, g2, g3], algorithm="louvain")
+    out = fit_multilayer_identity_ties(
+        [g1, g2, g3], algorithm="louvain", allow_unequal_nodes=True
+    )
     ties = out["interlayer_ties"]
 
     # Layer 1->2: shared = B, C (2 ties)

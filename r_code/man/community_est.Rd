@@ -15,7 +15,7 @@ A list with components:
 \item{community_count}{Data frame with columns layer, estimate (the
 observed-network meta-community count), and reproducibility (share of
 bootstrap replicates whose community count equals estimate, in
-\link{0, 1}).}
+[0, 1]).}
 \item{report}{Character vector, one plain-language sentence per layer.}
 \item{mean_node_stability}{Data frame with columns layer, mean_stability.}
 \item{node_stability}{Per-layer stability vectors.}

@@ -2,7 +2,7 @@
 #'
 #' @noRd
 
-prepare_multilayer_graphs <- function(layers, directed = FALSE) {
+prepare_multilayer_graphs <- function(layers, directed = FALSE, require_same_nodes = TRUE) {
 
   # check for required package ----
   if (!requireNamespace("igraph", quietly = TRUE)) {
@@ -46,6 +46,28 @@ prepare_multilayer_graphs <- function(layers, directed = FALSE) {
     return(layer_graph)
   })
 
+  # validate shared node universe across all layers ----
+  # Layers are compared on vertex names when present, on vertex indices
+  # otherwise. Interlayer ties and meta-communities assume node i in one
+  # layer is node i in every other layer, so unequal universes are rejected
+  # unless the caller explicitly opts out (identity ties only).
+  if (require_same_nodes) {
+    node_ids <- lapply(graph_layers, function(g) {
+      nm <- igraph::V(g)$name
+      if (is.null(nm)) as.character(seq_len(igraph::vcount(g))) else as.character(nm)
+    })
+    ref <- sort(node_ids[[1]])
+    same <- vapply(node_ids[-1], function(ids) identical(sort(ids), ref), logical(1))
+    if (!all(same)) {
+      stop(
+        "All layers must share the same node set. Found layers with different ",
+        "nodes; align the node universe (adding isolates where needed) before ",
+        "fitting, or, for identity ties only, use allow_unequal_nodes = TRUE.",
+        call. = FALSE
+      )
+    }
+  }
+
   # assign layer names when no names are present ----
   if (is.null(names(graph_layers))) {
     names(graph_layers) <- paste0("layer_", seq_along(graph_layers))
@@ -53,6 +75,36 @@ prepare_multilayer_graphs <- function(layers, directed = FALSE) {
 
   # return compiled graph layers ----
   return(graph_layers)
+}
+
+
+#' @title Save and Restore the Global RNG State
+#'
+#' @description Used by the `seed` argument of the fit functions: the caller
+#' saves the state, seeds the RNG for reproducible community detection, and
+#' restores the state on exit so seeded detection never disturbs the caller's
+#' random number stream (e.g. the bootstrap's resampling draws).
+#'
+#' @noRd
+
+save_rng_state <- function() {
+  if (exists(".Random.seed", envir = globalenv(), inherits = FALSE)) {
+    get(".Random.seed", envir = globalenv(), inherits = FALSE)
+  } else {
+    NULL
+  }
+}
+
+#' @noRd
+restore_rng_state <- function(state) {
+  if (is.null(state)) {
+    if (exists(".Random.seed", envir = globalenv(), inherits = FALSE)) {
+      rm(".Random.seed", envir = globalenv())
+    }
+  } else {
+    assign(".Random.seed", state, envir = globalenv())
+  }
+  invisible(NULL)
 }
 
 #' @title Make Layer Links

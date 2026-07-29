@@ -55,7 +55,28 @@ n = 50-400 nodes, 3-10 communities, 5-15 layers, 5 switching rates,
   be re-validated in simulation; the earlier per-layer coverage numbers do not
   transfer.)
 
+* **`seed` argument for reproducible detection.** All `fit_multilayer_*()`
+  functions gain a `seed` argument. When supplied, the global RNG state is
+  saved, the RNG is seeded for the duration of the call, and the previous
+  state is restored on exit, so seeded detection never disturbs the caller's
+  random number stream (e.g. `bootstrap_multilayer()` resampling). The default
+  (`NULL`) preserves the previous behavior: detection inherits the caller's
+  RNG stream, so existing scripts using `set.seed()` are unaffected. (In the
+  Python package the default is `seed=123`, matching its previous internally
+  fixed detection seed.)
+
+* **Node-universe validation.** Layers must now share the same node set
+  (compared on vertex names when present, on vertex indices otherwise);
+  unequal universes error with instructions instead of silently misaligning
+  interlayer ties. `fit_multilayer_identity_ties()` gains
+  `allow_unequal_nodes = TRUE` to retain its documented support for nodes
+  entering or exiting the system.
+
 ## Breaking changes
+
+* Layers with different node sets are now rejected by all fit functions
+  (previously assumed aligned without checking). For identity ties, opt back
+  in with `allow_unequal_nodes = TRUE`.
 
 * `community_ci()` is renamed `community_est()` and no longer returns a
   community-count confidence interval. The percentile `community_count_ci`

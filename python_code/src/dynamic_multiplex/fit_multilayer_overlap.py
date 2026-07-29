@@ -20,6 +20,7 @@ def fit_multilayer_overlap(
     add_self_loops: bool = True,
     self_loop_multiplier: float = 1.0,
     objective: str | None = None,
+    seed: int | None = 123,
 ):
     """Fit per-layer communities and interlayer weighted overlap ties.
 
@@ -40,6 +41,7 @@ def fit_multilayer_overlap(
         resolution_parameter=resolution_parameter,
         directed=directed,
         objective=objective,
+        seed=seed,
     )
 
     interlayer_ties = community_overlap_edges(
@@ -66,6 +68,7 @@ def fit_multilayer_overlap(
         interlayer_ties=interlayer_ties,
         algorithm=algorithm,
         resolution_parameter=resolution_parameter,
+        seed=seed,
     )
 
     return {
@@ -76,4 +79,5 @@ def fit_multilayer_overlap(
         "layer_links": links,
         "interlayer_ties": interlayer_ties,
         "directed": directed,
+        "node_labels": graph_layers[0].graph.get("node_labels"),
     }

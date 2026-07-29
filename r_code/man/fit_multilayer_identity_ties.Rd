@@ -11,7 +11,9 @@ fit_multilayer_identity_ties(
   resolution_parameter = 1,
   omega = 1,
   directed = FALSE,
-  objective = NULL
+  objective = NULL,
+  seed = NULL,
+  allow_unequal_nodes = FALSE
 )
 }
 \arguments{
@@ -40,6 +42,19 @@ community detection (igraph supports Leiden on undirected graphs only;
 a warning is issued for \code{algorithm = "leiden"}).}
 
 \item{objective}{One of "cpm" or "modularity" for directed networks only}
+
+\item{seed}{Optional integer seed for reproducible community detection.
+When supplied, the global RNG state is saved, the RNG is seeded for the
+duration of the call, and the previous state is restored on exit, so the
+caller's random number stream (e.g. bootstrap resampling) is unaffected.
+Defaults to \code{NULL} (detection inherits the caller's RNG stream, matching
+previous behavior; call \code{set.seed()} beforehand for reproducibility).}
+
+\item{allow_unequal_nodes}{Logical; if \code{TRUE}, layers may contain
+different node sets (nodes entering or exiting the system), and only nodes
+present in both layers of a linked pair receive interlayer edges. Defaults
+to \code{FALSE}: layers must share the same node universe, as in the other fit
+functions.}
 }
 \value{
 A list of class \code{"multilayer_community_fit"} with components:
@@ -61,9 +76,10 @@ validated by \code{\link{bootstrap_multilayer}}. See
 \description{
 Runs Louvain or Leiden community detection for each layer and
 creates interlayer ties between the same node in selected adjacent layers.
-Layers may contain different node sets; only nodes present in both layers of
-a linked pair receive interlayer edges. Nodes are matched by
-\code{V(g)$name} when available, or by vertex index otherwise.
+With \code{allow_unequal_nodes = TRUE}, layers may contain different node sets;
+only nodes present in both layers of a linked pair receive interlayer
+edges. Nodes are matched by \code{V(g)$name} when available, or by vertex
+index otherwise.
 
 For this specification the cross-layer \code{meta_communities} are obtained
 by \strong{Mucha (2010) multislice modularity}: the layers are stacked into a

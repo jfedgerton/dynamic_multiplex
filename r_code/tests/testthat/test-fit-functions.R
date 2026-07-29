@@ -29,7 +29,9 @@ test_that("identity ties handle variable node sets across layers", {
   g3 <- igraph::add_vertices(g3, 3, name = c("A", "C", "D"))
   g3 <- igraph::add_edges(g3, c("A", "C", "A", "D", "C", "D"))
 
-  fit <- fit_multilayer_identity_ties(list(g1, g2, g3), algorithm = "louvain")
+  fit <- fit_multilayer_identity_ties(
+    list(g1, g2, g3), algorithm = "louvain", allow_unequal_nodes = TRUE
+  )
 
   # Layer 1->2: shared = B, C (2 ties)
   # Layer 2->3: shared = C, D (2 ties)

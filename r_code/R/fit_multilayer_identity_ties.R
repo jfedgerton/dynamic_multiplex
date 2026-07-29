@@ -2,9 +2,10 @@
 #'
 #' @description Runs Louvain or Leiden community detection for each layer and
 #' creates interlayer ties between the same node in selected adjacent layers.
-#' Layers may contain different node sets; only nodes present in both layers of
-#' a linked pair receive interlayer edges. Nodes are matched by
-#' \code{V(g)$name} when available, or by vertex index otherwise.
+#' With `allow_unequal_nodes = TRUE`, layers may contain different node sets;
+#' only nodes present in both layers of a linked pair receive interlayer
+#' edges. Nodes are matched by \code{V(g)$name} when available, or by vertex
+#' index otherwise.
 #'
 #' For this specification the cross-layer \code{meta_communities} are obtained
 #' by \strong{Mucha (2010) multislice modularity}: the layers are stacked into a
@@ -38,6 +39,19 @@
 #' a warning is issued for `algorithm = "leiden"`).
 #'
 #' @param objective One of "cpm" or "modularity" for directed networks only
+#'
+#' @param seed Optional integer seed for reproducible community detection.
+#' When supplied, the global RNG state is saved, the RNG is seeded for the
+#' duration of the call, and the previous state is restored on exit, so the
+#' caller's random number stream (e.g. bootstrap resampling) is unaffected.
+#' Defaults to `NULL` (detection inherits the caller's RNG stream, matching
+#' previous behavior; call `set.seed()` beforehand for reproducibility).
+#'
+#' @param allow_unequal_nodes Logical; if `TRUE`, layers may contain
+#' different node sets (nodes entering or exiting the system), and only nodes
+#' present in both layers of a linked pair receive interlayer edges. Defaults
+#' to `FALSE`: layers must share the same node universe, as in the other fit
+#' functions.
 #'
 #' @return A list of class \code{"multilayer_community_fit"} with components:
 #'   \describe{
@@ -82,14 +96,27 @@ fit_multilayer_identity_ties <- function(
     resolution_parameter = 1,
     omega = 1,
     directed = FALSE,
-    objective = NULL
+    objective = NULL,
+    seed = NULL,
+    allow_unequal_nodes = FALSE
   ) {
 
   # Check arguments ----
   algorithm <- match.arg(algorithm)
 
+  # Scoped seed for reproducible detection (restores caller RNG state) ----
+  if (!is.null(seed)) {
+    rng_state <- save_rng_state()
+    on.exit(restore_rng_state(rng_state), add = TRUE)
+    set.seed(seed)
+  }
+
   # Prepare graph layers and layer links ----
-  graph_layers <- prepare_multilayer_graphs(layers, directed = directed)
+  graph_layers <- prepare_multilayer_graphs(
+    layers,
+    directed = directed,
+    require_same_nodes = !allow_unequal_nodes
+  )
   links <- make_layer_links(length(graph_layers), layer_links)
 
   # Fit layer communities ----

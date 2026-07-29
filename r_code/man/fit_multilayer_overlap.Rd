@@ -13,7 +13,8 @@ fit_multilayer_overlap(
   directed = FALSE,
   add_self_loops = TRUE,
   self_loop_multiplier = 1,
-  objective = NULL
+  objective = NULL,
+  seed = NULL
 )
 }
 \arguments{
@@ -44,6 +45,13 @@ ties. The default \code{1} yields self-loop weighted similarity of
 networks, following the Louvain/Leiden community aggregation convention.}
 
 \item{objective}{One of "cpm" or "modularity" for directed networks only}
+
+\item{seed}{Optional integer seed for reproducible community detection.
+When supplied, the global RNG state is saved, the RNG is seeded for the
+duration of the call, and the previous state is restored on exit, so the
+caller's random number stream (e.g. bootstrap resampling) is unaffected.
+Defaults to \code{NULL} (detection inherits the caller's RNG stream, matching
+previous behavior; call \code{set.seed()} beforehand for reproducibility).}
 }
 \value{
 A list of class \code{"multilayer_community_fit"} with components:

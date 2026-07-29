@@ -77,6 +77,7 @@ def fit_multilayer_hungarian(
     resolution_parameter: float = 1.0,
     directed: bool = False,
     objective: str | None = None,
+    seed: int | None = 123,
 ):
     """Fit multilayer communities with Hungarian snapshot matching.
 
@@ -106,6 +107,7 @@ def fit_multilayer_hungarian(
         resolution_parameter=resolution_parameter,
         directed=directed,
         objective=objective,
+        seed=seed,
     )
 
     memberships = [
@@ -123,4 +125,5 @@ def fit_multilayer_hungarian(
         "interlayer_ties": None,
         "method": "hungarian",
         "directed": directed,
+        "node_labels": graph_layers[0].graph.get("node_labels"),
     }

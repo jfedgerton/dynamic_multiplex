@@ -57,6 +57,22 @@ test_that("weighted overlap with known node strengths", {
   expect_equal(sim, 3 / 9)
 })
 
+test_that("weighted overlap treats nodes with no recorded strength as 0", {
+  # node 3 is in community a but absent from weights_a (e.g., isolate in that
+  # layer); node 4 is in b but absent from weights_b. Must not error, and
+  # missing strengths contribute 0, matching weighted_jaccard_similarity().
+  a <- c(1, 2, 3)
+  b <- c(2, 3, 4)
+  wa <- c("1" = 5, "2" = 3)
+  wb <- c("2" = 2, "3" = 4)
+  # intersection = {2,3}: min(3,2) + min(0,4) = 2
+  # a_weight = 5 + 3 + 0 = 8, b_weight = 2 + 4 + 0 = 6, min = 6
+  sim <- dynamicmultiplex:::weighted_overlap_similarity(a, b, wa, wb)
+  expect_equal(sim, 2 / 6)
+  # all strengths missing -> 0, not NaN
+  expect_equal(dynamicmultiplex:::weighted_overlap_similarity(a, b, c(), c()), 0)
+})
+
 
 # -----------------------------------------------------------------------
 # 2. Resolution parameter forwarding (Bug 1 fix)

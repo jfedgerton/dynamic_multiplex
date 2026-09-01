@@ -1,0 +1,10 @@
+==DYN==
+"regime","n","r","intensity","rep","method","nmi_layer","nmi_joint","nmi_change","k_mae","comembership_acc","runtime_s","mean_n_comm","total_n_comm"
+rows: 481
+==CMP==
+"regime","n","r","intensity","rep","method","nmi_layer","nmi_joint","k_mae","comembership_acc","runtime_s","mean_n_comm","total_n_comm"
+rows: 1151
+==methods==
+    480 "birthdeath"
+==regimes==
+100

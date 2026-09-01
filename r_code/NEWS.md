@@ -1,3 +1,13 @@
+# dynamicmultiplex 1.1.1
+
+## Bug fixes
+
+* `weighted_overlap_similarity()` errored (`subscript out of bounds`) when a
+  community contained a node with no recorded strength in that layer (e.g.,
+  an isolate). Missing strengths now contribute 0, matching
+  `weighted_jaccard_similarity()` and the Python implementation. This affected
+  `fit_multilayer_weighted_overlap()` on layers with isolates.
+
 # dynamicmultiplex 1.1.0
 
 Uncertainty-quantification overhaul, motivated by a large-scale simulation

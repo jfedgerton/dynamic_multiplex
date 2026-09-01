@@ -348,12 +348,20 @@ weighted_jaccard_similarity <- function(a, b, weights_a, weights_b) {
 weighted_overlap_similarity <- function(a, b, weights_a, weights_b) {
 
   # assign weighted similarity ----
+  # Nodes with no recorded strength (absent from a layer) contribute 0,
+  # mirroring weighted_jaccard_similarity() and the Python implementation.
   inter <- intersect(a, b)
-  inter_weight <- sum(vapply(inter, function(node) {
-    min(weights_a[[as.character(node)]], weights_b[[as.character(node)]])
-  }, numeric(1)))
-  a_weight <- sum(vapply(a, function(node) weights_a[[as.character(node)]], numeric(1)))
-  b_weight <- sum(vapply(b, function(node) weights_b[[as.character(node)]], numeric(1)))
+  wa_inter <- weights_a[as.character(inter)]
+  wb_inter <- weights_b[as.character(inter)]
+  wa_inter[is.na(wa_inter)] <- 0
+  wb_inter[is.na(wb_inter)] <- 0
+  inter_weight <- sum(pmin(wa_inter, wb_inter))
+  wa <- weights_a[as.character(a)]
+  wb <- weights_b[as.character(b)]
+  wa[is.na(wa)] <- 0
+  wb[is.na(wb)] <- 0
+  a_weight <- sum(wa)
+  b_weight <- sum(wb)
   min_weight <- min(a_weight, b_weight)
   if (min_weight == 0) {
     weighted_similarity <- 0

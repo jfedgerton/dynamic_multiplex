@@ -1,0 +1,15 @@
+suppressMessages(library(igraph)); set.seed(123)
+DATA<-"replication/extended/output/empirical_data"; OUT<-"replication/extended/output/empirical"; net<-"atop"
+S<-readRDS(file.path(DATA,sprintf("%s_series.rds",net))); U<-readRDS(file.path(DATA,sprintf("%s_union.rds",net)))
+P<-readRDS(file.path(OUT,sprintf("%s_partitions.rds",net)))$partitions; yrs<-S$years
+G<-lapply(seq_along(S$graph_layers),function(k) igraph::delete_vertices(S$graph_layers[[k]],which(!U$present[[k]])))
+deg<-lapply(G,function(g){setNames(igraph::degree(g),V(g)$name)})
+nm<-c("2"="USA","20"="CAN","200"="UK","220"="FRA","255"="GER","300"="AUH","325"="ITA","365"="RUS","740"="JPN","260"="FRG","350"="GRC","640"="TUR","230"="SPN","211"="BEL","210"="NLD","212"="LUX","385"="NOR","390"="DEN","395"="ICE","235"="POR","290"="POL","265"="GDR","315"="CZE","310"="HUN","360"="ROM","355"="BUL","375"="FIN")
+n2<-function(c) if(c%in%names(nm)) nm[[c]] else c
+sysdef<-list(PreWWI=list(win=1908:1914,A=list(n="TripleAll",c=c("255","300","325")),B=list(n="FrancoRus",c=c("220","365"))),WWII=list(win=1940:1943,A=list(n="Axis",c=c("255","325","740","310","360","355","375")),B=list(n="Allies",c=c("2","200","220","20"))),ColdWar=list(win=1955:1989,A=list(n="NATO",c=c("2","20","200","220","325","211","210","212","385","390","395","235","260","350","640","230")),B=list(n="WarsawPact",c=c("365","290","265","315","310","360","355"))))
+meth<-c("DynMux Jaccard r1","Cross-sectional + Hungarian","DynMux Overlap r1","DynMux multislice r1","multinet GLouvain","Pooled Leiden"); mlab<-c("Jaccard","Hungarian","Overlap","multislice","multinet","Pooled")
+ac<-function(t,c,a,dg)(c%in%names(a))&&(c%in%names(dg))&&dg[[c]]>0
+classify<-function(m,sk){sy<-sysdef[[sk]];inc<-mis<-cor<-0;iI<-c();iM<-c();for(y in sy$win){t<-which(yrs==y);if(!length(t))next;a<-P[[m]][[t]];dg<-deg[[t]];Aa<-sy$A$c[sapply(sy$A$c,function(c)ac(t,c,a,dg))];Ba<-sy$B$c[sapply(sy$B$c,function(c)ac(t,c,a,dg))];if(length(Aa)<2||length(Ba)<2)next;cA<-names(sort(table(a[Aa]),decreasing=TRUE))[1];cB<-names(sort(table(a[Ba]),decreasing=TRUE))[1];mg<-(cA==cB);for(s in c(Aa,Ba)){own<-if(s%in%Aa)cA else cB;riv<-if(s%in%Aa)cB else cA;cs<-as.character(a[[s]]);if(mg){inc<-inc+1;iI<-c(iI,paste0(n2(s),y))}else if(cs==own){cor<-cor+1}else if(cs==riv){inc<-inc+1;iI<-c(iI,paste0(n2(s),y))}else{mis<-mis+1;iM<-c(iM,paste0(n2(s),y))}}};list(inc=inc,mis=mis,cor=cor,n=inc+mis+cor,iI=iI,iM=iM)}
+for(sk in names(sysdef)){cat("\n===============",sk,"(",min(sysdef[[sk]]$win),"-",max(sysdef[[sk]]$win),") ===============\n");cat(sprintf("%-12s %10s %10s %8s\n","method","incorrect","missing","n"));for(mi in seq_along(meth)){r<-classify(meth[mi],sk);cat(sprintf("%-12s %5d (%4.1f%%) %5d (%4.1f%%) %6d\n",mlab[mi],r$inc,100*r$inc/r$n,r$mis,100*r$mis/r$n,r$n))}}
+cat("\n=== INSTANCES: Jaccard vs Hungarian ===\n")
+for(sk in names(sysdef)){for(mm in c("DynMux Jaccard r1","Cross-sectional + Hungarian")){r<-classify(mm,sk);cat(sprintf("[%s | %s]\n  incorrect: %s\n  missing  : %s\n",sk,ifelse(mm==meth[1],"Jaccard","Hungarian"),if(length(r$iI))paste(unique(r$iI),collapse=" ")else"(none)",if(length(r$iM))paste(unique(r$iM),collapse=" ")else"(none)"))}}

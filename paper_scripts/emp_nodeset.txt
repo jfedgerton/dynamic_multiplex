@@ -1,0 +1,11 @@
+FILE: replication/extended/08_alliance_dca_empirical.R
+6:# open population). DynMux runs on native per-year graphs with isolate states
+7:# dropped; fixed-node baselines run on the union node set with an active mask.
+9:# Requires prebuilt <net>_series.rds and <net>_union.rds (see build scripts).
+12:DATA<-Sys.getenv("EMP_DATA", "/tmp"); OUT<-Sys.getenv("EMP_OUT", "/tmp")
+16:GLc<-lapply(S$graph_layers,function(g){d<-igraph::degree(g);igraph::delete_vertices(g,which(d==0))})
+17:U<-readRDS(file.path(DATA,sprintf("%s_union.rds",net))); simU<-list(layers=U$layers,active=U$active,links=NULL)
+28: for(t in seq_len(T_)){g<-igraph::graph_from_adjacency_matrix(L[[t]],mode="undirected",diag=FALSE);igraph::V(g)$name<-ac;multinet::add_igraph_layer_ml(nn,g,paste0("layer",t))}
+29: cm<-multinet::glouvain_ml(nn,gamma=1,omega=1);lapply(seq_len(T_),function(t){s<-cm[cm$layer==paste0("layer",t),,drop=FALSE];v<-rep(NA_integer_,n);v[as.integer(s$actor)]<-as.integer(as.factor(s$cid));if(anyNA(v))v[is.na(v)]<-max(0L,v,na.rm=TRUE)+seq_len(sum(is.na(v)));v})}
+30:dm<-function(ff,rp)function(){f<-ff(GLc,algorithm="leiden",resolution_parameter=rp);m<-extract_meta_membership(f);lapply(seq_along(GLc),function(t)setNames(as.integer(m[[t]]),igraph::V(GLc[[t]])$name))}
+31:comp<-function(fn)function(){d<-fn(simU);if(is.null(d))return(NULL);lapply(seq_along(d),function(t){a<-U$active[[t]];setNames(as.integer(d[[t]][a]),U$names[a])})}

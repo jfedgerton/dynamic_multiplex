@@ -22,3 +22,14 @@ python_code/dist/
 
 # Generated manuscript output (data lives on ROAR, not the repo)
 manuscript/output/
+
+# Paper results (figures/tables) - keep out of the public repo until publication
+manuscript/figures/
+manuscript/tables/
+*.bak
+*.activebak
+# Cluster job logs and run outputs
+*.out
+*.log
+logs/
+replication/extended/output/

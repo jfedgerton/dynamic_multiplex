@@ -1,4 +1,4 @@
-source("paper_scripts/leakage_plot.R"); suppressMessages(library(ggplot2))
+source("replication/extended/paper_scripts/leakage_plot.R"); suppressMessages(library(ggplot2))
 rows<-list()
 for(d in D){p<-strsplit(d,"\\|")[[1]];er<-p[1];a<-p[2];b<-p[3];ty<-p[4];lab<-paste0(nm[a],"-",nm[b]," (",ty,")");w<-eras[[er]]
  for(y in w[1]:w[2]){t<-which(yrs==y);if(!length(t))next; for(m in meth){A<-P[[m]][[t]];dg<-deg[[t]]
@@ -8,7 +8,7 @@ for(d in D){p<-strsplit(d,"\\|")[[1]];er<-p[1];a<-p[2];b<-p[3];ty<-p[4];lab<-pas
 DF<-do.call(rbind,rows); DF$era<-factor(DF$era,levels=names(eras)); DF$method<-factor(DF$method,levels=unname(mlab[meth]))
 DF$fill<-ifelse(DF$oc=="na","inactive",ifelse(DF$oc=="ok",paste(DF$era,"correct"),"misaligned"))
 pal<-c("Concert correct"="#33a02c","Bismarck correct"="#6a3d9a","WWI correct"="#1b9e77","Interwar correct"="#7570b3","WWII correct"="#66a61e","ColdWar correct"="#2c7fb8","LIO correct"="#2c7fb8","misaligned"="#d7301f","inactive"="#e6e6e6")
-saveRDS(DF,"paper_scripts/temporal_DF.rds")
+saveRDS(DF,"replication/extended/paper_scripts/temporal_DF.rds")
 for(er in names(eras)){d<-DF[DF$era==er,]; d$dyad<-factor(d$dyad,levels=rev(unique(d$dyad)))
  p<-ggplot(d,aes(year,dyad,fill=fill))+geom_tile()+facet_wrap(~method,nrow=1)+scale_fill_manual(values=pal,guide="none")+labs(title=paste0(er," (",eras[[er]][1],"-",eras[[er]][2],"): temporal alignment/misalignment"),subtitle="year-by-year; era color=correct, red=misaligned, gray=inactive. (+) should co-cluster, (-) should be separate.",x="Year",y=NULL)+theme_minimal(base_size=11)+theme(panel.grid=element_blank(),axis.text.x=element_text(size=7))
  ggsave(sprintf("manuscript/figures/fig_temporal_%s.png",er),p,width=13,height=1.4+0.4*length(unique(d$dyad)),dpi=150)}

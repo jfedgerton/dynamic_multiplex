@@ -1,4 +1,4 @@
-source("paper_scripts/leakage_plot.R")
+source("replication/extended/paper_scripts/leakage_plot.R")
 suppressMessages(library(ggplot2)); dir.create("manuscript/tables",showWarnings=FALSE)
 for(er in levels(DF$era)){d<-DF[DF$era==er,]; d$dyad<-factor(as.character(d$dyad),levels=rev(unique(as.character(d$dyad))))
  p<-ggplot(d,aes(method,dyad,fill=fill))+geom_tile(color="white",linewidth=0.6)+scale_fill_manual(values=pal,guide="none")+labs(title=paste0(er," (",eras[[er]][1],"-",eras[[er]][2],"): alignment vs misalignment"),subtitle="(+) should co-cluster; (-) should be separate. Saturated=correct, contrast=misaligned, gray=inactive.",x=NULL,y=NULL)+theme_minimal(base_size=12)+theme(panel.grid=element_blank())

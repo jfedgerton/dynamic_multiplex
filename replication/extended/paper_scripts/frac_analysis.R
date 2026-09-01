@@ -1,4 +1,4 @@
-source("paper_scripts/leakage_plot.R")
+source("replication/extended/paper_scripts/leakage_plot.R")
 frac<-function(m,a,b,y0,y1){co<-c();for(y in y0:y1){t<-which(yrs==y);if(!length(t))next;A<-P[[m]][[t]];dg<-deg[[t]];if(!(a%in%names(A)&&b%in%names(A)&&a%in%names(dg)&&b%in%names(dg)))next;if(dg[[a]]<=0||dg[[b]]<=0)next;co<-c(co,as.integer(A[[a]]==A[[b]]))};if(length(co)<1)return(c(f=NA_real_,n=0));c(f=mean(co),n=length(co))}
 rows<-list()
 for(d in D){p<-strsplit(d,"\\|")[[1]];er<-p[1];a<-p[2];b<-p[3];ty<-p[4];w<-eras[[er]];for(m in meth){r<-frac(m,a,b,w[1],w[2]);rows[[length(rows)+1]]<-data.frame(era=er,dyad=paste0(nm[a],"-",nm[b]),type=ty,method=unname(mlab[m]),frac=r[["f"]],stringsAsFactors=FALSE)}}

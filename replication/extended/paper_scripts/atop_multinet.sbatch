@@ -1,6 +1,6 @@
 #!/bin/bash
 #SBATCH --job-name=atop_multinet
-#SBATCH --output=paper_scripts/atop_multinet_%j.out
+#SBATCH --output=replication/extended/paper_scripts/atop_multinet_%j.out
 #SBATCH --time=4:00:00
 #SBATCH --mem=64G
 #SBATCH --cpus-per-task=4
@@ -12,5 +12,5 @@ export R_LIBS_USER=/storage/home/jfe4/R/x86_64-pc-linux-gnu-library/4.5
 export EMP_DATA="$SLURM_SUBMIT_DIR/replication/extended/output/empirical_data"
 export EMP_OUT="$SLURM_SUBMIT_DIR/replication/extended/output/empirical"
 echo "=== refill ATOP multinet only (11 methods cached, multinet computed) ==="
-Rscript paper_scripts/emp_fix.R atop
+Rscript replication/extended/paper_scripts/emp_fix.R atop
 echo "=== JOB DONE ==="

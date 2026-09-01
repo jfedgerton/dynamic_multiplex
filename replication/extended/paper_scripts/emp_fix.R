@@ -1,11 +1,11 @@
 # =============================================================================
-# 08_alliance_dca_empirical.R
+# 06_alliance_dca_empirical.R
 # Empirical case study: all DynMux specs + baselines on two real dynamic
 # international networks (ATOP formal alliances 1816-2018; Kinne DCAD defense
 # cooperation 1980-2010). DynSBM excluded (does not scale to the 203-layer
 # open population). DynMux runs on native per-year graphs with isolate states
 # dropped; fixed-node baselines run on the union node set with an active mask.
-# Usage: Rscript 08_alliance_dca_empirical.R <atop|dca>
+# Usage: Rscript 06_alliance_dca_empirical.R <atop|dca>
 # Requires prebuilt <net>_series.rds and <net>_union.rds (see build scripts).
 # =============================================================================
 args<-commandArgs(trailingOnly=TRUE); net<-if(length(args)>=1) args[1] else "atop"

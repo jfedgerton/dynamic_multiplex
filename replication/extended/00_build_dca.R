@@ -1,4 +1,4 @@
-# Build DCA network (Kinne DCAD v1.0) for 08_alliance_dca_empirical.R
+# Build DCA network (Kinne DCAD v1.0) for 06_alliance_dca_empirical.R
 # Edge = any DCA, narrow coding (dcaAnyV1 == 1), undirected. Outputs dca_series.rds + dca_union.rds to EMP_DATA.
 set.seed(123)
 suppressMessages({library(igraph)})

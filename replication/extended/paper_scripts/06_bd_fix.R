@@ -6,7 +6,7 @@
 # Identical grid + seeds; 72-task array self-skips non-birthdeath.
 suppressMessages({ library(igraph) })
 suppressMessages(pkgload::load_all("r_code", quiet = TRUE))
-source("paper_scripts/gen06.R")
+source("replication/extended/paper_scripts/gen06.R")
 HAVE_CLUE     <- requireNamespace("clue",     quietly = TRUE)
 HAVE_MULTINET <- requireNamespace("multinet", quietly = TRUE)
 metric_cols <- c("nmi_layer","nmi_joint","nmi_change","k_mae",

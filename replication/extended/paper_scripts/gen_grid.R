@@ -12,7 +12,7 @@ D<-c("Concert|365|300|+","Concert|300|255|+","Concert|365|255|+","Concert|220|36
 sm<-function(m,a,b,t){A<-P[[ab[m]]][[t]]; na<-as.character(a); nb<-as.character(b); if(is.null(A)||!(na%in%names(A))||!(nb%in%names(A)))return(NA); A[[na]]==A[[nb]]}
 act<-function(a,b,t){d<-deg[[t]]; na<-as.character(a); nb<-as.character(b); length(d)>0&&na%in%names(d)&&nb%in%names(d)&&d[[na]]>0&&d[[nb]]>0}
 expsign<-function(a,b,ty,y){ if(a==710&&b==365) return(if(y<=1960)"+" else "-"); ty }
-con<-file(paste0("paper_scripts/grid_",NET,".txt"),"w")
+con<-file(paste0("replication/extended/paper_scripts/grid_",NET,".txt"),"w")
 for(er in names(eras)){ e0<-max(eras[[er]][1],ymin); e1<-min(eras[[er]][2],ymax); if(e0>e1) next
  ds<-D[startsWith(D,paste0(er,"|"))]; hdr<-FALSE
  for(d in ds){p<-strsplit(d,"\\|")[[1]]; a<-as.integer(p[2]); b<-as.integer(p[3]); ty<-p[4]

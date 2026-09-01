@@ -1,5 +1,5 @@
 # =============================================================================
-# replication/extended/06_regime_comparison.R
+# replication/extended/04_regime_comparison.R
 #
 # HEAD-TO-HEAD METHOD COMPARISON ACROSS FOUR DYNAMIC-COMMUNITY REGIMES,
 # focused on RECURRING and CHANGE-POINT structure (where DynMux's interlayer
@@ -72,8 +72,8 @@
 # available method on that one sim.
 #
 # Usage (local smoke, one config, fast methods + dynsbm if installed):
-#   CMP_MINI=1 CMP_CFG=1 Rscript replication/extended/06_regime_comparison.R
-# Array: one SLURM_ARRAY_TASK_ID per config (1..72). See slurm/06_regime_comparison.sbatch.
+#   CMP_MINI=1 CMP_CFG=1 Rscript replication/extended/04_regime_comparison.R
+# Array: one SLURM_ARRAY_TASK_ID per config (1..72). See slurm/04_regime_comparison.sbatch.
 # The code is intentionally sequential (a plain rep loop) to stay debuggable.
 # =============================================================================
 

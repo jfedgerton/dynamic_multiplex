@@ -82,12 +82,16 @@ agg <- merge(agg, cnt)
 agg <- agg[agg$nsims >= 200, ]  # drop unstable bins
 mids <- seq(0.005, 0.155, 0.01)
 agg$wmid <- mids[as.integer(agg$wbin)]
-p <- ggplot(agg, aes(wmid, cov_P_mean, colour = factor(n))) +
-  geom_hline(yintercept = 0.95, linetype = 2, colour = "grey40") +
-  geom_vline(xintercept = 0.05, linetype = 3, colour = "grey60") +
-  geom_line() + geom_point(size = 1.3) +
-  labs(x = "Mean interval width", y = "Empirical coverage (nominal 0.95)",
-       colour = "Nodes (n)") +
+p <- ggplot(agg, aes(wmid, cov_P_mean, colour = factor(n),
+                     linetype = factor(n), shape = factor(n))) +
+  geom_hline(yintercept = 0.95, linetype = "dashed", colour = "grey40") +
+  geom_vline(xintercept = 0.05, linetype = "dotted", colour = "grey60") +
+  geom_line(linewidth = 0.6) + geom_point(size = 1.8) +
+  scale_colour_brewer(palette = "Dark2", name = "Nodes (n)") +
+  scale_linetype_manual(values = c("solid", "longdash", "dotdash", "twodash"),
+                        name = "Nodes (n)") +
+  scale_shape_manual(values = c(16, 17, 15, 18), name = "Nodes (n)") +
+  labs(x = "Mean interval width", y = "Empirical coverage (nominal 0.95)") +
   theme_bw(base_size = 9) +
   theme(legend.position = "bottom", panel.grid.minor = element_blank())
 ggsave("manuscript/figures/fig_coverage_curve.pdf", p, width = 6.5, height = 3.6)

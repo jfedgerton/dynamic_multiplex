@@ -1,5 +1,5 @@
 suppressMessages(library(igraph))
-B<-"/storage/work/jfe4/dynamic_multiplex"
+B<-"${DM_ROOT}"
 S<-readRDS(file.path(B,"replication/extended/output/empirical_data/dca_series.rds"))
 P<-readRDS(file.path(B,"replication/extended/output/empirical/dca_partitions.rds"))$partitions
 yrs<-S$years; cat("DCA years:",min(yrs),"-",max(yrs),"(n=",length(yrs),")\n")

@@ -7,7 +7,23 @@
 # Output: manuscript/figures/fig_coverage_heatmap.pdf/.png
 set.seed(123)
 suppressMessages({ library(ggplot2) })
-OUT <- "/storage/group/LiberalArts/default/jfe4_collab/dynamic_multiplex/manuscript/output"
+# --- paths -------------------------------------------------------------
+# DM_ROOT is the project root holding manuscript/output, manuscript/tables,
+# and manuscript/figures. Set it before running, e.g.
+#   export DM_ROOT=/path/to/dynamic_multiplex
+# If unset, the current working directory is used, so the script also runs
+# correctly when invoked from the project root.
+ROOT <- Sys.getenv("DM_ROOT", unset = getwd())
+OUT  <- file.path(ROOT, "manuscript", "output")
+TAB  <- file.path(ROOT, "manuscript", "tables")
+FIG  <- file.path(ROOT, "manuscript", "figures")
+if (!dir.exists(OUT)) {
+  stop("Simulation output not found at: ", OUT,
+       "\n  Set DM_ROOT to the project root, or run from that directory.",
+       call. = FALSE)
+}
+dir.create(TAB, recursive = TRUE, showWarnings = FALSE)
+dir.create(FIG, recursive = TRUE, showWarnings = FALSE)
 fs <- list.files(file.path(OUT, "coverage3_grid"), "^cov_task.*csv$", full.names = TRUE)
 d <- do.call(rbind, lapply(fs, read.csv))
 cat("rows:", nrow(d), "\n")
@@ -28,6 +44,6 @@ p <- ggplot(agg, aes(factor(p_in), factor(p_out), fill = cov_P_mean)) +
   labs(x = "Within-community tie probability", y = "Between-community tie probability") +
   theme_bw(base_size = 9) +
   theme(legend.position = "right", panel.grid = element_blank())
-ggsave("manuscript/figures/fig_coverage_heatmap.pdf", p, width = 6.5, height = 5.2)
-ggsave("manuscript/figures/fig_coverage_heatmap.png", p, width = 6.5, height = 5.2, dpi = 300)
+ggsave(file.path(FIG, "fig_coverage_heatmap.pdf"), p, width = 6.5, height = 5.2)
+ggsave(file.path(FIG, "fig_coverage_heatmap.png"), p, width = 6.5, height = 5.2, dpi = 300)
 cat("done 22\n")

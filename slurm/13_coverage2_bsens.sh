@@ -9,8 +9,10 @@
 #SBATCH --cpus-per-task=8
 #SBATCH --array=1-6
 set -euo pipefail
-cd /storage/group/LiberalArts/default/jfe4_collab/dynamic_multiplex
+cd "${DM_ROOT:?set DM_ROOT to the project root}"
 module load r/4.5.0
-export R_LIBS_USER=/storage/home/jfe4/R/libs.old.20260602
+# R package library: left unset so R resolves its own default user library
+# (~/R/<platform>-library/<version>). Export R_LIBS_USER in your environment
+# before submitting if your packages live elsewhere.
 mkdir -p slurm/logs manuscript/output
 COV_MODE=bsens COV_CORES=8 Rscript manuscript/13_coassign_ci_coverage.R

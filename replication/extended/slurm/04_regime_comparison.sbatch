@@ -27,6 +27,8 @@
 set -euo pipefail
 cd "${SLURM_SUBMIT_DIR:-.}"
 module load r/4.5.0
-export R_LIBS_USER=/storage/home/jfe4/R/x86_64-pc-linux-gnu-library/4.5
+# R package library: left unset so R resolves its own default user library
+# (~/R/<platform>-library/<version>). Export R_LIBS_USER in your environment
+# before submitting if your packages live elsewhere.
 mkdir -p replication/extended/slurm/logs replication/extended/output/dynamic
 Rscript replication/extended/04_regime_comparison.R

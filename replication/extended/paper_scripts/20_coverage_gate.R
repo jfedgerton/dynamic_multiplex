@@ -1,6 +1,6 @@
 #!/usr/bin/env Rscript
 # 20_coverage_gate.R -- Reliability-gated coverage for co-membership CIs.
-# Data: cov_task*.csv in jfe4_collab .../manuscript/output/coverage3_grid.
+# Data: cov_task*.csv in manuscript/output/coverage3_grid (see DM_ROOT below).
 #   Per-simulation rows: config cols (n, K, p_switch, p_in, p_out, density,
 #   T_layers, weights, resample), spec cols (fit_type, algorithm),
 #   cov_P_mean  = share of pairwise 95% co-membership CIs covering truth,
@@ -19,7 +19,23 @@
 set.seed(123)
 suppressMessages({ library(ggplot2) })
 
-OUT <- "/storage/group/LiberalArts/default/jfe4_collab/dynamic_multiplex/manuscript/output"
+# --- paths -------------------------------------------------------------
+# DM_ROOT is the project root holding manuscript/output, manuscript/tables,
+# and manuscript/figures. Set it before running, e.g.
+#   export DM_ROOT=/path/to/dynamic_multiplex
+# If unset, the current working directory is used, so the script also runs
+# correctly when invoked from the project root.
+ROOT <- Sys.getenv("DM_ROOT", unset = getwd())
+OUT  <- file.path(ROOT, "manuscript", "output")
+TAB  <- file.path(ROOT, "manuscript", "tables")
+FIG  <- file.path(ROOT, "manuscript", "figures")
+if (!dir.exists(OUT)) {
+  stop("Simulation output not found at: ", OUT,
+       "\n  Set DM_ROOT to the project root, or run from that directory.",
+       call. = FALSE)
+}
+dir.create(TAB, recursive = TRUE, showWarnings = FALSE)
+dir.create(FIG, recursive = TRUE, showWarnings = FALSE)
 readdir <- function(sub) {
   fs <- list.files(file.path(OUT, sub), "^cov_task.*csv$", full.names = TRUE)
   if (!length(fs)) return(NULL)
@@ -55,7 +71,7 @@ rows <- lapply(names(gates), function(g) {
 })
 tab <- do.call(rbind, rows)
 print(tab)
-write.csv(tab, "manuscript/tables/tab_coverage.csv", row.names = FALSE)
+write.csv(tab, file.path(TAB, "tab_coverage.csv"), row.names = FALSE)
 
 tex <- c("\\begin{tabular}{lcccc}", "\\toprule",
   "Reliability gate & Calibration & Validation & Share retained & Simulations \\\\",
@@ -63,7 +79,7 @@ tex <- c("\\begin{tabular}{lcccc}", "\\toprule",
   sprintf("%s & %.3f & %.3f & %.3f & %s \\\\", tab$gate, tab$calib, tab$valid,
           tab$retained, format(tab$n_sims, big.mark = ",", trim = TRUE)),
   "\\bottomrule", "\\end{tabular}")
-writeLines(tex, "manuscript/tables/tab_coverage.tex")
+writeLines(tex, file.path(TAB, "tab_coverage.tex"))
 
 # Per-spec coverage under the final gate, validation side (appendix)
 k <- gates[[3]]
@@ -72,7 +88,7 @@ sp  <- aggregate(cov_P_mean ~ spec, data = v, FUN = mean)
 spn <- aggregate(cbind(n_sims = cov_P_mean) ~ spec, data = v, FUN = length)
 sp <- merge(sp, spn)
 print(sp)
-write.csv(sp, "manuscript/tables/tab_coverage_spec.csv", row.names = FALSE)
+write.csv(sp, file.path(TAB, "tab_coverage_spec.csv"), row.names = FALSE)
 
 # Coverage curve: empirical coverage vs binned interval width, by network size
 d$wbin <- cut(d$width_P_mean, breaks = c(seq(0, 0.15, 0.01), Inf), right = FALSE)
@@ -94,8 +110,8 @@ p <- ggplot(agg, aes(wmid, cov_P_mean, colour = factor(n),
   labs(x = "Mean interval width", y = "Empirical coverage (nominal 0.95)") +
   theme_bw(base_size = 9) +
   theme(legend.position = "bottom", panel.grid.minor = element_blank())
-ggsave("manuscript/figures/fig_coverage_curve.pdf", p, width = 6.5, height = 3.6)
-ggsave("manuscript/figures/fig_coverage_curve.png", p, width = 6.5, height = 3.6, dpi = 300)
+ggsave(file.path(FIG, "fig_coverage_curve.pdf"), p, width = 6.5, height = 3.6)
+ggsave(file.path(FIG, "fig_coverage_curve.png"), p, width = 6.5, height = 3.6, dpi = 300)
 
 # Appendix robustness: same gate on misspecified and weighted grids, if present
 aux <- function(sub, out) {
@@ -111,6 +127,6 @@ aux <- function(sub, out) {
   print(res)
   write.csv(res, out, row.names = FALSE)
 }
-aux("coverage3_misspec", "manuscript/tables/tab_coverage_misspec.csv")
-aux("coverage3_valued",  "manuscript/tables/tab_coverage_valued.csv")
+aux("coverage3_misspec", file.path(TAB, "tab_coverage_misspec.csv"))
+aux("coverage3_valued",  file.path(TAB, "tab_coverage_valued.csv"))
 cat("done 20\n")

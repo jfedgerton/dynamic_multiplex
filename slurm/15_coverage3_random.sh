@@ -13,8 +13,10 @@
 #   COV_OFFSET=990  sbatch --export=ALL,COV_OFFSET=990  slurm/13_coverage2_main.sh
 #   COV_OFFSET=1980 sbatch --export=ALL,COV_OFFSET=1980 slurm/13_coverage2_main.sh
 set -euo pipefail
-cd /storage/group/LiberalArts/default/jfe4_collab/dynamic_multiplex
+cd "${DM_ROOT:?set DM_ROOT to the project root}"
 module load r/4.5.0
-export R_LIBS_USER=/storage/home/jfe4/R/libs.old.20260602
+# R package library: left unset so R resolves its own default user library
+# (~/R/<platform>-library/<version>). Export R_LIBS_USER in your environment
+# before submitting if your packages live elsewhere.
 mkdir -p slurm/logs manuscript/output
 COV_MODE=main COV_CORES=8 COV_OFFSET=${COV_OFFSET:-0} Rscript manuscript/15_coverage3_random.R

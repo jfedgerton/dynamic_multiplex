@@ -1,6 +1,6 @@
 #!/bin/bash
 module load r/4.5.0 2>/dev/null
-cd /storage/work/jfe4/dynamic_multiplex || exit 1
+cd "${DM_ROOT:?set DM_ROOT to the project root}" || exit 1
 mkdir -p manuscript/figures manuscript/tables
 : > replication/extended/paper_scripts/gen.log
 echo "START $(date)" >> replication/extended/paper_scripts/gen.log

@@ -1,5 +1,5 @@
 #!/usr/bin/env Rscript
-# 23_paired_ci_table.R -- Appendix table of paired 95% confidence intervals
+# 33_paired_ci_table.R -- Appendix table of paired 95% confidence intervals
 # for every DynMux-vs-baseline comparison, by regime, intensity, and metric.
 # Reads the summary written by 15b_sim_paired_intensity.R; run that first.
 #

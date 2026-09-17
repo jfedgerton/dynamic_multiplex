@@ -33,3 +33,6 @@ manuscript/tables/
 *.log
 logs/
 replication/extended/output/
+
+# cached intermediates from paper_scripts
+replication/extended/paper_scripts/*.rds

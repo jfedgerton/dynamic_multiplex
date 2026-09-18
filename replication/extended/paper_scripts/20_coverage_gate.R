@@ -10,12 +10,14 @@
 # Calibration/validation split: unique configurations sorted, odd positions
 #   -> calibration, even -> validation. Gate chosen on calibration; headline
 #   number is the out-of-sample validation coverage.
-# Outputs:
-#   manuscript/tables/tab_coverage.csv/.tex         (main text)
-#   manuscript/tables/tab_coverage_spec.csv         (appendix per-spec)
-#   manuscript/tables/tab_coverage_misspec.csv      (appendix, if data)
-#   manuscript/tables/tab_coverage_valued.csv       (appendix, if data)
-#   manuscript/figures/fig_coverage_curve.pdf/.png  (main text)
+# Outputs (tables are LaTeX only; nothing downstream consumed the CSVs):
+#   manuscript/tables/tab_coverage.tex          (main text)
+#   manuscript/tables/tab_coverage_spec.tex     (appendix per-spec)
+#   manuscript/tables/tab_coverage_misspec.tex  (appendix, if data)
+#   manuscript/tables/tab_coverage_valued.tex   (appendix, if data)
+#   manuscript/figures/fig_coverage_curve.pdf/.png   (main text)
+# The .tex files are bare booktabs tabulars with no caption or label; the
+# manuscript wraps each in its own table float. Requires \usepackage{booktabs}.
 set.seed(123)
 suppressMessages({ library(ggplot2) })
 
@@ -41,6 +43,20 @@ readdir <- function(sub) {
   if (!length(fs)) return(NULL)
   do.call(rbind, lapply(fs, read.csv))
 }
+
+# --- LaTeX table writer ------------------------------------------------
+# Writes a bare booktabs tabular. No caption, no label, no table float:
+# the manuscript supplies those, so recompiling the pipeline never
+# overwrites caption text that lives in the paper.
+write_tex <- function(header, body, align, path) {
+  stopifnot(length(body) > 0, nchar(align) > 0)
+  writeLines(c(sprintf("\\begin{tabular}{%s}", align),
+               "\\toprule", header, "\\midrule",
+               body,
+               "\\bottomrule", "\\end{tabular}"), path)
+  cat("wrote", basename(path), "(", length(body), "rows )\n")
+}
+commafmt <- function(x) format(x, big.mark = ",", trim = TRUE)
 
 d <- readdir("coverage3_grid")
 stopifnot(!is.null(d))
@@ -71,26 +87,60 @@ rows <- lapply(names(gates), function(g) {
 })
 tab <- do.call(rbind, rows)
 print(tab)
-write.csv(tab, file.path(TAB, "tab_coverage.csv"), row.names = FALSE)
+write_tex(
+  header = "Reliability gate & Calibration & Validation & Share retained & Simulations \\\\",
+  body   = sprintf("%s & %.3f & %.3f & %.3f & %s \\\\",
+                   tab$gate, tab$calib, tab$valid, tab$retained,
+                   commafmt(tab$n_sims)),
+  align  = "lcccc",
+  path   = file.path(TAB, "tab_coverage.tex"))
 
-tex <- c("\\begin{tabular}{lcccc}", "\\toprule",
-  "Reliability gate & Calibration & Validation & Share retained & Simulations \\\\",
-  "\\midrule",
-  sprintf("%s & %.3f & %.3f & %.3f & %s \\\\", tab$gate, tab$calib, tab$valid,
-          tab$retained, format(tab$n_sims, big.mark = ",", trim = TRUE)),
-  "\\bottomrule", "\\end{tabular}")
-writeLines(tex, file.path(TAB, "tab_coverage.tex"))
-
-# Per-spec coverage under the final gate, validation side (appendix)
+# --- Per-spec coverage under the final gate, validation side (appendix) ---
 k <- gates[[3]]
 v <- d[k & d$split == "validation", ]
 sp  <- aggregate(cov_P_mean ~ spec, data = v, FUN = mean)
 spn <- aggregate(cbind(n_sims = cov_P_mean) ~ spec, data = v, FUN = length)
 sp <- merge(sp, spn)
 print(sp)
-write.csv(sp, file.path(TAB, "tab_coverage_spec.csv"), row.names = FALSE)
 
-# Coverage curve: empirical coverage vs binned interval width, by network size
+# Reshape to coupling x algorithm so the table shows that coverage is
+# invariant to the coupling and varies only with the detection algorithm.
+parts <- do.call(rbind, strsplit(sp$spec, "/", fixed = TRUE))
+stopifnot(ncol(parts) == 2)
+sp$coupling  <- parts[, 1]
+sp$algorithm <- parts[, 2]
+
+coup_lab <- c(identity         = "Identity",
+              jaccard          = "Jaccard",
+              overlap          = "Overlap",
+              weighted_jaccard = "Weighted Jaccard",
+              weighted_overlap = "Weighted overlap")
+alg_lab  <- c(leiden = "Leiden", louvain = "Louvain")
+stopifnot(all(sp$coupling  %in% names(coup_lab)))
+stopifnot(all(sp$algorithm %in% names(alg_lab)))
+
+cov_w <- tapply(sp$cov_P_mean, list(sp$coupling, sp$algorithm), identity)
+n_w   <- tapply(sp$n_sims,     list(sp$coupling, sp$algorithm), identity)
+stopifnot(!anyNA(cov_w))   # every coupling x algorithm cell must be present
+
+coup_order <- names(coup_lab)[names(coup_lab) %in% rownames(cov_w)]
+alg_order  <- names(alg_lab)[names(alg_lab)  %in% colnames(cov_w)]
+stopifnot(length(coup_order) > 0, length(alg_order) > 0)
+
+spec_body <- vapply(coup_order, function(cp) {
+  cells <- vapply(alg_order, function(al)
+    sprintf("%.3f (%s)", cov_w[cp, al], commafmt(n_w[cp, al])), character(1))
+  sprintf("%s & %s \\\\", coup_lab[[cp]], paste(cells, collapse = " & "))
+}, character(1))
+
+write_tex(
+  header = sprintf("Interlayer coupling & %s \\\\",
+                   paste(unname(alg_lab[alg_order]), collapse = " & ")),
+  body   = unname(spec_body),
+  align  = paste0("l", strrep("c", length(alg_order))),
+  path   = file.path(TAB, "tab_coverage_spec.tex"))
+
+# --- Coverage curve: coverage vs binned interval width, by network size ---
 d$wbin <- cut(d$width_P_mean, breaks = c(seq(0, 0.15, 0.01), Inf), right = FALSE)
 agg <- aggregate(cov_P_mean ~ wbin + n, data = d, FUN = mean)
 cnt <- aggregate(cbind(nsims = cov_P_mean) ~ wbin + n, data = d, FUN = length)
@@ -113,8 +163,8 @@ p <- ggplot(agg, aes(wmid, cov_P_mean, colour = factor(n),
 ggsave(file.path(FIG, "fig_coverage_curve.pdf"), p, width = 6.5, height = 3.6)
 ggsave(file.path(FIG, "fig_coverage_curve.png"), p, width = 6.5, height = 3.6, dpi = 300)
 
-# Appendix robustness: same gate on misspecified and weighted grids, if present
-aux <- function(sub, out) {
+# --- Appendix robustness: same gate on misspecified and weighted grids ---
+aux <- function(sub, stem) {
   x <- tryCatch(readdir(sub), error = function(e) NULL)
   if (is.null(x) || !all(c("cov_P_mean", "width_P_mean", "n") %in% names(x))) {
     cat("skip:", sub, "\n"); return(invisible(NULL))
@@ -125,8 +175,13 @@ aux <- function(sub, out) {
     coverage = c(mean(x$cov_P_mean), mean(x$cov_P_mean[k])),
     retained = c(1, mean(k)), n_sims = c(nrow(x), sum(k)))
   print(res)
-  write.csv(res, out, row.names = FALSE)
+  write_tex(
+    header = "Reliability gate & Coverage & Share retained & Simulations \\\\",
+    body   = sprintf("%s & %.3f & %.3f & %s \\\\",
+                     res$gate, res$coverage, res$retained, commafmt(res$n_sims)),
+    align  = "lccc",
+    path   = file.path(TAB, paste0(stem, ".tex")))
 }
-aux("coverage3_misspec", file.path(TAB, "tab_coverage_misspec.csv"))
-aux("coverage3_valued",  file.path(TAB, "tab_coverage_valued.csv"))
+aux("coverage3_misspec", "tab_coverage_misspec")
+aux("coverage3_valued",  "tab_coverage_valued")
 cat("done 20\n")

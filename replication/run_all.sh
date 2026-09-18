@@ -6,6 +6,10 @@
 #   bash replication/run_all.sh submit    submit every SLURM job with dependencies
 #   bash replication/run_all.sh submit sims       only sim/01-04
 #   bash replication/run_all.sh submit empirical  only empirical/05-07
+#   bash replication/run_all.sh submit rest J1:J2  sim/03-04 + empirical + post, with the
+#                                             post job also waiting on job ids J1:J2
+#                                             (use after a partial submit hit the
+#                                             4,000 submitted-job cap)
 #   bash replication/run_all.sh post      run post/10-14 in the current shell
 #   bash replication/run_all.sh status    squeue for this user's dm_* jobs
 #   bash replication/run_all.sh clean-tables   remove generated tables/figures
@@ -29,6 +33,9 @@
 #
 # Every sim task self-skips when its output file exists, so `submit` can be
 # rerun after a partial failure and only the missing tasks execute.
+# Roar caps submitted jobs at 4,000 per account and every array task counts:
+# 01 (72) + 02 (3,564) = 3,636, so 03 and 04 are packed 8 tasks per array
+# element (90 + 54 jobs) and the empirical chain adds 7.
 #
 # Data you must supply: $DM_ROOT/data/DCAD-v1.0-dyadic.csv (Kinne DCAD v1.0).
 # peacesciencer's extdata (ATOP, COW trade, IGO) must already be downloaded
@@ -40,7 +47,7 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 export DM_ROOT="${DM_ROOT:-$(dirname "$HERE")}"
 cd "$DM_ROOT"
 ACTION="${1:-help}"
-WHICH="${2:-all}"
+WHICH="${2:-all}"                              # all | sims | empirical | rest
 SB="replication/slurm"
 mkdir -p "$SB/logs" output manuscript/tables manuscript/figures
 
@@ -51,8 +58,9 @@ case "$ACTION" in
 
   deps)
     load_r
-    echo "--- R: installing dynamicmultiplex from r_code/ ---"
-    R CMD INSTALL r_code
+    echo "--- R: installing dynamicmultiplex from r_code/ into the user library ---"
+    LIB="$(Rscript -e 'cat(Sys.getenv("R_LIBS_USER"))')"; mkdir -p "$LIB"
+    R CMD INSTALL -l "$LIB" r_code
     echo "--- R: checking optional packages used by the sims ---"
     Rscript -e 'for (p in c("igraph","ggplot2","pkgload","clue","multinet","dynsbm","peacesciencer","dplyr"))
                   cat(sprintf("%-14s %s\n", p, if (requireNamespace(p, quietly=TRUE)) "ok" else "MISSING"))'
@@ -65,16 +73,20 @@ case "$ACTION" in
   submit)
     command -v sbatch >/dev/null 2>&1 || { echo "sbatch not found: run this on the cluster login node"; exit 1; }
     DEPS=()
+    EXTRA="${3:-}"                                   # job ids already queued (submit rest J1:J2)
+    if [[ -n "$EXTRA" ]]; then IFS=':' read -r -a ex <<< "$EXTRA"; DEPS+=("${ex[@]}"); fi
     if [[ "$WHICH" == "all" || "$WHICH" == "sims" ]]; then
       j=$(sbatch --parsable --export=ALL "$SB/01_regime.sbatch");                            echo "01 regime            $j"; DEPS+=("$j")
       j=$(sbatch --parsable --export=ALL,COV_OFFSET=0    "$SB/02_coverage_grid.sbatch");     echo "02 grid   tasks 1-990     $j"; DEPS+=("$j")
       j=$(sbatch --parsable --export=ALL,COV_OFFSET=990  "$SB/02_coverage_grid.sbatch");     echo "02 grid   tasks 991-1980  $j"; DEPS+=("$j")
       j=$(sbatch --parsable --export=ALL,COV_OFFSET=1980 "$SB/02_coverage_grid.sbatch");     echo "02 grid   tasks 1981-2970 $j"; DEPS+=("$j")
       j=$(sbatch --parsable --export=ALL,COV_OFFSET=2970 --array=1-594%64 "$SB/02_coverage_grid.sbatch"); echo "02 grid   tasks 2971-3564 $j"; DEPS+=("$j")
-      j=$(sbatch --parsable --export=ALL "$SB/03_coverage_valued.sbatch");                   echo "03 valued            $j"; DEPS+=("$j")
-      j=$(sbatch --parsable --export=ALL "$SB/04_coverage_misspec.sbatch");                  echo "04 misspec           $j"; DEPS+=("$j")
     fi
-    if [[ "$WHICH" == "all" || "$WHICH" == "empirical" ]]; then
+    if [[ "$WHICH" == "all" || "$WHICH" == "sims" || "$WHICH" == "rest" ]]; then
+      j=$(sbatch --parsable --export=ALL "$SB/03_coverage_valued.sbatch");                   echo "03 valued  (90 packed)  $j"; DEPS+=("$j")
+      j=$(sbatch --parsable --export=ALL "$SB/04_coverage_misspec.sbatch");                  echo "04 misspec (54 packed)  $j"; DEPS+=("$j")
+    fi
+    if [[ "$WHICH" == "all" || "$WHICH" == "empirical" || "$WHICH" == "rest" ]]; then
       if [[ ! -f data/DCAD-v1.0-dyadic.csv ]]; then
         echo "WARNING: data/DCAD-v1.0-dyadic.csv not found; empirical/05 will stop at the DCA network."
       fi
@@ -83,7 +95,7 @@ case "$ACTION" in
       s=$(sbatch --parsable --export=ALL --dependency=afterok:$f "$SB/07_emp_score.sbatch");  echo "07 emp score (after 06) $s"
       DEPS+=("$s")
     fi
-    if [[ "$WHICH" == "all" ]]; then
+    if [[ "$WHICH" == "all" || "$WHICH" == "rest" ]]; then
       dep=$(IFS=:; echo "${DEPS[*]}")
       p=$(sbatch --parsable --export=ALL --dependency=afterok:$dep "$SB/08_postprocess.sbatch")
       echo "08 postprocess (after all of the above) $p"

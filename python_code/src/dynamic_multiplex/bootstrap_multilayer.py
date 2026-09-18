@@ -418,16 +418,35 @@ def community_est(
 def co_assignment_ci(
     boot_result: BootstrapResult,
     alpha: float = 0.05,
+    method: str = "calibrated",
+    calibration_table=None,
 ) -> list[dict]:
-    """Wilson confidence intervals for node-pair co-assignment.
+    """Confidence intervals for node-pair co-assignment.
 
-    For every pair of nodes in every layer, computes a Wilson score
-    interval for the co-clustering propensity: the probability that the
-    fitted community detection procedure places the two nodes in the same
-    community when the data are perturbed. The point estimate is the
-    co-assignment probability from ``bootstrap_multilayer`` (the share of
-    bootstrap replicates in which the pair was co-assigned), and the
-    interval treats the ``n_boot`` replicates as binomial draws.
+    For every pair of nodes in every layer, computes an interval for the
+    co-clustering propensity: the probability that the fitted community
+    detection procedure places the two nodes in the same community when the
+    data are perturbed. The point estimate is the co-assignment probability
+    from ``bootstrap_multilayer`` (the share of bootstrap replicates in
+    which the pair was co-assigned).
+
+    Two constructions are available.
+
+    ``"calibrated"`` (default)
+        The interval is read from a lookup table fitted in the package's
+        simulation study: for each bin of the bootstrap co-assignment share
+        p-hat, the table stores the 2.5 and 97.5 percent conditional
+        quantiles of the fresh-data co-assignment propensity p*. Its width
+        does not depend on ``n_boot`` and its conditional coverage given
+        p-hat was validated out of sample on the simulation design (binary
+        and weighted stochastic block models, 50-400 nodes, 3-10
+        communities, 5-15 layers).
+    ``"wilson"``
+        The Wilson score interval that treats the ``n_boot`` replicates as
+        binomial draws. Its width scales as 1/sqrt(n_boot), so it measures
+        Monte Carlo error in the bootstrap rather than uncertainty about
+        p*; it is retained for comparison and for the coverage study in the
+        paper.
 
     Because co-assignment is label-invariant (it never compares community
     labels across replicates, only whether two nodes sit together), it
@@ -436,48 +455,125 @@ def co_assignment_ci(
 
     .. warning::
        These intervals quantify the stability of the detection procedure,
-       not the probability that two nodes truly share a community.
-       Interpret cautiously on networks with fewer than 100 nodes, where
-       community detection itself is unstable.
+       not the probability that two nodes truly share a community. The
+       calibrated table was fitted on simulated networks; networks far
+       outside the simulation design are extrapolations. Interpret
+       cautiously on networks with fewer than 100 nodes, where community
+       detection itself is unstable.
 
     Parameters
     ----------
     boot_result : BootstrapResult
         Output from ``bootstrap_multilayer``.
     alpha : float
-        Significance level (default 0.05 for 95% intervals).
+        Significance level (default 0.05 for 95% intervals). Only 0.05 is
+        available for ``method="calibrated"``, the level the bundled table
+        was fitted at.
+    method : {"calibrated", "wilson"}
+        Interval construction.
+    calibration_table : pandas.DataFrame or str, optional
+        Replacement lookup table for ``method="calibrated"``: columns
+        ``phat_lo``, ``phat_hi``, ``lower``, ``upper`` with bins that
+        partition [0, 1], or a path to a CSV with those columns. Defaults
+        to ``data/coassign_calibration_table.csv`` shipped with the
+        package, produced by ``replication/post/14_calibration_table.R``.
 
     Returns
     -------
     list[dict]
         One dict per layer with keys ``estimate``, ``lower``, ``upper``,
-        each an ``n_nodes x n_nodes`` ndarray. Diagonals are 1 by
-        construction.
+        each an ``n_nodes x n_nodes`` ndarray, plus ``method``. Diagonals
+        are 1 by construction.
 
     See Also
     --------
-    community_ci : Community count intervals and node stability summaries.
+    community_est : Community count point estimates and node stability.
     """
     if boot_result.n_boot == 0:
         raise ValueError("No completed bootstrap replicates.")
-
-    from statistics import NormalDist  # stdlib; avoids a scipy dependency
-
-    b = boot_result.n_boot
-    z = NormalDist().inv_cdf(1 - alpha / 2)
-    z2 = z**2
+    if method not in ("calibrated", "wilson"):
+        raise ValueError('method must be "calibrated" or "wilson"')
 
     layer_cis = []
+
+    if method == "wilson":
+        from statistics import NormalDist  # stdlib; avoids a scipy dependency
+
+        b = boot_result.n_boot
+        z = NormalDist().inv_cdf(1 - alpha / 2)
+        z2 = z**2
+        for phat in boot_result.co_assignment:
+            denom = 1 + z2 / b
+            center = (phat + z2 / (2 * b)) / denom
+            half = z * np.sqrt(phat * (1 - phat) / b + z2 / (4 * b**2)) / denom
+            lower = np.clip(center - half, 0.0, 1.0)
+            upper = np.clip(center + half, 0.0, 1.0)
+            np.fill_diagonal(lower, 1.0)
+            np.fill_diagonal(upper, 1.0)
+            layer_cis.append(
+                {"estimate": phat, "lower": lower, "upper": upper, "method": "wilson"}
+            )
+        return layer_cis
+
+    # calibrated: conditional quantiles of p* given phat, from the lookup table
+    if abs(alpha - 0.05) > 1e-12:
+        raise ValueError(
+            'method="calibrated" is only available for alpha = 0.05, '
+            "the level the bundled lookup table was fitted at."
+        )
+    tab = _load_calibration_table(calibration_table)
+    edges = np.append(tab["phat_lo"].to_numpy(), 1.0)
+    lo_tab = tab["lower"].to_numpy()
+    hi_tab = tab["upper"].to_numpy()
+    n_bins = len(tab)
     for phat in boot_result.co_assignment:
-        denom = 1 + z2 / b
-        center = (phat + z2 / (2 * b)) / denom
-        half = z * np.sqrt(phat * (1 - phat) / b + z2 / (4 * b**2)) / denom
-        lower = np.clip(center - half, 0.0, 1.0)
-        upper = np.clip(center + half, 0.0, 1.0)
+        # bin index: phat in [phat_lo, phat_hi); phat == 1 falls in the last bin
+        idx = np.searchsorted(edges, phat, side="right") - 1
+        idx = np.clip(idx, 0, n_bins - 1)
+        lower = lo_tab[idx]
+        upper = hi_tab[idx]
         np.fill_diagonal(lower, 1.0)
         np.fill_diagonal(upper, 1.0)
         layer_cis.append(
-            {"estimate": phat, "lower": lower, "upper": upper}
+            {"estimate": phat, "lower": lower, "upper": upper, "method": "calibrated"}
         )
-
     return layer_cis
+
+
+def _load_calibration_table(calibration_table=None) -> pd.DataFrame:
+    """Read and validate the calibrated-interval lookup table.
+
+    Bundled default: ``dynamic_multiplex/data/coassign_calibration_table.csv``,
+    written by ``replication/post/14_calibration_table.R`` from the coverage
+    simulations.
+    """
+    if calibration_table is None:
+        from importlib.resources import files
+
+        res = files("dynamic_multiplex").joinpath("data", "coassign_calibration_table.csv")
+        if not res.is_file():
+            raise FileNotFoundError(
+                "The bundled calibration table is missing. Run "
+                "replication/post/14_calibration_table.R and copy "
+                "output/calibration/coassign_calibration_table.csv to "
+                "python_code/src/dynamic_multiplex/data/, or pass "
+                'calibration_table, or use method="wilson".'
+            )
+        with res.open("r") as fh:
+            tab = pd.read_csv(fh)
+    elif isinstance(calibration_table, str):
+        tab = pd.read_csv(calibration_table)
+    else:
+        tab = pd.DataFrame(calibration_table)
+    need = ["phat_lo", "phat_hi", "lower", "upper"]
+    missing = [c for c in need if c not in tab.columns]
+    if missing:
+        raise ValueError(f"calibration_table needs columns: {need}")
+    tab = tab.sort_values("phat_lo").reset_index(drop=True)
+    lo = tab["phat_lo"].to_numpy()
+    hi = tab["phat_hi"].to_numpy()
+    if not (np.isclose(lo[0], 0.0) and np.isclose(hi[-1], 1.0) and np.allclose(hi[:-1], lo[1:])):
+        raise ValueError("calibration_table bins must partition [0, 1].")
+    if (tab["lower"] > tab["upper"]).any() or (tab["lower"] < 0).any() or (tab["upper"] > 1).any():
+        raise ValueError("calibration_table bounds must satisfy 0 <= lower <= upper <= 1.")
+    return tab

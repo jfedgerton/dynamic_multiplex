@@ -1,0 +1,17 @@
+#!/bin/bash
+#SBATCH --job-name=atop_mn_pres
+#SBATCH --output=replication/extended/paper_scripts/logs/atop_mn_pres_%j.out
+#SBATCH --time=1:00:00
+#SBATCH --mem=64G
+#SBATCH --cpus-per-task=2
+#SBATCH --account=open
+#SBATCH --partition=basic
+cd "$SLURM_SUBMIT_DIR"
+module load r/4.5.0
+# R package library: left unset so R resolves its own default user library
+# (~/R/<platform>-library/<version>). Export R_LIBS_USER in your environment
+# before submitting if your packages live elsewhere.
+export EMP_DATA="$SLURM_SUBMIT_DIR/replication/extended/output/empirical_data"
+export EMP_OUT="$SLURM_SUBMIT_DIR/replication/extended/output/empirical"
+Rscript replication/extended/paper_scripts/multinet_fix.R atop
+echo "ATOP_MN_PRESENT_DONE"

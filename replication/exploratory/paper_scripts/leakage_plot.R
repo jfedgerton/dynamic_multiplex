@@ -1,0 +1,20 @@
+suppressMessages({library(igraph);library(ggplot2)}); set.seed(123)
+DATA<-"replication/extended/output/empirical_data"; OUT<-"replication/extended/output/empirical"; FIG<-"manuscript/figures"
+S<-readRDS(file.path(DATA,"atop_series.rds")); U<-readRDS(file.path(DATA,"atop_union.rds")); P<-readRDS(file.path(OUT,"atop_partitions.rds"))$partitions; yrs<-S$years
+mask<-if(!is.null(U$present))U$present else U$active
+G<-lapply(seq_along(S$graph_layers),function(k) igraph::delete_vertices(S$graph_layers[[k]],which(!mask[[k]])))
+deg<-lapply(G,function(g) setNames(igraph::degree(g),V(g)$name))
+nm<-c("2"="USA","20"="CAN","200"="UK","220"="FRA","255"="GER","260"="FRG","265"="GDR","300"="AUH","325"="ITA","365"="RUS","290"="POL","315"="CZE","316"="CZR","310"="HUN","360"="ROM","355"="BUL","375"="FIN","345"="YUG","640"="TUR","651"="EGY","710"="CHN","740"="JPN")
+eras<-list(Concert=c(1816,1853),Bismarck=c(1854,1890),WWI=c(1891,1918),Interwar=c(1919,1938),WWII=c(1939,1945),ColdWar=c(1946,1989),LIO=c(1990,2018))
+D<-c("Concert|365|300|+","Concert|300|255|+","Concert|365|255|+","Concert|220|365|-","Concert|200|365|-","Bismarck|255|300|+","Bismarck|255|325|+","Bismarck|220|255|-","Bismarck|300|365|-","WWI|255|300|+","WWI|220|365|+","WWI|200|220|+","WWI|200|740|+","WWI|255|220|-","WWI|255|200|-","WWI|255|365|-","WWI|325|200|-","Interwar|220|290|+","Interwar|255|325|+","Interwar|220|365|+","Interwar|220|255|-","Interwar|255|365|-","WWII|2|365|+","WWII|2|200|+","WWII|255|740|+","WWII|255|325|+","WWII|255|365|-","WWII|740|2|-","WWII|325|200|-","WWII|375|365|-","ColdWar|2|740|+","ColdWar|2|260|+","ColdWar|365|290|+","ColdWar|365|265|+","ColdWar|2|365|-","ColdWar|710|365|-","ColdWar|345|365|-","ColdWar|265|260|-","LIO|2|290|+","LIO|2|310|+","LIO|2|255|+","LIO|290|365|-","LIO|310|365|-","LIO|316|365|-")
+meth<-intersect(c("DynMux Jaccard r1","DynMux Overlap r1","DynMux multislice r1","multinet GLouvain","Cross-sectional + Hungarian","Pooled Leiden"),names(P))
+mlab<-c("DynMux Jaccard r1"="Jaccard","DynMux Overlap r1"="Overlap","DynMux multislice r1"="multislice","multinet GLouvain"="multinet","Cross-sectional + Hungarian"="Hungarian","Pooled Leiden"="Pooled")
+ev<-function(m,a,b,y0,y1){co<-c();for(y in y0:y1){t<-which(yrs==y);if(!length(t))next;A<-P[[m]][[t]];dg<-deg[[t]];if(!(a%in%names(A)&&b%in%names(A)&&a%in%names(dg)&&b%in%names(dg)))next;if(dg[[a]]<=0||dg[[b]]<=0)next;co<-c(co,as.integer(A[[a]]==A[[b]]))};if(length(co)<2)return(NA);mean(co)}
+rows<-list()
+for(d in D){p<-strsplit(d,"\\|")[[1]];er<-p[1];a<-p[2];b<-p[3];ty<-p[4];lab<-paste0(nm[a],"-",nm[b]," (",ty,")");w<-eras[[er]];for(m in meth){f<-ev(m,a,b,w[1],w[2]);oc<-if(is.na(f))"na" else {co<-f>=0.5; if((ty=="+"&&co)||(ty=="-"&&!co))"ok" else "bad"};rows[[length(rows)+1]]<-data.frame(era=er,dyad=lab,method=mlab[m],oc=oc,stringsAsFactors=FALSE)}}
+DF<-do.call(rbind,rows); DF$era<-factor(DF$era,levels=names(eras)); DF$method<-factor(DF$method,levels=unname(mlab[meth]))
+DF$fill<-ifelse(DF$oc=="na","n/a",paste(DF$era,ifelse(DF$oc=="ok","aligned","misaligned")))
+DF$dyad<-factor(DF$dyad,levels=rev(unique(DF$dyad)))
+pal<-c("Concert aligned"="#33a02c","Concert misaligned"="#ff7f00","Bismarck aligned"="#6a3d9a","Bismarck misaligned"="#b15928","WWI aligned"="#1b9e77","WWI misaligned"="#d95f02","Interwar aligned"="#7570b3","Interwar misaligned"="#e7298a","WWII aligned"="#66a61e","WWII misaligned"="#e6ab02","ColdWar aligned"="#2c7fb8","ColdWar misaligned"="#d7301f","LIO aligned"="#2c7fb8","LIO misaligned"="#d7301f","n/a"="#cccccc")
+p<-ggplot(DF,aes(x=method,y=dyad,fill=fill))+geom_tile(color="white",linewidth=0.5)+facet_grid(era~.,scales="free_y",space="free_y",switch="y")+scale_fill_manual(values=pal,name="Outcome (by era)")+labs(title="Alignment vs misalignment by method and era (ATOP alliances)",subtitle="(+) should co-cluster; (-) should be separate. Saturated=correct, contrast=misaligned, gray=inactive.",x=NULL,y=NULL)+theme_minimal(base_size=11)+theme(panel.grid=element_blank(),strip.text.y.left=element_text(angle=0),legend.position="right")
+ggsave(file.path(FIG,"fig_leakage.png"),p,width=11,height=13,dpi=150); cat("saved fig_leakage.png rows",nrow(DF),"\n")

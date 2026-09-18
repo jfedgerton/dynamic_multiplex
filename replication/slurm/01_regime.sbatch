@@ -1,0 +1,17 @@
+#!/bin/bash
+#SBATCH --job-name=dm_regime
+#SBATCH --account=jfe4_cr_default
+#SBATCH --partition=basic
+#SBATCH --array=1-72
+#SBATCH --time=24:00:00
+#SBATCH --mem=16G
+#SBATCH --cpus-per-task=2
+#SBATCH --output=replication/slurm/logs/01_regime_%A_%a.out
+# Regime comparison: 72 configs x 30 reps x 16 methods (sim/01). One array
+# task per config; a task that already has its dyn_cfgNN.csv exits at once,
+# so the array can be resubmitted after a failure without redoing work.
+set -euo pipefail
+cd "${DM_ROOT:?set DM_ROOT to the project root}"
+module load r/4.5.0
+mkdir -p replication/slurm/logs
+Rscript replication/sim/01_regime_comparison.R

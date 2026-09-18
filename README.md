@@ -9,9 +9,9 @@ interlayer coupling, plus the replication materials for the accompanying paper.
 |---|---|---|
 | `r_code/` | R package `dynamicmultiplex` (CRAN) | yes |
 | `python_code/` | Python package `dynamic_multiplex` (PyPI) | yes |
-| `replication/` | Replication pipelines for the paper (Studies I-III; `extended/` for the regime comparison, coverage study, empirical application, and `extended/paper_scripts/` for figure/table generation) | paper only |
-| `manuscript/` | Legacy synthetic pipeline; generated figures/tables are gitignored | paper only |
-| `scripts/`, `slurm/` | Benchmarks and cluster job files | paper only |
+| `replication/` | Replication package for the paper: `sim/` (regime comparison, coverage study), `empirical/` (alliance, DCA, IGO, trade networks and order recovery), `post/` (every table and figure), `slurm/` (job files), `run_all.sh` (one entry point), `exploratory/` (archived, not run) | paper only |
+| `manuscript/` | Generated `tables/` and `figures/` land here (gitignored until publication) | paper only |
+| `scripts/` | Benchmarks | paper only |
 
 Only `r_code/` and `python_code/` are built into the released packages.
 Everything else is paper-side code and is not part of either package.

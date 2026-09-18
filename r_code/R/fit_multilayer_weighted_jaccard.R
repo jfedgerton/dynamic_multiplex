@@ -36,6 +36,13 @@
 #' Defaults to `NULL` (detection inherits the caller's RNG stream, matching
 #' previous behavior; call `set.seed()` beforehand for reproducibility).
 #'
+#' @param allow_unequal_nodes Logical; if `TRUE`, layers may contain
+#' different node sets (nodes entering or exiting the system). Layers must
+#' then carry vertex names (or row names on the adjacency matrices) so nodes
+#' can be matched across layers; only nodes present in both layers of a
+#' linked pair contribute to the interlayer similarity. Defaults to `FALSE`:
+#' layers must share the same node universe.
+#'
 #' @return A list of class \code{"multilayer_community_fit"} with components:
 #'   \describe{
 #'     \item{layer_communities}{Per-layer community detection (each with
@@ -82,7 +89,8 @@ fit_multilayer_weighted_jaccard <- function(
     add_self_loops = TRUE,
     self_loop_multiplier = 1,
     objective = NULL,
-    seed = NULL
+    seed = NULL,
+    allow_unequal_nodes = FALSE
   ) {
 
   # Check arguments ----
@@ -96,7 +104,11 @@ fit_multilayer_weighted_jaccard <- function(
   }
 
   # Prepare graph layers and layer links ----
-  graph_layers <- prepare_multilayer_graphs(layers, directed = directed)
+  graph_layers <- prepare_multilayer_graphs(
+    layers,
+    directed = directed,
+    require_same_nodes = !allow_unequal_nodes
+  )
   links <- make_layer_links(length(graph_layers), layer_links)
 
   # Fit layer communities ----

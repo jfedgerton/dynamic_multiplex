@@ -62,7 +62,20 @@ prepare_multilayer_graphs <- function(layers, directed = FALSE, require_same_nod
       stop(
         "All layers must share the same node set. Found layers with different ",
         "nodes; align the node universe (adding isolates where needed) before ",
-        "fitting, or, for identity ties only, use allow_unequal_nodes = TRUE.",
+        "fitting, or use allow_unequal_nodes = TRUE with named vertices.",
+        call. = FALSE
+      )
+    }
+  } else {
+    ## unequal node sets are matched by vertex NAME, so every layer must carry
+    ## names; positions would silently pair unrelated nodes ----
+    named <- vapply(graph_layers, function(g) !is.null(igraph::V(g)$name), logical(1))
+    sizes <- vapply(graph_layers, function(g) as.numeric(igraph::vcount(g)), numeric(1))
+    if (!all(named) && length(unique(sizes)) > 1L) {
+      stop(
+        "allow_unequal_nodes = TRUE requires vertex names on every layer ",
+        "(igraph vertex names, or dimnames on adjacency matrices) so that nodes ",
+        "can be matched across layers.",
         call. = FALSE
       )
     }
@@ -384,7 +397,11 @@ layer_node_strengths <- function(graph_layers, directed = FALSE) {
   # assign node strengths ----
   node_strengths <- lapply(graph_layers, function(g) {
     strength_vals <- igraph::strength(g, mode = "all", loops = FALSE, weights = igraph::E(g)$weight)
-    names(strength_vals) <- as.character(seq_along(strength_vals))
+    ## key by vertex name when present, so lookups match the node ids that
+    ## community_overlap_edges() uses (names for named graphs, positions
+    ## otherwise) ----
+    nm <- igraph::V(g)$name
+    names(strength_vals) <- if (is.null(nm)) as.character(seq_along(strength_vals)) else as.character(nm)
     return(strength_vals)
   })
 

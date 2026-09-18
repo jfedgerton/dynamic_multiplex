@@ -11,7 +11,8 @@
 #   -> calibration, even -> validation. Gate chosen on calibration; headline
 #   number is the out-of-sample validation coverage.
 # Outputs (tables are LaTeX only; nothing downstream consumed the CSVs):
-#   manuscript/tables/tab_coverage.tex          (main text)
+#   manuscript/tables/tab_coverage.tex           (main text, gate ladder)
+#   manuscript/tables/tab_coverage_gate_grid.tex (appendix, width x min n)
 #   manuscript/tables/tab_coverage_spec.tex     (appendix per-spec)
 #   manuscript/tables/tab_coverage_misspec.tex  (appendix, if data)
 #   manuscript/tables/tab_coverage_valued.tex   (appendix, if data)
@@ -94,6 +95,70 @@ write_tex(
                    commafmt(tab$n_sims)),
   align  = "lcccc",
   path   = file.path(TAB, "tab_coverage.tex"))
+
+# --- Gate grid: width threshold x minimum network size -------------------
+# Sweeps both dials that define the gate rather than nesting extra
+# restrictions at a single width. Width thresholds are round hundredths; the
+# n thresholds are exactly the network sizes present in the design. Neither
+# dimension contains a value chosen after inspecting results, which is what
+# lets the adopted gate be reported as the output of a stated rule.
+W_GRID <- c(0.03, 0.04, 0.05, 0.06)
+N_GRID <- c(50, 100, 200, 400)
+stopifnot(all(N_GRID %in% unique(d$n)))
+
+grid <- expand.grid(w = W_GRID, nmin = N_GRID)
+grid$calib <- NA_real_
+grid$valid <- NA_real_
+grid$retained <- NA_real_
+grid$n_sims <- NA_integer_
+for (i in seq_len(nrow(grid))) {
+  k <- d$width_P_mean < grid$w[i] & d$n >= grid$nmin[i]
+  grid$n_sims[i]   <- sum(k)
+  grid$retained[i] <- mean(k[d$split == "validation"])
+  if (any(k & d$split == "calibration") && any(k & d$split == "validation")) {
+    grid$calib[i] <- mean(d$cov_P_mean[k & d$split == "calibration"])
+    grid$valid[i] <- mean(d$cov_P_mean[k & d$split == "validation"])
+  }
+}
+cat("\n--- gate grid (width x minimum n) ---\n")
+print(grid)
+
+# Calibration and validation must agree wherever both are populated; a large
+# gap would mean the gate is picking up split-specific noise. Fail loudly.
+gap <- abs(grid$calib - grid$valid)
+stopifnot(all(is.na(gap) | gap < 0.02))
+cat("max |calibration - validation| across grid:",
+    sprintf("%.4f", max(gap, na.rm = TRUE)), "\n")
+
+grid_cell <- function(v, r, ns) {
+  if (is.na(v) || ns == 0) "---" else sprintf("%.3f (%.1f\\%%)", v, 100 * r)
+}
+grid_body <- vapply(W_GRID, function(w) {
+  cells <- vapply(N_GRID, function(nm) {
+    j <- which(grid$w == w & grid$nmin == nm)
+    grid_cell(grid$valid[j], grid$retained[j], grid$n_sims[j])
+  }, character(1))
+  sprintf("$<$ %.2f & %s \\\\", w, paste(cells, collapse = " & "))
+}, character(1))
+
+write_tex(
+  header = sprintf("Maximum interval width & %s \\\\",
+                   paste(sprintf("$n \\geq %d$", N_GRID), collapse = " & ")),
+  body   = grid_body,
+  align  = paste0("l", strrep("c", length(N_GRID))),
+  path   = file.path(TAB, "tab_coverage_gate_grid.tex"))
+
+# Resolution of the coverage estimate. Simulations are clustered within
+# configurations (250 draws each), so the effective sample size is the number
+# of configurations, not the number of simulations. Differences smaller than
+# roughly this standard error are not distinguishable.
+k_adopted <- d$width_P_mean < 0.05 & d$n >= 100
+v_adopted <- d[k_adopted & d$split == "validation", ]
+cfg_cov <- tapply(v_adopted$cov_P_mean, v_adopted$cfg, mean)
+cat("gated validation configurations:", length(cfg_cov), "\n")
+cat("between-configuration SD of coverage:", sprintf("%.4f", sd(cfg_cov)), "\n")
+cat("implied standard error:",
+    sprintf("%.4f", sd(cfg_cov) / sqrt(length(cfg_cov))), "\n")
 
 # --- Per-spec coverage under the final gate, validation side (appendix) ---
 k <- gates[[3]]

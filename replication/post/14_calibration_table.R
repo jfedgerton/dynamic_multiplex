@@ -82,15 +82,37 @@ task_split$split <- ifelse(task_split$cfg %in% calib_cfg, "calibration", "valida
 cat("tasks:", nrow(task_split), " calibration:", sum(task_split$split == "calibration"),
     " validation:", sum(task_split$split == "validation"), "\n")
 
-jt <- readall("coverage_grid", "^joint_task.*csv$")
-stopifnot(all(c("task", "n", "K", "density", "bin_phat", "bin_pstar", "count") %in% names(jt)))
-jt$split <- task_split$split[match(jt$task, task_split$task)]
-stopifnot(!anyNA(jt$split))
-N_BINS <- max(jt$bin_phat)
-stopifnot(N_BINS == max(jt$bin_pstar), N_BINS >= 20)
-cat("bins:", N_BINS, " total pairs:", commafmt(sum(jt$count)), "\n")
+# Joint files are 2,500 rows per task (3,564 tasks for the grid): reading them
+# into one data frame needs several GB and gets the process killed on a login
+# node. Instead every file is reduced on read to a 50 x 50 count matrix and one
+# row of design columns; all downstream sums are matrix operations.
+read_joint <- function(sub) {
+  fs <- list.files(file.path(OUT, sub), "^joint_task.*csv$", full.names = TRUE)
+  if (!length(fs)) return(NULL)
+  cat(sub, "joint files:", length(fs), "\n")
+  des <- vector("list", length(fs)); J <- vector("list", length(fs))
+  for (i in seq_along(fs)) {
+    x <- read.csv(fs[i])
+    if (i == 1) {
+      stopifnot(all(c("task", "n", "K", "density", "algorithm", "bin_phat", "bin_pstar", "count") %in% names(x)))
+      NB <- max(x$bin_phat); stopifnot(NB == max(x$bin_pstar), nrow(x) == NB * NB)
+    }
+    stopifnot(length(unique(x$task)) == 1, nrow(x) == NB * NB)
+    m <- matrix(0, NB, NB); m[cbind(x$bin_phat, x$bin_pstar)] <- x$count
+    J[[i]]   <- m
+    des[[i]] <- x[1, setdiff(names(x), c("bin_phat", "bin_pstar", "count"))]
+  }
+  list(des = do.call(rbind, des), J = J, NB = NB)
+}
+G <- read_joint("coverage_grid")
+if (is.null(G)) stop("No joint files -- run sim/02 first.", call. = FALSE)
+N_BINS <- G$NB; stopifnot(N_BINS >= 20)
+G$des$split <- task_split$split[match(G$des$task, task_split$task)]
+stopifnot(!anyNA(G$des$split))
+cat("bins:", N_BINS, " total pairs:", commafmt(sum(vapply(G$J, sum, numeric(1)))), "\n")
+sumJ <- function(idx, JJ = G$J) Reduce(`+`, JJ[idx], accumulate = FALSE)
 
-cb <- readall("coverage_grid", "^calib_task.*csv$")      # Wilson coverage by phat bin
+cb <- readall("coverage_grid", "^calib_task.*csv$")      # Wilson coverage by phat bin (50 rows/task)
 stopifnot(all(c("task", "bin", "n_pairs", "n_wilson_covered") %in% names(cb)))
 cb$split <- task_split$split[match(cb$task, task_split$task)]
 stopifnot(!anyNA(cb$split))
@@ -102,13 +124,7 @@ stopifnot(!anyNA(cb$split))
 # exceeds alpha/2 (mass strictly below L <= alpha/2); U = upper edge of the
 # bin at which it first reaches 1 - alpha/2. Mass in [L, U] >= 1 - alpha.
 # =============================================================================
-jc <- jt[jt$split == "calibration", ]
-M  <- matrix(0, N_BINS, N_BINS)
-for (b in seq_len(N_BINS)) {
-  s <- tapply(jc$count[jc$bin_phat == b], jc$bin_pstar[jc$bin_phat == b], sum)
-  if (length(s)) M[b, as.integer(names(s))] <- s
-}
-stopifnot(sum(M) == sum(jc$count))
+M <- sumJ(which(G$des$split == "calibration"))
 edges <- seq(0, 1, length.out = N_BINS + 1)
 
 lut <- data.frame(bin = seq_len(N_BINS), phat_lo = edges[-(N_BINS + 1)], phat_hi = edges[-1],
@@ -148,24 +164,26 @@ cat("wrote coassign_calibration_table.csv\n"); print(lut)
 # 3. Validate: conditional coverage by phat bin on each split
 # A pair (phat bin b, p* bin j) is covered iff edges[j] >= lower[b] and
 # edges[j+1] <= upper[b]; i.e. the whole p* bin lies inside [L, U]. This is
-# the conservative reading of the binned data.
+# the conservative reading of the binned data. COVER is that N x N mask.
 # =============================================================================
-jt$covered <- edges[jt$bin_pstar] >= lut$lower[jt$bin_phat] &
-              edges[jt$bin_pstar + 1] <= lut$upper[jt$bin_phat]
+COVER <- outer(seq_len(N_BINS), seq_len(N_BINS),
+               function(b, j) edges[j] >= lut$lower[b] & edges[j + 1] <= lut$upper[b])
+# per-task covered / total pair counts -> a small data frame with design columns
+G$des$cov <- vapply(G$J, function(m) sum(m * COVER), numeric(1))
+G$des$tot <- vapply(G$J, sum, numeric(1))
 cov_by <- function(x, by) {
   key <- do.call(paste, c(x[by], sep = "\r"))
-  cv  <- tapply(x$count * x$covered, key, sum)
-  tt  <- tapply(x$count, key, sum)
+  cv  <- tapply(x$cov, key, sum); tt <- tapply(x$tot, key, sum)
   a   <- unique(x[by]); rownames(a) <- NULL
   k   <- do.call(paste, c(a, sep = "\r"))
   a$cov <- as.numeric(cv[k]); a$tot <- as.numeric(tt[k])
-  a <- a[a$tot > 0, , drop = FALSE]                # joint files carry zero-count cells
+  a <- a[a$tot > 0, , drop = FALSE]
   a$coverage <- a$cov / a$tot
   a <- a[do.call(order, unname(a[by])), , drop = FALSE]
   rownames(a) <- NULL
   a
 }
-pool <- cov_by(jt, "split")
+pool <- cov_by(G$des, "split")
 print(pool)
 stopifnot(pool$coverage[pool$split == "calibration"] >= 1 - ALPHA - 1e-9)   # by construction
 
@@ -179,9 +197,13 @@ wilson_width <- function(p, B) {
   den <- 1 + Z^2 / B
   2 * (Z / den) * sqrt(p * (1 - p) / B + Z^2 / (4 * B^2))
 }
-cal_bin <- cov_by(jt, c("bin_phat", "split"))
-names(cal_bin)[names(cal_bin) == "bin_phat"] <- "bin"
-v <- merge(cal_bin[cal_bin$split == "validation", ], wb[wb$split == "validation", ], by = c("bin", "split"))
+# calibrated coverage by phat bin on the validation split
+MV <- sumJ(which(G$des$split == "validation"))
+cal_bin <- data.frame(bin = seq_len(N_BINS), split = "validation",
+                      cov = rowSums(MV * COVER), tot = rowSums(MV))
+cal_bin <- cal_bin[cal_bin$tot > 0, ]
+cal_bin$coverage <- cal_bin$cov / cal_bin$tot
+v <- merge(cal_bin, wb[wb$split == "validation", ], by = c("bin", "split"))
 v <- v[order(v$bin), ]
 v$mid <- (edges[v$bin] + edges[v$bin + 1]) / 2
 v$wilson_width <- wilson_width(v$mid, B_BOOT)
@@ -216,7 +238,7 @@ cat("validation, pooled over phat: Wilson",
     " calibrated", sprintf("%.4f", sum(v$cal_width * v$tot) / sum(v$tot)), "\n")
 
 # --- validation coverage by design cell -----------------------------------
-jv <- jt[jt$split == "validation", ]
+jv <- G$des[G$des$split == "validation", ]
 by_n   <- cov_by(jv, "n");        by_n$dim   <- "$n$";     by_n$level   <- as.character(by_n$n)
 by_K   <- cov_by(jv, "K");        by_K$dim   <- "$K$";     by_K$level   <- as.character(by_K$K)
 by_d   <- cov_by(jv, "density");  by_d$dim   <- "Separation"
@@ -244,15 +266,13 @@ write_tex(
 # =============================================================================
 arms <- list()
 for (arm in c("coverage_valued", "coverage_misspec")) {
-  ja <- readall(arm, "^joint_task.*csv$")
-  if (is.null(ja)) { cat("skip:", arm, "\n"); next }
-  stopifnot(max(ja$bin_phat) == N_BINS)
-  ja$covered <- edges[ja$bin_pstar] >= lut$lower[ja$bin_phat] &
-                edges[ja$bin_pstar + 1] <= lut$upper[ja$bin_phat]
+  A <- read_joint(arm)
+  if (is.null(A)) { cat("skip:", arm, "\n"); next }
+  stopifnot(A$NB == N_BINS)
+  MA <- sumJ(seq_along(A$J), A$J)
   arms[[arm]] <- data.frame(arm = c(coverage_valued = "Weighted networks",
                                     coverage_misspec = "Degree-corrected generating model")[arm],
-                            coverage = sum(ja$count * ja$covered) / sum(ja$count),
-                            n_pairs = sum(ja$count))
+                            coverage = sum(MA * COVER) / sum(MA), n_pairs = sum(MA))
 }
 if (length(arms)) {
   arms <- rbind(data.frame(arm = "Binary (validation split)",

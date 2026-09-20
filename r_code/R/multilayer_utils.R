@@ -881,60 +881,70 @@ genlouvain_multislice <- function(edges, K, twom, gamma = 1, max_levels = 20L, m
 genlouvain_multislice_once <- function(edges, K, twom, gamma, max_levels, max_passes) {
   inv2m <- ifelse(twom > 0, 1 / twom, 0)
   N0 <- nrow(K)
-  assign0 <- seq_len(N0)                      # original vertex -> current level vertex
-  ef <- as.integer(edges$from); et <- as.integer(edges$to); ew <- as.numeric(edges$w)
-  Kcur <- K
-
-  for (level in seq_len(max_levels)) {
-    N <- nrow(Kcur)
-    # symmetric adjacency lists ----
-    nb_from <- c(ef, et); nb_to <- c(et, ef); nb_w <- c(ew, ew)
-    ord <- order(nb_from); nb_from <- nb_from[ord]; nb_to <- nb_to[ord]; nb_w <- nb_w[ord]
-    starts <- c(1L, cumsum(tabulate(nb_from, N)) + 1L)     # CSR offsets, length N+1
-    comm <- seq_len(N)
-    Ktot <- Kcur                                          # community x slice degree totals
-    KS <- Kcur * matrix(inv2m, N, ncol(Kcur), byrow = TRUE) # k_is / 2m_s, precomputed
-    moved_any <- FALSE
-    for (pass in seq_len(max_passes)) {
-      moved <- 0L
-      for (v in sample.int(N)) {
-        a <- starts[v]; b <- starts[v + 1L] - 1L
-        if (b < a) next
-        nbr <- nb_to[a:b]; wv <- nb_w[a:b]
-        cv <- comm[v]
-        # remove v from its community ----
-        Ktot[cv, ] <- Ktot[cv, ] - Kcur[v, ]
-        # weight from v to each neighbouring community ----
-        nc <- comm[nbr]
-        wc <- rowsum(wv, nc, reorder = FALSE)
-        cand <- as.integer(rownames(wc))
-        # gain of joining community c: w_vc - gamma * sum_s (k_vs / 2m_s) * Ktot[c, s] ----
-        gain <- as.numeric(wc) - gamma * as.numeric(Ktot[cand, , drop = FALSE] %*% KS[v, ])
-        ib <- which.max(gain); bg <- gain[ib]; best <- cand[ib]
-        icv <- match(cv, cand)
-        # staying put has gain 0 when the current community holds no neighbour,
-        # else its own gain; move only on a strict improvement ----
-        stay <- if (is.na(icv)) 0 else gain[icv]
-        if (bg <= stay + 1e-12) best <- cv
-        Ktot[best, ] <- Ktot[best, ] + Kcur[v, ]
-        if (best != cv) { comm[v] <- best; moved <- moved + 1L }
-      }
-      if (moved > 0L) moved_any <- TRUE else break
-    }
-    # relabel 1..C ----
-    comm <- match(comm, sort(unique(comm)))
-    C <- max(comm)
-    assign0 <- comm[assign0]
-    if (!moved_any || C == N) break
-    # aggregate: communities become vertices ----
-    Kcur <- rowsum(Kcur, comm, reorder = TRUE)
-    cf <- comm[ef]; ct <- comm[et]
-    keep <- cf != ct                                      # internal weight is constant for later gains
-    if (!any(keep)) break
-    key <- ifelse(cf[keep] < ct[keep], paste(cf[keep], ct[keep]), paste(ct[keep], cf[keep]))
-    agg <- tapply(ew[keep], key, sum)
-    pr <- do.call(rbind, strsplit(names(agg), " ", fixed = TRUE))
-    ef <- as.integer(pr[, 1]); et <- as.integer(pr[, 2]); ew <- as.numeric(agg)
+  ef0 <- as.integer(edges$from); et0 <- as.integer(edges$to); ew0 <- as.numeric(edges$w)
+  relabel <- function(x) match(x, sort(unique(x)))
+  aggregate_edges <- function(ef, et, ew, comm) {           # community graph, internal weight dropped
+    cf <- comm[ef]; ct <- comm[et]; keep <- cf != ct
+    if (!any(keep)) return(list(ef = integer(0), et = integer(0), ew = numeric(0)))
+    a <- pmin(cf[keep], ct[keep]); b <- pmax(cf[keep], ct[keep])
+    key <- a * (max(comm) + 1) + b
+    agg <- rowsum(ew[keep], key, reorder = TRUE); k <- as.numeric(rownames(agg))
+    list(ef = as.integer(k %/% (max(comm) + 1)), et = as.integer(k %% (max(comm) + 1)), ew = as.numeric(agg))
   }
-  as.integer(assign0)
+  comm <- seq_len(N0)
+  for (outer in seq_len(max_levels)) {
+    # node-level local moving from the current partition (this is the refinement
+    # step: a node whose copies were merged into one community at a coarser
+    # level can leave it once the slices are looked at one node at a time) ----
+    comm <- relabel(genlouvain_local_moving(ef0, et0, ew0, K, inv2m, gamma, comm, max_passes))
+    # multilevel aggregation from that partition ----
+    assign <- comm; Kc <- rowsum(K, comm, reorder = TRUE); E <- aggregate_edges(ef0, et0, ew0, comm)
+    for (level in seq_len(max_levels)) {
+      if (!length(E$ef)) break
+      c2 <- relabel(genlouvain_local_moving(E$ef, E$et, E$ew, Kc, inv2m, gamma, seq_len(nrow(Kc)), max_passes))
+      if (max(c2) == nrow(Kc)) break                        # no community merged: stable
+      assign <- c2[assign]; Kc <- rowsum(Kc, c2, reorder = TRUE); E <- aggregate_edges(E$ef, E$et, E$ew, c2)
+    }
+    if (identical(assign, comm)) break                     # refinement moved nothing and nothing merged
+    comm <- assign
+  }
+  as.integer(comm)
+}
+
+# One round of local moving: every vertex joins the neighbouring community
+# with the largest gain, repeated until no vertex moves (or max_passes).
+# K is vertices x slices; comm_init the starting partition.
+genlouvain_local_moving <- function(ef, et, ew, Kcur, inv2m, gamma, comm_init, max_passes) {
+  N <- nrow(Kcur)
+  if (!length(ef)) return(comm_init)
+  nb_from <- c(ef, et); nb_to <- c(et, ef); nb_w <- c(ew, ew)
+  ord <- order(nb_from); nb_from <- nb_from[ord]; nb_to <- nb_to[ord]; nb_w <- nb_w[ord]
+  starts <- c(1L, cumsum(tabulate(nb_from, N)) + 1L)       # CSR offsets, length N+1
+  comm <- as.integer(comm_init)
+  Ktot <- rowsum(Kcur, comm, reorder = TRUE); Ktot <- Ktot[as.character(seq_len(max(comm))), , drop = FALSE]
+  Ktot[is.na(Ktot)] <- 0
+  KS <- Kcur * matrix(inv2m, N, ncol(Kcur), byrow = TRUE)   # k_is / 2m_s, precomputed
+  for (pass in seq_len(max_passes)) {
+    moved <- 0L
+    for (v in sample.int(N)) {
+      a <- starts[v]; b <- starts[v + 1L] - 1L
+      if (b < a) next
+      nbr <- nb_to[a:b]; wv <- nb_w[a:b]
+      cv <- comm[v]
+      Ktot[cv, ] <- Ktot[cv, ] - Kcur[v, ]                 # remove v from its community
+      nc <- comm[nbr]
+      wc <- rowsum(wv, nc, reorder = FALSE)
+      cand <- as.integer(rownames(wc))
+      # gain of joining c: w_vc - gamma * sum_s (k_vs / 2m_s) * Ktot[c, s] ----
+      gain <- as.numeric(wc) - gamma * as.numeric(Ktot[cand, , drop = FALSE] %*% KS[v, ])
+      ib <- which.max(gain); bg <- gain[ib]; best <- cand[ib]
+      icv <- match(cv, cand)
+      stay <- if (is.na(icv)) 0 else gain[icv]             # staying alone has gain 0
+      if (bg <= stay + 1e-12) best <- cv
+      Ktot[best, ] <- Ktot[best, ] + Kcur[v, ]
+      if (best != cv) { comm[v] <- best; moved <- moved + 1L }
+    }
+    if (moved == 0L) break
+  }
+  comm
 }

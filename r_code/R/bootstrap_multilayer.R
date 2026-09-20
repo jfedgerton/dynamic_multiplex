@@ -57,6 +57,13 @@
 #'       share of completed replicates whose meta-community count equals
 #'       the observed-network count. A descriptive stability measure. The raw
 #'       per-replicate community counts are intentionally not returned.}
+#'     \item{stability_samples}{List with matrices \code{nmi} and \code{ari}
+#'       (completed replicates x layers): agreement of each replicate's
+#'       meta-partition with the point-estimate partition. Summarised by
+#'       \code{\link{partition_stability}}.}
+#'     \item{node_jaccard_stability}{Per-layer vectors: for each node, the
+#'       mean Jaccard overlap between its replicate community and its
+#'       point-estimate community.}
 #'     \item{point_estimate}{The fit result from the original data.}
 #'   }
 #'
@@ -195,6 +202,18 @@ bootstrap_multilayer <- function(
   count_samples <- lapply(seq_len(n_layers), function(i) integer(0))
   n_completed <- 0L
 
+  # partition-level agreement of every replicate with the point estimate
+  # (rows = completed replicates, columns = layers); node-level Jaccard
+  # agreement accumulated per node. These feed partition_stability(). ----
+  point_meta <- lapply(point_estimate$meta_communities, as.integer)
+  nmi_samples <- matrix(numeric(0), nrow = 0, ncol = n_layers)
+  ari_samples <- matrix(numeric(0), nrow = 0, ncol = n_layers)
+  node_jaccard_accum <- lapply(seq_len(n_layers), function(i) numeric(n_nodes))
+  node_jaccard_one <- function(mem_a, mem_b) {
+    same_a <- outer(mem_a, mem_a, "=="); same_b <- outer(mem_b, mem_b, "==")
+    rowSums(same_a & same_b) / rowSums(same_a | same_b)
+  }
+
   # build multilayer fits for all bootstrap replicates ----
   for (b in seq_len(n_boot)) {
 
@@ -230,6 +249,17 @@ bootstrap_multilayer <- function(
     ## update completed bootstrap count ----
     if (is.null(boot_fit)) next
     n_completed <- n_completed + 1L
+
+    ## agreement with the point estimate, per layer ----
+    boot_meta <- lapply(boot_fit$meta_communities, as.integer)
+    nmi_row <- vapply(seq_len(n_layers), function(t)
+      igraph::compare(boot_meta[[t]], point_meta[[t]], method = "nmi"), numeric(1))
+    ari_row <- vapply(seq_len(n_layers), function(t)
+      igraph::compare(boot_meta[[t]], point_meta[[t]], method = "adjusted.rand"), numeric(1))
+    nmi_samples <- rbind(nmi_samples, nmi_row)
+    ari_samples <- rbind(ari_samples, ari_row)
+    for (t in seq_len(n_layers))
+      node_jaccard_accum[[t]] <- node_jaccard_accum[[t]] + node_jaccard_one(boot_meta[[t]], point_meta[[t]])
 
     ## define outputs for each layer ----
     for (layer_idx in seq_len(n_layers)) {
@@ -315,6 +345,9 @@ bootstrap_multilayer <- function(
       node_stability = node_stability,
       modularity_samples = mod_samples,
       community_count_reproducibility = community_count_reproducibility,
+      stability_samples = list(nmi = unname(nmi_samples), ari = unname(ari_samples)),
+      node_jaccard_stability = lapply(node_jaccard_accum, function(v)
+        if (n_completed > 0) v / n_completed else v),
       point_estimate = point_estimate
     ),
     class = "multilayer_bootstrap"
@@ -346,9 +379,9 @@ bootstrap_multilayer <- function(
 #' function now reports how often the community count reproduces under
 #' resampling. This is a descriptive stability measure, not a calibrated
 #' interval: it makes no claim about the probability that any range contains
-#' the true community count. For a validated interval, use
-#' \code{\link{co_assignment_ci}}, whose node-pair coverage held across the
-#' same misspecification stress tests. The raw per-replicate community counts
+#' the true community count. For a calibrated reliability measure use
+#' \code{\link{partition_stability}}, which bounds the accuracy of the tracked
+#' partition from below. The raw per-replicate community counts
 #' are intentionally not exposed anywhere in the package output; only this
 #' reproducibility summary is returned.
 #'
@@ -366,8 +399,8 @@ bootstrap_multilayer <- function(
 #'     \item{co_assignment}{Per-layer co-assignment matrices.}
 #'   }
 #'
-#' @seealso \code{\link{co_assignment_ci}} for calibrated node-pair
-#' co-assignment intervals.
+#' @seealso \code{\link{partition_stability}} for the calibrated reliability
+#' score of the tracked partition.
 #'
 #' @examples
 #' set.seed(123)

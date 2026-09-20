@@ -7,9 +7,7 @@
 #SBATCH --mem=16G
 #SBATCH --cpus-per-task=2
 #SBATCH --output=replication/slurm/logs/01_regime_%A_%a.out
-# Regime comparison: 72 configs x 30 reps x 16 methods (sim/01). One array
-# task per config; a task that already has its dyn_cfgNN.csv exits at once,
-# so the array can be resubmitted after a failure without redoing work.
+# Regime comparison: 72 configs x 30 reps x every method (sim/01). Finished tasks self-skip on resubmission.
 set -euo pipefail
 cd "${DM_ROOT:?set DM_ROOT to the project root}"
 module load r/4.5.0

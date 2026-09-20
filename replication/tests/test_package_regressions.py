@@ -2,7 +2,7 @@
 Usage: python replication/tests/test_package_regressions.py
 """
 import numpy as np
-from sklearn.metrics import normalized_mutual_info_score as nmi
+from dynamic_multiplex.bootstrap_multilayer import _nmi as nmi   # no sklearn dependency
 from dynamic_multiplex import (extract_meta_membership, fit_multilayer_identity_ties,
                                fit_multilayer_weighted_jaccard)
 from dynamic_multiplex.multilayer_utils import weighted_jaccard_similarity
@@ -30,4 +30,16 @@ fw = fit_multilayer_weighted_jaccard(L, algorithm="leiden", seed=123)
 mw = extract_meta_membership(fw)
 assert all(len(set(x)) == K for x in mw)
 assert np.mean([nmi(x, mem) for x in mw]) > 0.85
-print("weighted Jaccard fitter: ok\nALL PACKAGE REGRESSION TESTS PASSED")
+print("weighted Jaccard fitter: ok")
+
+from dynamic_multiplex import bootstrap_multilayer, partition_stability, co_assignment_ci
+boot = bootstrap_multilayer(L, fit_type="jaccard", algorithm="leiden", n_boot=10, seed=123)
+assert boot.stability_samples["nmi"].shape[0] == boot.n_boot
+ps = partition_stability(boot)
+assert ps["stability"] > 0.9 and ps["floor"] > 0.9 and ps["bin"] == "[0.9, 1.0)"
+assert abs(sum(ps["pair_summary"].values()) - 1) < 1e-12
+try:
+    co_assignment_ci(boot, method="calibrated"); raise AssertionError("calibrated should raise")
+except ValueError:
+    pass
+print("partition_stability: ok\nALL PACKAGE REGRESSION TESTS PASSED")

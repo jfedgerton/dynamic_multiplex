@@ -1,5 +1,5 @@
 # =============================================================================
-# replication/sim/07_coupling_regimes.R
+# replication/sim/04_coupling_regimes.R
 #
 # WHEN DOES JACCARD COUPLING BEAT OVERLAP COUPLING (AND VICE VERSA)?
 #
@@ -60,8 +60,8 @@
 # shuffled with set.seed(123) so a partial run samples every condition.
 # Per-rep seed = 31000 + TASK*1000 + rep.
 #
-# Usage (local smoke): CMP_MINI=1 CMP_CFG=1 DM_ROOT=. Rscript replication/sim/07_coupling_regimes.R
-# Array: one SLURM_ARRAY_TASK_ID per config (1..48); see slurm/13_coupling.sbatch.
+# Usage (local smoke): CMP_MINI=1 CMP_CFG=1 DM_ROOT=. Rscript replication/sim/04_coupling_regimes.R
+# Array: one SLURM_ARRAY_TASK_ID per config (1..48); see slurm/04_coupling.sbatch.
 # Output: $DM_ROOT/output/coupling/coup_cfg%02d.csv
 # Sequential by design (plain rep loop) so it stays debuggable.
 # =============================================================================

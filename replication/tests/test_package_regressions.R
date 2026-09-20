@@ -42,4 +42,13 @@ fw <- fit_multilayer_weighted_jaccard(L, algorithm = "leiden", seed = 123)
 mw <- extract_meta_membership(fw)
 stopifnot(all(vapply(mw, function(x) length(unique(x)), integer(1)) == K))
 stopifnot(mean(vapply(mw, function(x) igraph::compare(x, mem, "nmi"), numeric(1))) > 0.85)  # (before 1.2.1: ~1 community per layer)
-cat("weighted Jaccard fitter: ok\nALL PACKAGE REGRESSION TESTS PASSED\n")
+cat("weighted Jaccard fitter: ok\n")
+
+# --- 4. partition_stability() (1.3.0) ------------------------------------
+boot <- bootstrap_multilayer(L, fit_type = "jaccard", algorithm = "leiden", n_boot = 10, seed = 123)
+stopifnot(!is.null(boot$stability_samples), nrow(boot$stability_samples$nmi) == boot$n_boot)
+ps <- partition_stability(boot)
+stopifnot(ps$stability > 0.9, ps$floor > 0.9, ps$bin == "[0.9, 1.0)",
+          abs(sum(ps$pair_summary) - 1) < 1e-12, length(ps$pairs) == length(L))
+stopifnot(inherits(tryCatch(co_assignment_ci(boot, method = "calibrated"), error = function(e) e), "error"))
+cat("partition_stability: ok\nALL PACKAGE REGRESSION TESTS PASSED\n")

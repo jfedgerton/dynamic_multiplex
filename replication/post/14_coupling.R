@@ -1,8 +1,8 @@
 #!/usr/bin/env Rscript
 # =============================================================================
-# replication/post/17_coupling.R  --  Jaccard vs overlap coupling by regime
+# replication/post/14_coupling.R  --  Jaccard vs overlap coupling by regime
 #
-# Reads output/coupling/coup_cfg*.csv (sim/07) and writes
+# Reads output/coupling/coup_cfg*.csv (sim/04) and writes
 #   manuscript/tables/tab_app_coupling_regimes.tex   regime x metric: Jaccard,
 #                     Overlap, paired difference (Jaccard - Overlap) with 95% CI
 #   manuscript/tables/tab_app_coupling_methods.tex   regime x method means for
@@ -13,7 +13,7 @@
 #   output/coupling_summary/*.csv                    the numbers behind them
 # Paired CIs: per (config, rep) difference between the two methods on the same
 # simulated series; mean and t-interval across all reps in the regime.
-# Usage: DM_ROOT=... Rscript replication/post/17_coupling.R
+# Usage: DM_ROOT=... Rscript replication/post/14_coupling.R
 # =============================================================================
 ROOT <- Sys.getenv("DM_ROOT", unset = getwd())
 suppressPackageStartupMessages(library(ggplot2))

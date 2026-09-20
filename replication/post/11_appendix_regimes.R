@@ -52,6 +52,7 @@ stopifnot(all(c("regime", "intensity", "method", "rep", "nmi_joint", "k_mae") %i
 cat("files:", length(fs), " rows:", nrow(d), "\n")
 
 relab <- c("DynMux multislice (adjacent)" = "Multislice (adjacent)",
+           "DynMux multislice (custom)"   = "Multislice (same links)",
            "Cross-sectional + Hungarian"  = "Hungarian matching")
 d$method <- ifelse(d$method %in% names(relab), relab[d$method], d$method)
 d$unit   <- paste(d$cfg, d$rep, sep = "_")
@@ -65,15 +66,17 @@ rn_tex <- c(birthdeath  = "Births \\& deaths",
             regimeshift = "Abrupt rewiring",
             seasonality = "Recurring structure")
 refs      <- c("DynMux Jaccard", "DynMux Overlap")
-baselines <- c("Hungarian matching", "Multislice (adjacent)",
+baselines <- c("Hungarian matching", "Multislice (adjacent)", "Multislice (same links)",
                "Dynamic SBM", "Pooled Leiden", "multinet GLouvain")
 blab <- c("Hungarian matching"    = "Hungarian\nmatching",
           "Multislice (adjacent)" = "Multislice\nadjacent",
+          "Multislice (same links)" = "Multislice\nsame links",
           "Dynamic SBM"           = "Dynamic\nSBM",
           "Pooled Leiden"         = "Pooled\nLeiden",
           "multinet GLouvain"     = "Multislice full\n(multinet)")
 bl_tex <- c("Hungarian matching"    = "Hungarian matching",
-            "Multislice (adjacent)" = "Multislice (adjacent)",
+            "Multislice (adjacent)" = "Multislice (adjacent links)",
+            "Multislice (same links)" = "Multislice (same links as DynMux)",
             "Dynamic SBM"           = "Dynamic SBM",
             "Pooled Leiden"         = "Pooled Leiden",
             "multinet GLouvain"     = "Multislice full (\\texttt{multinet})")
@@ -145,7 +148,7 @@ for (mt in c("nmi_joint", "k_mae")) {
                idvar = c("regime", "intensity", "baseline"),
                timevar = "ref_short", direction = "wide")
   names(w) <- sub("cell.", "", names(w), fixed = TRUE)
-  stopifnot(all(c("Jaccard", "Overlap") %in% names(w)), nrow(w) == 40)
+  stopifnot(all(c("Jaccard", "Overlap") %in% names(w)), nrow(w) == 8 * length(baselines))
   w <- w[order(factor(w$regime,    levels = names(rn)),
                factor(w$intensity, levels = c("low", "high")),
                factor(w$baseline,  levels = baselines)), ]

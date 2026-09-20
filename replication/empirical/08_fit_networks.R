@@ -1,8 +1,8 @@
 # =============================================================================
-# 06_fit_networks.R
+# 08_fit_networks.R
 # Empirical case study: all DynMux specs + baselines on one real dynamic
 # international network (atop | dca | igo | trade), as built by
-# 05_build_networks.R. DynSBM excluded (does not scale to the 203-layer open
+# 07_build_networks.R. DynSBM excluded (does not scale to the 203-layer open
 # population). DynMux runs on the native per-year graphs with non-present
 # (isolate) states dropped; fixed-node baselines run on the union node set and
 # are then scored on the per-layer `present` mask. multinet GLouvain is fit
@@ -13,7 +13,7 @@
 #               fitter logic; supersedes 06_alliance_dca_empirical.R) and
 #               replication/extended/paper_scripts/multinet_fix.R
 #
-# Usage:  Rscript 06_fit_networks.R <atop|dca|igo|trade>
+# Usage:  Rscript 08_fit_networks.R <atop|dca|igo|trade>
 # Env:    DM_ROOT  project root (default getwd()); FORCE=1 recomputes everything
 # Input:  $DM_ROOT/output/empirical_data/<net>_series.rds, <net>_union.rds
 # Output: $DM_ROOT/output/empirical/<net>_partitions.rds
@@ -35,7 +35,7 @@ stopifnot(exists("fit_multilayer_identity_ties"), exists("fit_multilayer_jaccard
           exists("fit_multilayer_overlap"), exists("extract_meta_membership"))
 
 args <- commandArgs(trailingOnly = TRUE)
-if (length(args) < 1) stop("Usage: Rscript 06_fit_networks.R <atop|dca|igo|trade>", call. = FALSE)
+if (length(args) < 1) stop("Usage: Rscript 08_fit_networks.R <atop|dca|igo|trade>", call. = FALSE)
 net <- args[1]
 stopifnot(net %in% c("atop", "dca", "igo", "trade"))
 FORCE <- identical(Sys.getenv("FORCE", "0"), "1")
@@ -50,7 +50,7 @@ if (!HAVE_MULTINET) message("package 'multinet' not installed: multinet GLouvain
 series_f <- file.path(EMP_DATA, sprintf("%s_series.rds", net))
 union_f  <- file.path(EMP_DATA, sprintf("%s_union.rds",  net))
 if (!file.exists(series_f) || !file.exists(union_f))
-  stop("Missing ", series_f, " and/or ", union_f, " -- run 05_build_networks.R ", net, " first.", call. = FALSE)
+  stop("Missing ", series_f, " and/or ", union_f, " -- run 07_build_networks.R ", net, " first.", call. = FALSE)
 S <- readRDS(series_f); yrs <- S$years
 U <- readRDS(union_f)
 if (is.null(U$present)) U$present <- U$active   # older union files saved only `active`

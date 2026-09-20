@@ -1,5 +1,5 @@
 # =============================================================================
-# 07_score_orders.R
+# 09_score_orders.R
 # Set-level recovery of Braumoeller (2019) / Goodhart coded international
 # orders by the detected communities, for every coded order, every layer
 # (year) and every method, on all four empirical networks. This is the data
@@ -26,10 +26,10 @@
 #               (codings + helpers) and 32_setlevel_allorders.R (scoring loop),
 #               with no readLines()+eval().
 #
-# Usage:  Rscript 07_score_orders.R
+# Usage:  Rscript 09_score_orders.R
 # Env:    DM_ROOT  project root (default getwd())
 # Input:  $DM_ROOT/output/empirical_data/<net>_series.rds, <net>_union.rds
-#         $DM_ROOT/output/empirical/<net>_partitions.rds   (06_fit_networks.R)
+#         $DM_ROOT/output/empirical/<net>_partitions.rds   (08_fit_networks.R)
 # Output: $DM_ROOT/output/empirical/order_recovery.csv
 #         $DM_ROOT/output/empirical/order_recovery.rds
 #         long format: net, order, kind, year, method, J, prec, rec, nB
@@ -111,7 +111,7 @@ for(net in NETS){
  union_f  <- file.path(EMP_DATA, sprintf("%s_union.rds",  net))
  part_f   <- file.path(EMP_OUT,  sprintf("%s_partitions.rds", net))
  for (f in c(series_f, union_f, part_f))
-   if (!file.exists(f)) stop("Missing ", f, " -- run 05_build_networks.R and 06_fit_networks.R ", net, " first.", call. = FALSE)
+   if (!file.exists(f)) stop("Missing ", f, " -- run 07_build_networks.R and 08_fit_networks.R ", net, " first.", call. = FALSE)
  S<-readRDS(series_f); U<-readRDS(union_f); P<-readRDS(part_f)$partitions
  yrs<-S$years; mask<-if(!is.null(U$present))U$present else U$active
  stopifnot(length(S$graph_layers) == length(yrs), length(mask) == length(yrs), !is.null(P))

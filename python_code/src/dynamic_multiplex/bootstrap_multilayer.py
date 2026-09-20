@@ -65,6 +65,13 @@ class BootstrapResult:
         retained.
     point_estimate : dict
         The fit result from the original (unperturbed) data.
+    stability_samples : dict
+        ``{"nmi": array, "ari": array}`` of shape (completed replicates,
+        layers): agreement of each replicate's meta-partition with the
+        point-estimate partition. Summarised by ``partition_stability``.
+    node_jaccard_stability : list[np.ndarray]
+        Per-layer arrays: for each node, the mean Jaccard overlap between its
+        replicate community and its point-estimate community.
     """
 
     n_boot: int
@@ -73,6 +80,8 @@ class BootstrapResult:
     modularity_samples: list[np.ndarray]
     community_count_reproducibility: list[float]
     point_estimate: dict
+    stability_samples: dict | None = None
+    node_jaccard_stability: list[np.ndarray] | None = None
 
 
 def bootstrap_multilayer(
@@ -209,6 +218,13 @@ def bootstrap_multilayer(
     mod_samples = [[] for _ in range(n_layers)]
     count_samples = [[] for _ in range(n_layers)]
 
+    # Agreement of every replicate with the point estimate (partition level:
+    # NMI and ARI per layer; node level: Jaccard of each node's community).
+    point_meta = [np.asarray(m) for m in point_estimate["meta_communities"]]
+    nmi_rows: list[list[float]] = []
+    ari_rows: list[list[float]] = []
+    node_jaccard_accum = [np.zeros(n_nodes) for _ in range(n_layers)]
+
     rng = np.random.default_rng(seed)
 
     for _b in range(n_boot):
@@ -240,6 +256,12 @@ def bootstrap_multilayer(
             boot_fit = fit_fn(perturbed, **fit_kwargs)
         except Exception:
             continue
+
+        boot_meta = [np.asarray(m) for m in boot_fit["meta_communities"]]
+        nmi_rows.append([_nmi(boot_meta[t], point_meta[t]) for t in range(n_layers)])
+        ari_rows.append([_ari(boot_meta[t], point_meta[t]) for t in range(n_layers)])
+        for t in range(n_layers):
+            node_jaccard_accum[t] += _node_jaccard(boot_meta[t], point_meta[t])
 
         for layer_idx in range(n_layers):
             lc = boot_fit["layer_communities"][layer_idx]
@@ -318,6 +340,10 @@ def bootstrap_multilayer(
         modularity_samples=[np.array(s) for s in mod_samples],
         community_count_reproducibility=community_count_reproducibility,
         point_estimate=point_estimate,
+        stability_samples={"nmi": np.array(nmi_rows), "ari": np.array(ari_rows)},
+        node_jaccard_stability=[
+            (v / n_completed) if n_completed > 0 else v for v in node_jaccard_accum
+        ],
     )
 
 
@@ -418,162 +444,248 @@ def community_est(
 def co_assignment_ci(
     boot_result: BootstrapResult,
     alpha: float = 0.05,
-    method: str = "calibrated",
+    method: str = "wilson",
     calibration_table=None,
 ) -> list[dict]:
-    """Confidence intervals for node-pair co-assignment.
+    """Descriptive Monte Carlo interval for node-pair co-assignment.
 
-    For every pair of nodes in every layer, computes an interval for the
-    co-clustering propensity: the probability that the fitted community
-    detection procedure places the two nodes in the same community when the
-    data are perturbed. The point estimate is the co-assignment probability
-    from ``bootstrap_multilayer`` (the share of bootstrap replicates in
-    which the pair was co-assigned).
-
-    Two constructions are available.
-
-    ``"calibrated"`` (default)
-        The interval is read from a lookup table fitted in the package's
-        simulation study: for each bin of the bootstrap co-assignment share
-        p-hat, the table stores the 2.5 and 97.5 percent conditional
-        quantiles of the fresh-data co-assignment propensity p*. Its width
-        does not depend on ``n_boot`` and its conditional coverage given
-        p-hat was validated out of sample on the simulation design (binary
-        and weighted stochastic block models, 50-400 nodes, 3-10
-        communities, 5-15 layers).
-    ``"wilson"``
-        The Wilson score interval that treats the ``n_boot`` replicates as
-        binomial draws. Its width scales as 1/sqrt(n_boot), so it measures
-        Monte Carlo error in the bootstrap rather than uncertainty about
-        p*; it is retained for comparison and for the coverage study in the
-        paper.
-
-    Because co-assignment is label-invariant (it never compares community
-    labels across replicates, only whether two nodes sit together), it
-    avoids the label-switching problem that makes per-node membership
-    intervals ill-defined.
+    For every pair of nodes in every layer, returns the bootstrap
+    co-assignment share (fraction of replicates in which the pair landed in
+    the same meta-community) with a Wilson score interval that treats the
+    replicates as binomial draws.
 
     .. warning::
-       These intervals quantify the stability of the detection procedure,
-       not the probability that two nodes truly share a community. The
-       calibrated table was fitted on simulated networks; networks far
-       outside the simulation design are extrapolations. Interpret
-       cautiously on networks with fewer than 100 nodes, where community
-       detection itself is unstable.
+       Read this as a diagnostic, not a calibrated confidence interval. In the
+       package's simulation study its coverage of the fresh-data co-assignment
+       propensity was near nominal only for pairs whose share is close to 0 or
+       1 and fell to 0.03-0.15 for ambiguous pairs; no conditioning or
+       alternative bootstrap repaired this, so ``method="calibrated"`` was
+       removed in 1.3.0. The validated reliability product is
+       :func:`partition_stability`.
 
     Parameters
     ----------
     boot_result : BootstrapResult
-        Output from ``bootstrap_multilayer``.
     alpha : float
-        Significance level (default 0.05 for 95% intervals). Only 0.05 is
-        available for ``method="calibrated"``, the level the bundled table
-        was fitted at.
-    method : {"calibrated", "wilson"}
-        Interval construction.
-    calibration_table : pandas.DataFrame or str, optional
-        Replacement lookup table for ``method="calibrated"``: columns
-        ``phat_lo``, ``phat_hi``, ``lower``, ``upper`` with bins that
-        partition [0, 1], or a path to a CSV with those columns. Defaults
-        to ``data/coassign_calibration_table.csv`` shipped with the
-        package, produced by ``replication/post/14_calibration_table.R``.
+        Significance level (0.05 gives 95 percent Wilson intervals).
+    method : str
+        ``"wilson"``. ``"calibrated"`` raises an informative error.
+    calibration_table
+        Ignored; retained for backward compatibility.
 
     Returns
     -------
     list[dict]
-        One dict per layer with keys ``estimate``, ``lower``, ``upper``,
-        each an ``n_nodes x n_nodes`` ndarray, plus ``method``. Diagonals
-        are 1 by construction.
-
-    See Also
-    --------
-    community_est : Community count point estimates and node stability.
+        One dict per layer with ``estimate``, ``lower``, ``upper`` (n x n
+        arrays; diagonals are 1) and ``method``.
     """
+    if method == "calibrated":
+        raise ValueError(
+            'method="calibrated" was removed in dynamic_multiplex 1.3.0: pair-level '
+            "intervals could not be calibrated for ambiguous pairs. Use "
+            "partition_stability() for the calibrated reliability score and the "
+            'decided / undetermined pair flags, or method="wilson".'
+        )
+    if method != "wilson":
+        raise ValueError('method must be "wilson"')
     if boot_result.n_boot == 0:
         raise ValueError("No completed bootstrap replicates.")
-    if method not in ("calibrated", "wilson"):
-        raise ValueError('method must be "calibrated" or "wilson"')
 
-    layer_cis = []
+    from statistics import NormalDist  # stdlib; avoids a scipy dependency
 
-    if method == "wilson":
-        from statistics import NormalDist  # stdlib; avoids a scipy dependency
-
-        b = boot_result.n_boot
-        z = NormalDist().inv_cdf(1 - alpha / 2)
-        z2 = z**2
-        for phat in boot_result.co_assignment:
-            denom = 1 + z2 / b
-            center = (phat + z2 / (2 * b)) / denom
-            half = z * np.sqrt(phat * (1 - phat) / b + z2 / (4 * b**2)) / denom
-            lower = np.clip(center - half, 0.0, 1.0)
-            upper = np.clip(center + half, 0.0, 1.0)
-            np.fill_diagonal(lower, 1.0)
-            np.fill_diagonal(upper, 1.0)
-            layer_cis.append(
-                {"estimate": phat, "lower": lower, "upper": upper, "method": "wilson"}
-            )
-        return layer_cis
-
-    # calibrated: conditional quantiles of p* given phat, from the lookup table
-    if abs(alpha - 0.05) > 1e-12:
-        raise ValueError(
-            'method="calibrated" is only available for alpha = 0.05, '
-            "the level the bundled lookup table was fitted at."
-        )
-    tab = _load_calibration_table(calibration_table)
-    edges = np.append(tab["phat_lo"].to_numpy(), 1.0)
-    lo_tab = tab["lower"].to_numpy()
-    hi_tab = tab["upper"].to_numpy()
-    n_bins = len(tab)
+    b = boot_result.n_boot
+    z = NormalDist().inv_cdf(1 - alpha / 2)
+    z2 = z**2
+    layer_cis: list[dict] = []
     for phat in boot_result.co_assignment:
-        # bin index: phat in [phat_lo, phat_hi); phat == 1 falls in the last bin
-        idx = np.searchsorted(edges, phat, side="right") - 1
-        idx = np.clip(idx, 0, n_bins - 1)
-        lower = lo_tab[idx]
-        upper = hi_tab[idx]
+        denom = 1 + z2 / b
+        center = (phat + z2 / (2 * b)) / denom
+        half = z * np.sqrt(phat * (1 - phat) / b + z2 / (4 * b**2)) / denom
+        lower = np.clip(center - half, 0.0, 1.0)
+        upper = np.clip(center + half, 0.0, 1.0)
         np.fill_diagonal(lower, 1.0)
         np.fill_diagonal(upper, 1.0)
-        layer_cis.append(
-            {"estimate": phat, "lower": lower, "upper": upper, "method": "calibrated"}
-        )
+        layer_cis.append({"estimate": phat, "lower": lower, "upper": upper, "method": "wilson"})
     return layer_cis
 
 
-def _load_calibration_table(calibration_table=None) -> pd.DataFrame:
-    """Read and validate the calibrated-interval lookup table.
+# ---------------------------------------------------------------------------
+# partition stability: score, calibrated accuracy floor, node floors, pairs
+# ---------------------------------------------------------------------------
 
-    Bundled default: ``dynamic_multiplex/data/coassign_calibration_table.csv``,
-    written by ``replication/post/14_calibration_table.R`` from the coverage
-    simulations.
-    """
+def _contingency(a: np.ndarray, b: np.ndarray) -> np.ndarray:
+    _, ia = np.unique(a, return_inverse=True)
+    _, ib = np.unique(b, return_inverse=True)
+    ct = np.zeros((ia.max() + 1, ib.max() + 1))
+    np.add.at(ct, (ia, ib), 1)
+    return ct
+
+
+def _nmi(a: np.ndarray, b: np.ndarray) -> float:
+    """Normalized mutual information, 2I/(H(a)+H(b)), matching igraph::compare(method="nmi")."""
+    ct = _contingency(a, b); n = ct.sum()
+    pa = ct.sum(1) / n; pb = ct.sum(0) / n; pij = ct / n
+    nz = pij > 0
+    mi = float((pij[nz] * np.log(pij[nz] / np.outer(pa, pb)[nz])).sum())
+    ha = float(-(pa[pa > 0] * np.log(pa[pa > 0])).sum())
+    hb = float(-(pb[pb > 0] * np.log(pb[pb > 0])).sum())
+    if ha + hb == 0:
+        return 1.0
+    return 2 * mi / (ha + hb)
+
+
+def _ari(a: np.ndarray, b: np.ndarray) -> float:
+    """Adjusted Rand index (Hubert and Arabie), matching igraph::compare(method="adjusted.rand")."""
+    ct = _contingency(a, b); n = ct.sum()
+    comb = lambda x: x * (x - 1) / 2.0
+    sum_ij = comb(ct).sum(); sum_a = comb(ct.sum(1)).sum(); sum_b = comb(ct.sum(0)).sum()
+    expected = sum_a * sum_b / comb(n) if n > 1 else 0.0
+    max_index = (sum_a + sum_b) / 2.0
+    if max_index == expected:
+        return 1.0
+    return float((sum_ij - expected) / (max_index - expected))
+
+
+def _node_jaccard(mem_a: np.ndarray, mem_b: np.ndarray) -> np.ndarray:
+    same_a = mem_a[:, None] == mem_a[None, :]
+    same_b = mem_b[:, None] == mem_b[None, :]
+    return (same_a & same_b).sum(1) / (same_a | same_b).sum(1)
+
+
+def _load_stability_table(calibration_table=None) -> pd.DataFrame:
+    """Bundled default: ``dynamic_multiplex/data/stability_calibration_table.csv``,
+    written by ``replication/post/12_stability.R``."""
     if calibration_table is None:
         from importlib.resources import files
 
-        res = files("dynamic_multiplex").joinpath("data", "coassign_calibration_table.csv")
+        res = files("dynamic_multiplex").joinpath("data", "stability_calibration_table.csv")
         if not res.is_file():
             raise FileNotFoundError(
-                "The bundled calibration table is missing. Run "
-                "replication/post/14_calibration_table.R and copy "
-                "output/calibration/coassign_calibration_table.csv to "
-                "python_code/src/dynamic_multiplex/data/, or pass "
-                'calibration_table, or use method="wilson".'
+                "The bundled stability calibration table is missing; pass calibration_table."
             )
-        with res.open("r") as fh:
-            tab = pd.read_csv(fh)
-    elif isinstance(calibration_table, str):
+        tab = pd.read_csv(res)
+    elif isinstance(calibration_table, (str, bytes)):
         tab = pd.read_csv(calibration_table)
     else:
         tab = pd.DataFrame(calibration_table)
-    need = ["phat_lo", "phat_hi", "lower", "upper"]
+    need = ["level", "stab_lo", "stab_hi", "n_calib", "acc_median", "acc_q05"]
     missing = [c for c in need if c not in tab.columns]
     if missing:
-        raise ValueError(f"calibration_table needs columns: {need}")
-    tab = tab.sort_values("phat_lo").reset_index(drop=True)
-    lo = tab["phat_lo"].to_numpy()
-    hi = tab["phat_hi"].to_numpy()
-    if not (np.isclose(lo[0], 0.0) and np.isclose(hi[-1], 1.0) and np.allclose(hi[:-1], lo[1:])):
-        raise ValueError("calibration_table bins must partition [0, 1].")
-    if (tab["lower"] > tab["upper"]).any() or (tab["lower"] < 0).any() or (tab["upper"] > 1).any():
-        raise ValueError("calibration_table bounds must satisfy 0 <= lower <= upper <= 1.")
+        raise ValueError(f"calibration table is missing columns: {missing}")
     return tab
+
+
+def _floor_lookup(s: float, rows: pd.DataFrame) -> dict:
+    if rows.empty:
+        return {"floor": float("nan"), "median": float("nan"), "bin": None}
+    rows = rows.sort_values("stab_lo").reset_index(drop=True)
+    edges = np.append(rows["stab_lo"].to_numpy(), 1.0)
+    idx = int(np.clip(np.searchsorted(edges, s, side="right") - 1, 0, len(rows) - 1))
+    while idx > 0 and (pd.isna(rows.loc[idx, "acc_q05"]) or rows.loc[idx, "n_calib"] == 0):
+        idx -= 1
+    return {
+        "floor": float(rows.loc[idx, "acc_q05"]),
+        "median": float(rows.loc[idx, "acc_median"]),
+        "bin": f"[{rows.loc[idx, 'stab_lo']:.1f}, {rows.loc[idx, 'stab_hi']:.1f})",
+    }
+
+
+def partition_stability(
+    boot_result: BootstrapResult,
+    metric: str = "nmi",
+    decided: tuple[float, float] = (0.1, 0.9),
+    calibration_table=None,
+) -> dict:
+    """Stability score and calibrated accuracy floor for the tracked partition.
+
+    Summarises a ``bootstrap_multilayer`` result into one reliability report:
+
+    * ``stability``: mean agreement (NMI by default, or ARI) between each
+      bootstrap replicate's meta-partition and the point-estimate partition,
+      averaged over layers.
+    * ``floor``: calibrated 5th-percentile accuracy for the stability bin.
+      In the package's simulation study, fits were binned by stability and
+      the 5th percentile of accuracy against the planted partition recorded
+      per bin on a calibration half of the configurations; on the held-out
+      half, accuracy exceeded the floor in 95 percent of fits in every bin.
+      Read as "with this stability, partition accuracy was at least ``floor``
+      95 percent of the time in calibration".
+    * ``node``: per-layer DataFrames of node-level Jaccard stability with a
+      floor reported only above 0.9 (uninformative below).
+    * ``pairs``: per-layer integer arrays, 1 = decidedly together
+      (co-assignment share >= ``decided[1]``), -1 = decidedly apart
+      (<= ``decided[0]``), 0 = undetermined. No interval is attached to pairs.
+
+    The calibration is within the simulated planted-partition family; on
+    networks that model does not describe, a stable but wrong partition could
+    receive a floor it does not deserve.
+
+    Parameters
+    ----------
+    boot_result : BootstrapResult
+        From ``bootstrap_multilayer`` (1.3.0 or later).
+    metric : str
+        ``"nmi"`` (default) or ``"ari"``.
+    decided : tuple[float, float]
+        Thresholds for decidedly apart / together.
+    calibration_table
+        Optional path or DataFrame overriding the bundled table.
+
+    Returns
+    -------
+    dict
+        Keys ``stability``, ``stability_by_layer``, ``stability_mc_se``,
+        ``metric``, ``floor``, ``floor_median``, ``bin``, ``node``, ``pairs``,
+        ``pair_summary``, ``report``.
+    """
+    if metric not in ("nmi", "ari"):
+        raise ValueError('metric must be "nmi" or "ari"')
+    if boot_result.stability_samples is None:
+        raise ValueError("boot_result has no stability_samples; rerun bootstrap_multilayer (>= 1.3.0).")
+    S = np.asarray(boot_result.stability_samples[metric])
+    if S.shape[0] < 2:
+        raise ValueError("At least two completed bootstrap replicates are needed.")
+    n_layers = S.shape[1]
+    by_layer = S.mean(0)
+    per_rep = S.mean(1)
+    s = float(per_rep.mean())
+    mc_se = float(per_rep.std(ddof=1) / np.sqrt(len(per_rep)))
+
+    tab = _load_stability_table(calibration_table)
+    level = "partition_nmi" if metric == "nmi" else "partition_ari"
+    fl = _floor_lookup(s, tab[tab["level"] == level])
+    node_tab = tab[tab["level"] == "node_jaccard"]
+    node = []
+    for t in range(n_layers):
+        st = np.asarray(boot_result.node_jaccard_stability[t])
+        fr = np.array([_floor_lookup(v, node_tab)["floor"] if v >= 0.9 else np.nan for v in st])
+        node.append(pd.DataFrame({"node": np.arange(1, len(st) + 1), "stability": st, "floor": fr}))
+
+    pairs = []
+    for P in boot_result.co_assignment:
+        M = np.zeros(P.shape, dtype=int)
+        M[P >= decided[1]] = 1
+        M[P <= decided[0]] = -1
+        np.fill_diagonal(M, 1)
+        pairs.append(M)
+    iu = np.triu_indices(pairs[0].shape[0], k=1)
+    allp = np.concatenate([M[iu] for M in pairs])
+    pair_summary = {
+        "together": float((allp == 1).mean()),
+        "apart": float((allp == -1).mean()),
+        "undetermined": float((allp == 0).mean()),
+    }
+    report = (
+        f"Partition stability {s:.2f} ({metric.upper()} over {boot_result.n_boot} bootstrap "
+        f"replicates and {n_layers} layers; MC s.e. {mc_se:.3f}). In calibration, fits with "
+        f"stability in {fl['bin']} had accuracy of at least {fl['floor']:.2f} in 95% of cases "
+        f"(median {fl['median']:.2f}). {100 * (1 - pair_summary['undetermined']):.0f}% of node "
+        f"pairs are decided ({100 * pair_summary['together']:.0f}% together, "
+        f"{100 * pair_summary['apart']:.0f}% apart); {100 * pair_summary['undetermined']:.0f}% "
+        "are undetermined."
+    )
+    return {
+        "stability": s, "stability_by_layer": by_layer, "stability_mc_se": mc_se, "metric": metric,
+        "floor": fl["floor"], "floor_median": fl["median"], "bin": fl["bin"],
+        "node": node, "pairs": pairs, "pair_summary": pair_summary, "report": report,
+    }

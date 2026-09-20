@@ -2,7 +2,7 @@
 # =============================================================================
 # replication/post/13_appendix_empirical.R
 # Appendix tables for the empirical application: set-level recovery of the
-# Braumoeller-coded international orders, from empirical/07_score_orders.R.
+# Braumoeller-coded international orders, from empirical/09_score_orders.R.
 #
 # Input:  $DM_ROOT/output/empirical/order_recovery.csv
 #         long: net, order, kind, year, method, J, prec, rec, nB
@@ -32,7 +32,7 @@ write_tex <- function(header, body, align, path) {
 }
 
 orf <- file.path(EMP, "order_recovery.csv")
-if (!file.exists(orf)) stop("Missing ", orf, " -- run empirical/07 first.", call. = FALSE)
+if (!file.exists(orf)) stop("Missing ", orf, " -- run empirical/09 first.", call. = FALSE)
 o <- read.csv(orf, stringsAsFactors = FALSE)
 stopifnot(all(c("net", "order", "kind", "year", "method", "J", "prec", "rec", "nB") %in% names(o)))
 cat("rows:", nrow(o), "\n")

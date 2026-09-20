@@ -1,5 +1,5 @@
 # =============================================================================
-# 05_build_networks.R
+# 07_build_networks.R
 # Build the four real dynamic international networks used in the empirical
 # application:
 #   atop  : ATOP defense|offense alliances, 1816-2018 (peacesciencer)
@@ -20,8 +20,8 @@
 # Consolidates: replication/extended/00_build_atop.R, 00_build_dca.R,
 #               paper_scripts/build_igo.R, paper_scripts/build_trade.R
 #
-# Usage:  Rscript 05_build_networks.R            # builds all four
-#         Rscript 05_build_networks.R <net>      # net in {atop, dca, igo, trade}
+# Usage:  Rscript 07_build_networks.R            # builds all four
+#         Rscript 07_build_networks.R <net>      # net in {atop, dca, igo, trade}
 # Env:    DM_ROOT     project root (default getwd())
 #         ATOP_YEARS  R expression for ATOP years (default "1816:2018")
 #         IGO_THRESH  min shared-IGO count for an IGO tie (default 1)

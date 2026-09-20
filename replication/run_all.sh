@@ -11,6 +11,7 @@
 #                                             (use after a partial submit hit the
 #                                             4,000 submitted-job cap)
 #   bash replication/run_all.sh submit alt   EXPLORATORY: sim/05 (594 tasks) + post/15
+#   bash replication/run_all.sh submit stab  EXPLORATORY: sim/06 (594 tasks) + post/16
 #   bash replication/run_all.sh post      run post/10-14 in the current shell
 #   bash replication/run_all.sh post alt  run post/15 (interval alternatives) only
 #   bash replication/run_all.sh status    squeue for this user's dm_* jobs
@@ -101,6 +102,11 @@ case "$ACTION" in
       a=$(sbatch --parsable --export=ALL "$SB/09_alt_bootstrap.sbatch");                        echo "09 alt bootstrap (594 tasks)  $a"
       p=$(sbatch --parsable --export=ALL --dependency=afterany:$a "$SB/10_alt_post.sbatch");    echo "10 alt post (after 09)        $p"
       echo "Results: replication/slurm/logs/10_alt_post_${p}.out and output/alternatives/"
+    fi
+    if [[ "$WHICH" == "stab" ]]; then
+      a=$(sbatch --parsable --export=ALL "$SB/11_stability.sbatch");                            echo "11 stability (594 tasks)      $a"
+      p=$(sbatch --parsable --export=ALL --dependency=afterany:$a "$SB/12_stability_post.sbatch"); echo "12 stability post (after 11)  $p"
+      echo "Decision: replication/slurm/logs/12_stab_post_${p}.out"
     fi
     if [[ "$WHICH" == "all" || "$WHICH" == "rest" ]]; then
       dep=$(IFS=:; echo "${DEPS[*]}")

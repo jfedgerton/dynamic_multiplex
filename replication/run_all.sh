@@ -12,8 +12,15 @@
 #                                             4,000 submitted-job cap)
 #   bash replication/run_all.sh submit alt   EXPLORATORY: sim/05 (594 tasks) + post/15
 #   bash replication/run_all.sh submit stab  EXPLORATORY: sim/06 (594 tasks) + post/16
+#   bash replication/run_all.sh submit refit  sim/01 + empirical/05-07 + post, after a
+#                                             package fix (archives output/regime first
+#                                             so the 72 regime tasks do not self-skip)
+#   bash replication/run_all.sh submit coupling  sim/07 (48 tasks) + post/17 (appendix:
+#                                             when Jaccard vs overlap coupling is right)
+#   bash replication/run_all.sh test      package regression tests (R + Python)
 #   bash replication/run_all.sh post      run post/10-14 in the current shell
 #   bash replication/run_all.sh post alt  run post/15 (interval alternatives) only
+#   bash replication/run_all.sh post coupling  run post/17 only
 #   bash replication/run_all.sh status    squeue for this user's dm_* jobs
 #   bash replication/run_all.sh clean-tables   remove generated tables/figures
 #
@@ -78,7 +85,13 @@ case "$ACTION" in
     DEPS=()
     EXTRA="${3:-}"                                   # job ids already queued (submit rest J1:J2)
     if [[ -n "$EXTRA" ]]; then IFS=':' read -r -a ex <<< "$EXTRA"; DEPS+=("${ex[@]}"); fi
-    if [[ "$WHICH" == "all" || "$WHICH" == "sims" ]]; then
+    if [[ "$WHICH" == "refit" ]]; then
+      if [[ -d output/regime ]] && ls output/regime/dyn_cfg*.csv >/dev/null 2>&1; then
+        stamp=$(date +%Y%m%d_%H%M); mkdir -p output/_archive
+        mv output/regime "output/_archive/regime_$stamp"; echo "archived old regime output to output/_archive/regime_$stamp"
+      fi
+    fi
+    if [[ "$WHICH" == "all" || "$WHICH" == "sims" || "$WHICH" == "refit" ]]; then
       j=$(sbatch --parsable --export=ALL "$SB/01_regime.sbatch");                            echo "01 regime            $j"; DEPS+=("$j")
       j=$(sbatch --parsable --export=ALL,COV_OFFSET=0    "$SB/02_coverage_grid.sbatch");     echo "02 grid   tasks 1-990     $j"; DEPS+=("$j")
       j=$(sbatch --parsable --export=ALL,COV_OFFSET=990  "$SB/02_coverage_grid.sbatch");     echo "02 grid   tasks 991-1980  $j"; DEPS+=("$j")
@@ -89,7 +102,7 @@ case "$ACTION" in
       j=$(sbatch --parsable --export=ALL "$SB/03_coverage_valued.sbatch");                   echo "03 valued  (90 packed)  $j"; DEPS+=("$j")
       j=$(sbatch --parsable --export=ALL "$SB/04_coverage_misspec.sbatch");                  echo "04 misspec (54 packed)  $j"; DEPS+=("$j")
     fi
-    if [[ "$WHICH" == "all" || "$WHICH" == "empirical" || "$WHICH" == "rest" ]]; then
+    if [[ "$WHICH" == "all" || "$WHICH" == "empirical" || "$WHICH" == "rest" || "$WHICH" == "refit" ]]; then
       if [[ ! -f data/DCAD-v1.0-dyadic.csv ]]; then
         echo "WARNING: data/DCAD-v1.0-dyadic.csv not found; empirical/05 will stop at the DCA network."
       fi
@@ -103,12 +116,17 @@ case "$ACTION" in
       p=$(sbatch --parsable --export=ALL --dependency=afterany:$a "$SB/10_alt_post.sbatch");    echo "10 alt post (after 09)        $p"
       echo "Results: replication/slurm/logs/10_alt_post_${p}.out and output/alternatives/"
     fi
+    if [[ "$WHICH" == "coupling" ]]; then
+      a=$(sbatch --parsable --export=ALL "$SB/13_coupling.sbatch");                             echo "13 coupling (48 tasks)        $a"
+      p=$(sbatch --parsable --export=ALL --dependency=afterany:$a "$SB/14_coupling_post.sbatch"); echo "14 coupling post (after 13)   $p"
+      echo "Results: replication/slurm/logs/14_coupling_post_${p}.out, manuscript/tables/tab_app_coupling_*.tex"
+    fi
     if [[ "$WHICH" == "stab" ]]; then
       a=$(sbatch --parsable --export=ALL "$SB/11_stability.sbatch");                            echo "11 stability (594 tasks)      $a"
       p=$(sbatch --parsable --export=ALL --dependency=afterany:$a "$SB/12_stability_post.sbatch"); echo "12 stability post (after 11)  $p"
       echo "Decision: replication/slurm/logs/12_stab_post_${p}.out"
     fi
-    if [[ "$WHICH" == "all" || "$WHICH" == "rest" ]]; then
+    if [[ "$WHICH" == "all" || "$WHICH" == "rest" || "$WHICH" == "refit" ]]; then
       dep=$(IFS=:; echo "${DEPS[*]}")
       p=$(sbatch --parsable --export=ALL --dependency=afterok:$dep "$SB/08_postprocess.sbatch")
       echo "08 postprocess (after all of the above) $p"
@@ -122,6 +140,7 @@ case "$ACTION" in
   post)
     load_r
     if [[ "$WHICH" == "alt" ]]; then Rscript replication/post/15_alternatives.R; exit 0; fi
+    if [[ "$WHICH" == "coupling" ]]; then Rscript replication/post/17_coupling.R; exit 0; fi
     for s in 10_main_text 11_appendix_regimes 12_appendix_coverage 13_appendix_empirical 14_calibration_table; do
       echo "=================== post/$s.R ==================="
       Rscript "replication/post/$s.R"
@@ -135,6 +154,12 @@ case "$ACTION" in
     fi
     echo "tables:  $(ls manuscript/tables  | wc -l) files in manuscript/tables"
     echo "figures: $(ls manuscript/figures | wc -l) files in manuscript/figures"
+    ;;
+
+  test)
+    load_r
+    Rscript replication/tests/test_package_regressions.R
+    if command -v python >/dev/null 2>&1; then python replication/tests/test_package_regressions.py || echo "(Python tests failed or dynamic_multiplex not installed)"; fi
     ;;
 
   status)

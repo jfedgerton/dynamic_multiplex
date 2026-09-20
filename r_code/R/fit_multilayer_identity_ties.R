@@ -8,15 +8,20 @@
 #' index otherwise.
 #'
 #' For this specification the cross-layer \code{meta_communities} are obtained
-#' by \strong{Mucha (2010) multislice modularity}: the layers are stacked into a
-#' single supra-graph (intra-layer edges are each layer's own adjacency) with
-#' interlayer identity edges joining each node to its copies in the coupled
-#' layers (weighted by \code{layer_links}), and one community detection is run
-#' on the whole supra-graph. The coupling strength is the layer-link weight.
+#' by \strong{Mucha et al. (2010) multislice modularity}: each layer keeps its
+#' own configuration null model (\eqn{k_{is}k_{js}/2m_s}), interlayer identity
+#' ties (each node to its copies in the coupled layers, weight = layer-link
+#' weight times \code{omega}) carry no null term, and the objective is
+#' optimised with a generalized Louvain (local moving + aggregation, random
+#' restarts). Versions before 1.2.1 ran plain single-graph modularity on the
+#' stacked supra-graph, which is a different objective and returns each layer
+#' as one community at \code{omega <= 1}.
 #'
 #' @param layers List of `igraph` objects or square adjacency matrices.
 #'
-#' @param algorithm Community algorithm: `"louvain"` or `"leiden"`.
+#' @param algorithm Community algorithm for the per-layer (first-stage)
+#' partitions: `"louvain"` or `"leiden"`. The multislice meta-communities
+#' always use the generalized Louvain optimiser.
 #'
 #' @param layer_links Optional data.frame defining which layers to connect,
 #' with columns `from`, `to`, and optional `weight`. If `NULL`, adjacent layers

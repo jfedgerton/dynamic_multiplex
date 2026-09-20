@@ -226,13 +226,23 @@ def weighted_overlap(a: list[int], b: list[int]) -> float:
 
 
 def weighted_jaccard_similarity(a: list[int], b: list[int], weights_a: dict[int, float], weights_b: dict[int, float]) -> float:
-    nodes = set(a).union(b)
+    # weights_a / weights_b are LAYER-WIDE node strengths: a node's strength in
+    # layer a counts toward community a only when the node is a MEMBER of a
+    # (likewise for b). Nodes outside a community contribute 0 on that side.
+    set_a = set(a)
+    set_b = set(b)
+    nodes = set_a | set_b
     if not nodes:
         return 0.0
 
-    inter = set(a).intersection(b)
-    inter_weight = sum(min(weights_a.get(node, 0.0), weights_b.get(node, 0.0)) for node in inter)
-    union_weight = sum(max(weights_a.get(node, 0.0), weights_b.get(node, 0.0)) for node in nodes)
+    def wa(node):
+        return weights_a.get(node, 0.0) if node in set_a else 0.0
+
+    def wb(node):
+        return weights_b.get(node, 0.0) if node in set_b else 0.0
+
+    inter_weight = sum(min(wa(node), wb(node)) for node in set_a & set_b)
+    union_weight = sum(max(wa(node), wb(node)) for node in nodes)
     return 0.0 if union_weight == 0 else inter_weight / union_weight
 
 
@@ -542,7 +552,8 @@ def detect_multislice_communities(
         Node-level identity ties (columns ``from_layer``, ``to_layer``,
         ``node``, ``layer_weight``).
     algorithm : str
-        ``"louvain"`` or ``"leiden"`` for the supra-graph detection.
+        Kept for API compatibility; the multislice objective is always
+        optimised with leidenalg's multiplex optimiser (Leiden moves).
     omega : float
         Interlayer coupling strength (Mucha's omega). Multiplies the
         interlayer identity-edge weights on top of any ``layer_links`` weights.
@@ -618,28 +629,16 @@ def detect_multislice_communities(
                 (vkey(int(fl), nd), vkey(int(tl), nd), float(w) * omega)
             )
 
-    # Single detection on the supra-graph.
+    # Mucha et al. (2010) multislice modularity, optimised with leidenalg's
+    # multiplex optimiser: one RBConfiguration (modularity) partition per slice
+    # -- each slice keeps its OWN null model k_is k_js / 2m_s -- plus a CPM
+    # layer holding the interlayer identity ties with resolution 0 (no null
+    # term). Plain modularity on the stacked supra-graph is NOT the same
+    # objective: its pooled null model is ~T times too small and penalises
+    # cross-slice co-membership, so at omega <= 1 it returns each slice as one
+    # community (the behaviour of this function before version 1.2.1).
     if len(edges) == 0:
         meta = {k: i + 1 for i, k in enumerate(supra)}
-    elif algorithm == "louvain":
-        try:
-            import community as community_louvain
-        except ImportError as exc:
-            raise ImportError(
-                "Install optional dependency `python-louvain` for Louvain support."
-            ) from exc
-
-        cg = nx.Graph()
-        cg.add_nodes_from(supra)
-        for u, v, w in edges:
-            if cg.has_edge(u, v):
-                cg[u][v]["weight"] += w
-            else:
-                cg.add_edge(u, v, weight=w)
-        partition = community_louvain.best_partition(
-            cg, weight="weight", random_state=seed, resolution=resolution_parameter
-        )
-        meta = {node: comm + 1 for node, comm in partition.items()}
     else:
         try:
             import igraph as ig
@@ -647,28 +646,57 @@ def detect_multislice_communities(
         except ImportError as exc:
             raise ImportError(
                 "Install optional dependencies `python-igraph` and `leidenalg` "
-                "for Leiden support."
+                "for multislice detection."
             ) from exc
 
         node_to_idx = {k: i for i, k in enumerate(supra)}
-        ig_edges = [(node_to_idx[u], node_to_idx[v]) for u, v, _ in edges]
-        weights = [w for _, _, w in edges]
-        ig_graph = ig.Graph(n=len(supra), edges=ig_edges, directed=False)
-        ig_graph.es["weight"] = weights
-        # n_iterations=3 mirrors the R cluster_leiden call and gives the
-        # supra-graph optimizer enough refinement passes to avoid collapsing a
-        # whole slice into a single community.
-        partition = leidenalg.find_partition(
-            ig_graph,
-            leidenalg.RBConfigurationVertexPartition,
-            weights=weights,
-            seed=seed,
-            n_iterations=3,
-            resolution_parameter=resolution_parameter,
+        supra_slice = np.array(
+            [t for t in range(n_layers) for _ in layer_nodes[t]], dtype=int
         )
-        meta = {
-            supra[idx]: comm + 1 for idx, comm in enumerate(partition.membership)
-        }
+        intra_edges: list[tuple[int, int]] = []
+        intra_w: list[float] = []
+        inter_edges: list[tuple[int, int]] = []
+        inter_w: list[float] = []
+        for u, v, w in edges:
+            iu, iv = node_to_idx[u], node_to_idx[v]
+            if iu == iv:
+                continue
+            if supra_slice[iu] == supra_slice[iv]:
+                intra_edges.append((iu, iv))
+                intra_w.append(w)
+            else:
+                inter_edges.append((iu, iv))
+                inter_w.append(w)
+
+        # slice layers: every supra vertex is present in every layer graph, but
+        # only its own slice's edges carry weight, so each slice has its own
+        # degree sequence and 2m_s in its RBConfiguration null model ----
+        n_supra = len(supra)
+        partitions = []
+        for t in range(n_layers):
+            keep = [i for i, (u, v) in enumerate(intra_edges) if supra_slice[u] == t]
+            g_t = ig.Graph(
+                n=n_supra, edges=[intra_edges[i] for i in keep], directed=False
+            )
+            g_t.es["weight"] = [intra_w[i] for i in keep]
+            partitions.append(
+                leidenalg.RBConfigurationVertexPartition(
+                    g_t, weights="weight", resolution_parameter=resolution_parameter
+                )
+            )
+        g_inter = ig.Graph(n=n_supra, edges=inter_edges, directed=False)
+        g_inter.es["weight"] = inter_w
+        partitions.append(
+            leidenalg.CPMVertexPartition(
+                g_inter, weights="weight", resolution_parameter=0.0
+            )
+        )
+        optimiser = leidenalg.Optimiser()
+        if seed is not None:
+            optimiser.set_rng_seed(int(seed))
+        optimiser.optimise_partition_multiplex(partitions, n_iterations=-1)
+        memb = partitions[0].membership
+        meta = {supra[idx]: comm + 1 for idx, comm in enumerate(memb)}
 
     # Map back to per-layer node order.
     membership = []

@@ -331,14 +331,20 @@ weighted_jaccard_similarity <- function(a, b, weights_a, weights_b) {
   nodes <- union(a, b)
 
   # assign weighted similarity ----
+  # weights_a / weights_b are LAYER-WIDE node strengths, so a node's weight
+  # counts toward community a only when the node is a MEMBER of a (and
+  # likewise for b). Without this restriction two disjoint communities scored
+  # 1.0 whenever their members had non-zero strength in both layers.
   if (length(nodes) == 0) {
     weighted_similarity <- 0
   } else {
     node_keys <- as.character(nodes)
-    wa <- weights_a[as.character(nodes)]
-    wb <- weights_b[as.character(nodes)]
+    wa <- weights_a[node_keys]
+    wb <- weights_b[node_keys]
     wa[is.na(wa)] <- 0
     wb[is.na(wb)] <- 0
+    wa[!(nodes %in% a)] <- 0
+    wb[!(nodes %in% b)] <- 0
     inter_weight <- sum(pmin(wa, wb))
     union_weight <- sum(pmax(wa, wb))
     if (union_weight == 0) {
@@ -714,34 +720,47 @@ detect_interlayer_communities <- function(
 
 #' @title Multislice (Mucha) meta-communities for node-identity coupling
 #'
-#' @description Node-level second stage for the identity specification: builds a
-#' single supra-graph by stacking the layers (intra-layer edges are each
-#' layer's own adjacency) and adding interlayer identity edges (each node tied
-#' to its own copies in the coupled layers, weighted by the layer-link weight),
-#' then runs one community detection on the whole supra-graph. This is Mucha et
-#' al. (2010) multislice modularity with the coupling given by
-#' \code{layer_links}. A node's meta-community can therefore be pulled across
-#' layers through the identity ties.
+#' @description Node-level second stage for the identity specification:
+#' optimises Mucha et al. (2010) multislice modularity
+#' \deqn{Q = \frac{1}{2\mu}\sum_{ijsr}\Big[\big(A_{ijs} - \gamma\,\tfrac{k_{is}k_{js}}{2m_s}\big)\delta_{sr} + \delta_{ij} C_{jsr}\Big]\delta(g_{is}, g_{jr})}
+#' with a generalized Louvain (local moving + aggregation, as in GenLouvain).
+#' Intra-slice edges use each slice's OWN configuration null model
+#' \eqn{k_{is}k_{js}/2m_s}; interlayer identity ties \eqn{C_{jsr}} (weight =
+#' layer-link weight times \code{omega}) carry no null term. Running plain
+#' single-graph modularity on the stacked supra-graph is NOT equivalent: its
+#' pooled null model \eqn{k_i k_j / 2M} is roughly \eqn{T} times too small and
+#' penalises cross-slice co-membership, so at \eqn{\omega \le 1} it returns
+#' each slice as one community. That was the behaviour of this function before
+#' package version 1.2.1.
 #'
 #' @param graph_layers List of per-layer \code{igraph} objects.
 #'
 #' @param interlayer_ties Node-level identity ties (columns \code{from_layer},
 #'   \code{to_layer}, \code{node}, \code{layer_weight}).
 #'
-#' @param algorithm \code{"louvain"} or \code{"leiden"} for the supra-graph.
+#' @param algorithm Kept for API compatibility; the optimiser is always the
+#'   generalized Louvain below (igraph's Louvain/Leiden cannot take a per-slice
+#'   null model).
 #'
 #' @param omega Interlayer coupling strength (Mucha's omega). Multiplies the
-#'   interlayer identity-edge weights. Larger omega couples layers more
-#'   strongly (and, past a point, over-merges into one community); smaller
-#'   omega decouples toward per-layer detection. Use to explore the
-#'   omega-sensitivity of multislice.
+#'   interlayer identity-edge weights. omega = 0 decouples the slices
+#'   (independent per-slice modularity); large omega forces each node's copies
+#'   into one community.
 #'
-#' @param resolution_parameter Resolution for the supra-graph detection. Larger
-#'   values yield more, smaller communities; this is the knob for the
-#'   modularity resolution limit.
+#' @param resolution_parameter Mucha's gamma (resolution of the per-slice null
+#'   model). Larger values yield more, smaller communities.
+#'
+#' @param seed Optional integer; the node visiting order is randomised.
+#'
+#' @param max_levels,max_passes Safety caps on aggregation levels and local
+#'   moving passes per level.
 #'
 #' @return List with one integer vector per layer giving each node's
 #'   meta-community assignment (node order).
+#'
+#' @references Mucha, P. J., Richardson, T., Macon, K., Porter, M. A., and
+#'   Onnela, J.-P. (2010). Community structure in time-dependent, multiscale,
+#'   and multiplex networks. \emph{Science} 328(5980): 876-878.
 #'
 #' @noRd
 detect_multislice_communities <- function(
@@ -749,7 +768,10 @@ detect_multislice_communities <- function(
     interlayer_ties,
     algorithm = c("louvain", "leiden"),
     omega = 1,
-    resolution_parameter = 1
+    resolution_parameter = 1,
+    seed = NULL,
+    max_levels = 20L,
+    max_passes = 50L
   ) {
 
   algorithm <- match.arg(algorithm)
@@ -761,57 +783,158 @@ detect_multislice_communities <- function(
     if (is.null(nm)) as.character(seq_len(igraph::vcount(g))) else as.character(nm)
   })
 
-  # supra vertices: one per (layer, node) ----
+  # supra vertices: one per (layer, node); slice index per vertex ----
   verts <- unlist(lapply(seq_len(n_layers), function(t) vkey(t, layer_nodes[[t]])))
+  slice <- unlist(lapply(seq_len(n_layers), function(t) rep(t, length(layer_nodes[[t]]))))
+  N <- length(verts); vid <- stats::setNames(seq_len(N), verts)
 
-  # intra-layer edges: each layer's own adjacency (original network) ----
+  # intra-slice edges (each slice's own adjacency) ----
   intra <- do.call(rbind, lapply(seq_len(n_layers), function(t) {
     g <- graph_layers[[t]]
     el <- igraph::as_edgelist(g, names = TRUE)
     if (nrow(el) == 0) return(NULL)
     w <- igraph::E(g)$weight
     if (is.null(w)) w <- rep(1, nrow(el))
-    data.frame(from = vkey(t, el[, 1]), to = vkey(t, el[, 2]),
-               weight = w, stringsAsFactors = FALSE)
+    keep <- el[, 1] != el[, 2]                                   # drop self loops
+    data.frame(from = vid[vkey(t, el[keep, 1])], to = vid[vkey(t, el[keep, 2])],
+               w = w[keep], stringsAsFactors = FALSE)
   }))
 
-  # interlayer edges: identity ties (node to its own copy), weighted by omega ----
-  if (!is.null(interlayer_ties) && nrow(interlayer_ties) > 0) {
+  # per-slice degree k_is (intra edges only) and 2m_s ----
+  k <- numeric(N)
+  if (!is.null(intra) && nrow(intra) > 0) {
+    kf <- tapply(intra$w, intra$from, sum); kt <- tapply(intra$w, intra$to, sum)
+    k[as.integer(names(kf))] <- k[as.integer(names(kf))] + kf
+    k[as.integer(names(kt))] <- k[as.integer(names(kt))] + kt
+  }
+  twom <- as.numeric(tapply(k, factor(slice, levels = seq_len(n_layers)), sum))
+  twom[is.na(twom)] <- 0
+
+  # interlayer identity ties: weight = layer weight * omega, no null term ----
+  inter <- NULL
+  if (!is.null(interlayer_ties) && nrow(interlayer_ties) > 0 && omega > 0) {
     w <- interlayer_ties$layer_weight
     if (is.null(w)) w <- rep(1, nrow(interlayer_ties))
-    w <- w * omega
-    inter <- data.frame(
-      from = vkey(interlayer_ties$from_layer, interlayer_ties$node),
-      to = vkey(interlayer_ties$to_layer, interlayer_ties$node),
-      weight = w, stringsAsFactors = FALSE
-    )
-  } else {
-    inter <- NULL
+    inter <- data.frame(from = vid[vkey(interlayer_ties$from_layer, interlayer_ties$node)],
+                        to   = vid[vkey(interlayer_ties$to_layer,   interlayer_ties$node)],
+                        w = w * omega, stringsAsFactors = FALSE)
+    inter <- inter[!is.na(inter$from) & !is.na(inter$to), , drop = FALSE]
   }
-
   edges <- rbind(intra, inter)
-  g_supra <- igraph::graph_from_data_frame(
-    d = if (is.null(edges)) data.frame(from = character(0), to = character(0),
-                                       weight = numeric(0)) else edges,
-    directed = FALSE,
-    vertices = data.frame(name = unique(verts), stringsAsFactors = FALSE)
-  )
-
-  # single detection on the supra-graph ----
-  if (igraph::ecount(g_supra) == 0) {
-    meta <- stats::setNames(seq_along(igraph::V(g_supra)), igraph::V(g_supra)$name)
-  } else if (algorithm == "louvain") {
-    cl <- igraph::cluster_louvain(g_supra, weights = igraph::E(g_supra)$weight,
-                                  resolution = resolution_parameter)
-    meta <- stats::setNames(as.integer(igraph::membership(cl)), igraph::V(g_supra)$name)
-  } else {
-    cl <- igraph::cluster_leiden(g_supra, objective_function = "modularity",
-                                 weights = igraph::E(g_supra)$weight,
-                                 resolution = resolution_parameter,
-                                 n_iterations = 3)
-    meta <- stats::setNames(as.integer(igraph::membership(cl)), igraph::V(g_supra)$name)
+  if (is.null(edges) || nrow(edges) == 0) {
+    return(lapply(seq_len(n_layers), function(t) as.integer(vid[vkey(t, layer_nodes[[t]])])))
   }
+
+  # K: N x S matrix of per-slice degree (node i in slice s has k_is in column s) ----
+  K <- matrix(0, N, n_layers); K[cbind(seq_len(N), slice)] <- k
+
+  if (!is.null(seed)) { rng <- save_rng_state(); on.exit(restore_rng_state(rng), add = TRUE); set.seed(seed) }
+  membership <- genlouvain_multislice(edges, K, twom, gamma = resolution_parameter,
+                                      max_levels = max_levels, max_passes = max_passes)
+  names(membership) <- verts
 
   # map back to per-layer node order ----
-  lapply(seq_len(n_layers), function(t) as.integer(meta[vkey(t, layer_nodes[[t]])]))
+  lapply(seq_len(n_layers), function(t) as.integer(membership[vkey(t, layer_nodes[[t]])]))
+}
+
+
+#' @title Generalized Louvain for multislice modularity
+#'
+#' @description Optimises \eqn{\sum_{ij} [w_{ij} - \gamma \sum_s K_{is} K_{js} / 2m_s]\,\delta(g_i, g_j)}
+#' over a weighted undirected graph whose vertices carry a per-slice degree
+#' vector (rows of \code{K}). Local moving (each vertex joins the neighbouring
+#' community with the largest gain) alternates with aggregation (communities
+#' become vertices whose degree vectors and edge weights are summed) until no
+#' move improves the objective. Gains are computed exactly; the \eqn{1/2\mu}
+#' normalisation is a constant and is dropped.
+#'
+#' @param edges data.frame with integer columns \code{from}, \code{to} and
+#'   numeric \code{w}; each undirected edge once.
+#' @param K numeric matrix (vertices x slices) of per-slice degrees.
+#' @param twom numeric vector of per-slice total degree \eqn{2m_s}.
+#' @param gamma resolution.
+#' @param max_levels,max_passes safety caps.
+#' @param n_starts number of random restarts (random vertex visiting order);
+#'   the partition with the highest objective is returned.
+#'
+#' @return Integer membership vector for the original vertices (1..C).
+#'
+#' @noRd
+genlouvain_multislice <- function(edges, K, twom, gamma = 1, max_levels = 20L, max_passes = 50L, n_starts = 3L) {
+  inv2m <- ifelse(twom > 0, 1 / twom, 0)
+  # objective (unnormalised): sum of within-community edge weight minus
+  # gamma * sum_s sum_c Ktot[c, s]^2 / 2m_s ----
+  quality <- function(memb) {
+    within <- sum(edges$w[memb[edges$from] == memb[edges$to]])
+    Ktot <- rowsum(K, memb)
+    within - gamma * sum(sweep(Ktot^2, 2, inv2m, "*"))
+  }
+  best <- NULL; best_q <- -Inf
+  for (start in seq_len(n_starts)) {
+    memb <- genlouvain_multislice_once(edges, K, twom, gamma, max_levels, max_passes)
+    q <- quality(memb)
+    if (q > best_q) { best_q <- q; best <- memb }
+  }
+  best
+}
+
+genlouvain_multislice_once <- function(edges, K, twom, gamma, max_levels, max_passes) {
+  inv2m <- ifelse(twom > 0, 1 / twom, 0)
+  N0 <- nrow(K)
+  assign0 <- seq_len(N0)                      # original vertex -> current level vertex
+  ef <- as.integer(edges$from); et <- as.integer(edges$to); ew <- as.numeric(edges$w)
+  Kcur <- K
+
+  for (level in seq_len(max_levels)) {
+    N <- nrow(Kcur)
+    # symmetric adjacency lists ----
+    nb_from <- c(ef, et); nb_to <- c(et, ef); nb_w <- c(ew, ew)
+    ord <- order(nb_from); nb_from <- nb_from[ord]; nb_to <- nb_to[ord]; nb_w <- nb_w[ord]
+    starts <- c(1L, cumsum(tabulate(nb_from, N)) + 1L)     # CSR offsets, length N+1
+    comm <- seq_len(N)
+    Ktot <- Kcur                                          # community x slice degree totals
+    KS <- Kcur * matrix(inv2m, N, ncol(Kcur), byrow = TRUE) # k_is / 2m_s, precomputed
+    moved_any <- FALSE
+    for (pass in seq_len(max_passes)) {
+      moved <- 0L
+      for (v in sample.int(N)) {
+        a <- starts[v]; b <- starts[v + 1L] - 1L
+        if (b < a) next
+        nbr <- nb_to[a:b]; wv <- nb_w[a:b]
+        cv <- comm[v]
+        # remove v from its community ----
+        Ktot[cv, ] <- Ktot[cv, ] - Kcur[v, ]
+        # weight from v to each neighbouring community ----
+        nc <- comm[nbr]
+        wc <- rowsum(wv, nc, reorder = FALSE)
+        cand <- as.integer(rownames(wc))
+        # gain of joining community c: w_vc - gamma * sum_s (k_vs / 2m_s) * Ktot[c, s] ----
+        gain <- as.numeric(wc) - gamma * as.numeric(Ktot[cand, , drop = FALSE] %*% KS[v, ])
+        ib <- which.max(gain); bg <- gain[ib]; best <- cand[ib]
+        icv <- match(cv, cand)
+        # staying put has gain 0 when the current community holds no neighbour,
+        # else its own gain; move only on a strict improvement ----
+        stay <- if (is.na(icv)) 0 else gain[icv]
+        if (bg <= stay + 1e-12) best <- cv
+        Ktot[best, ] <- Ktot[best, ] + Kcur[v, ]
+        if (best != cv) { comm[v] <- best; moved <- moved + 1L }
+      }
+      if (moved > 0L) moved_any <- TRUE else break
+    }
+    # relabel 1..C ----
+    comm <- match(comm, sort(unique(comm)))
+    C <- max(comm)
+    assign0 <- comm[assign0]
+    if (!moved_any || C == N) break
+    # aggregate: communities become vertices ----
+    Kcur <- rowsum(Kcur, comm, reorder = TRUE)
+    cf <- comm[ef]; ct <- comm[et]
+    keep <- cf != ct                                      # internal weight is constant for later gains
+    if (!any(keep)) break
+    key <- ifelse(cf[keep] < ct[keep], paste(cf[keep], ct[keep]), paste(ct[keep], cf[keep]))
+    agg <- tapply(ew[keep], key, sum)
+    pr <- do.call(rbind, strsplit(names(agg), " ", fixed = TRUE))
+    ef <- as.integer(pr[, 1]); et <- as.integer(pr[, 2]); ew <- as.numeric(agg)
+  }
+  as.integer(assign0)
 }

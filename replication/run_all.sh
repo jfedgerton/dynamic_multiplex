@@ -10,7 +10,9 @@
 #                                             post job also waiting on job ids J1:J2
 #                                             (use after a partial submit hit the
 #                                             4,000 submitted-job cap)
+#   bash replication/run_all.sh submit alt   EXPLORATORY: sim/05 (594 tasks) + post/15
 #   bash replication/run_all.sh post      run post/10-14 in the current shell
+#   bash replication/run_all.sh post alt  run post/15 (interval alternatives) only
 #   bash replication/run_all.sh status    squeue for this user's dm_* jobs
 #   bash replication/run_all.sh clean-tables   remove generated tables/figures
 #
@@ -95,6 +97,11 @@ case "$ACTION" in
       s=$(sbatch --parsable --export=ALL --dependency=afterok:$f "$SB/07_emp_score.sbatch");  echo "07 emp score (after 06) $s"
       DEPS+=("$s")
     fi
+    if [[ "$WHICH" == "alt" ]]; then
+      a=$(sbatch --parsable --export=ALL "$SB/09_alt_bootstrap.sbatch");                        echo "09 alt bootstrap (594 tasks)  $a"
+      p=$(sbatch --parsable --export=ALL --dependency=afterany:$a "$SB/10_alt_post.sbatch");    echo "10 alt post (after 09)        $p"
+      echo "Results: replication/slurm/logs/10_alt_post_${p}.out and output/alternatives/"
+    fi
     if [[ "$WHICH" == "all" || "$WHICH" == "rest" ]]; then
       dep=$(IFS=:; echo "${DEPS[*]}")
       p=$(sbatch --parsable --export=ALL --dependency=afterok:$dep "$SB/08_postprocess.sbatch")
@@ -108,6 +115,7 @@ case "$ACTION" in
 
   post)
     load_r
+    if [[ "$WHICH" == "alt" ]]; then Rscript replication/post/15_alternatives.R; exit 0; fi
     for s in 10_main_text 11_appendix_regimes 12_appendix_coverage 13_appendix_empirical 14_calibration_table; do
       echo "=================== post/$s.R ==================="
       Rscript "replication/post/$s.R"

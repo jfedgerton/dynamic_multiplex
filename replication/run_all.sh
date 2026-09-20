@@ -5,10 +5,10 @@
 #   bash replication/run_all.sh deps            install the R package (+ Python) into the user library
 #   bash replication/run_all.sh test            package regression tests (R + Python)
 #   bash replication/run_all.sh submit          submit EVERYTHING with dependencies (front-to-end rerun)
-#   bash replication/run_all.sh submit sims     sim/01, 02 (three arms), 04, 05, 06 only
+#   bash replication/run_all.sh submit sims     sim/01, 02 (three arms), 03, 04, 05, 06 only
 #   bash replication/run_all.sh submit empirical   empirical/07-10 only
 #   bash replication/run_all.sh submit post     post-processing only (after the above finished)
-#   bash replication/run_all.sh post            run post/10-15 in the current shell
+#   bash replication/run_all.sh post            run post/10-16 in the current shell
 #   bash replication/run_all.sh status          queue + output counts
 #   bash replication/run_all.sh archive         move existing output/ and manuscript tables/figures
 #                                               to output/_archive/<stamp>/ before a clean rerun
@@ -17,6 +17,7 @@
 # Pipeline (every script reads DM_ROOT; defaults to this repo's root):
 #   sim/01_regime_comparison.R      -> output/regime/dyn_cfgNN.csv        72 tasks   Table 2, App. A2
 #   sim/02_stability.R (3 arms)     -> output/stability/<arm>_*_taskNNNNN 594+216+72 Section 4, App. A4
+#   sim/03_mechanism_tests.R        -> output/mechanism/mech_cfgNN.csv    50 tasks   decision table, App. mechanism
 #   sim/04_coupling_regimes.R       -> output/coupling/coup_cfgNN.csv     48 tasks   App. A3
 #   sim/05_omega_sweep.R            -> output/omega/omega_cfgNN.csv       72 tasks   App. omega sweep
 #   sim/06_selection_rule.R         -> output/selection/sel_cfgNN.csv     72 tasks   App. selection rule
@@ -30,13 +31,14 @@
 #   post/13_appendix_empirical.R    -> order-recovery tables
 #   post/14_coupling.R              -> Jaccard vs overlap appendix table + figure
 #   post/15_omega_selection.R       -> omega sweep, selection rule, empirical stability tables
+#   post/16_mechanism_decision.R    -> main-text decision table (tab_decision_tree), mechanism appendix tables
 # Tables land in manuscript/tables/, figures in manuscript/figures/. The
 # calibration table is copied into r_code/inst/extdata and
 # python_code/src/dynamic_multiplex/data by `post`.
 #
 # Every sim task self-skips when its output exists, so `submit` can be rerun
 # after a partial failure and only the missing tasks execute. Total array
-# tasks: 72 + 882 + 48 + 72 + 72 + 9 = 1,155 (Roar caps submitted jobs at
+# tasks: 72 + 882 + 50 + 48 + 72 + 72 + 9 = 1,205 (Roar caps submitted jobs at
 # 4,000 per account).
 #
 # Data you must supply: $DM_ROOT/data/DCAD-v1.0-dyadic.csv (Kinne DCAD v1.0).
@@ -80,7 +82,7 @@ case "$ACTION" in
 
   archive)
     stamp=$(date +%Y%m%d_%H%M); mkdir -p "output/_archive/$stamp"
-    for d in regime stability coupling omega selection empirical empirical_data; do
+    for d in regime stability mechanism coupling omega selection empirical empirical_data; do
       [[ -d output/$d ]] && mv "output/$d" "output/_archive/$stamp/" && echo "archived output/$d"
     done
     mkdir -p "output/_archive/$stamp/manuscript"
@@ -96,6 +98,7 @@ case "$ACTION" in
       j=$(sb "$SB/02a_stability_binary.sbatch");  echo "02a stability binary (594)  $j"; DEPS+=("$j")
       j=$(sb "$SB/02b_stability_dcsbm.sbatch");   echo "02b stability dcsbm  (216)  $j"; DEPS+=("$j")
       j=$(sb "$SB/02c_stability_weighted.sbatch");echo "02c stability weighted (72) $j"; DEPS+=("$j")
+      j=$(sb "$SB/03_mechanism.sbatch");          echo "03 mechanism tests   (50)   $j"; DEPS+=("$j")
       j=$(sb "$SB/04_coupling.sbatch");           echo "04 coupling          (48)   $j"; DEPS+=("$j")
       j=$(sb "$SB/05_omega.sbatch");              echo "05 omega sweep       (72)   $j"; DEPS+=("$j")
       j=$(sb "$SB/06_selection.sbatch");          echo "06 selection rule    (72)   $j"; DEPS+=("$j")
@@ -118,7 +121,7 @@ case "$ACTION" in
 
   post)
     load_r
-    for s in 10_main_text 11_appendix_regimes 12_stability 13_appendix_empirical 14_coupling 15_omega_selection; do
+    for s in 10_main_text 11_appendix_regimes 12_stability 13_appendix_empirical 14_coupling 15_omega_selection 16_mechanism_decision; do
       echo "=================== post/$s.R ==================="
       Rscript "replication/post/$s.R"
     done
@@ -136,6 +139,7 @@ case "$ACTION" in
     squeue -u "$USER" -h -r -o "%j %T" | sort | uniq -c || true
     echo "regime     $(ls output/regime 2>/dev/null | grep -c dyn_cfg)/72"
     echo "stability  binary $(ls output/stability 2>/dev/null | grep -c '^binary_stab')/594  dcsbm $(ls output/stability 2>/dev/null | grep -c '^dcsbm_stab')/216  weighted $(ls output/stability 2>/dev/null | grep -c '^weighted_stab')/72"
+    echo "mechanism  $(ls output/mechanism 2>/dev/null | grep -c mech_cfg)/50"
     echo "coupling   $(ls output/coupling 2>/dev/null | grep -c coup_cfg)/48   omega $(ls output/omega 2>/dev/null | grep -c omega_cfg)/72   selection $(ls output/selection 2>/dev/null | grep -c sel_cfg)/72"
     ls output/empirical 2>/dev/null || true
     ;;

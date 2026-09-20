@@ -17,12 +17,13 @@ bash replication/run_all.sh post          # tables and figures, once the jobs ar
 |---|---|---|---|---|
 | 1 | `sim/01_regime_comparison.R` | 72 | `output/regime/` | Table 2, appendix A2 (`post/10`, `post/11`) |
 | 2 | `sim/02_stability.R` (`STAB_ARM` = binary / dcsbm / weighted) | 594 / 216 / 72 | `output/stability/` | Section 4, Figure 2, appendix A4 (`post/12`) |
+| 3 | `sim/03_mechanism_tests.R` | 50 | `output/mechanism/` | main-text decision table, appendix mechanism tables (`post/16`) |
 | 4 | `sim/04_coupling_regimes.R` | 48 | `output/coupling/` | appendix A3 (`post/14`) |
 | 5 | `sim/05_omega_sweep.R` | 72 | `output/omega/` | appendix omega sweep (`post/15`) |
 | 6 | `sim/06_selection_rule.R` | 72 | `output/selection/` | appendix selection rule (`post/15`) |
 | 7-9 | `empirical/07_build_networks.R`, `08_fit_networks.R`, `09_score_orders.R` | 1 / 4 / 1 | `output/empirical_data/`, `output/empirical/` | Figure 3, appendix empirical tables (`post/10`, `post/13`) |
 | 10 | `empirical/10_stability_networks.R` | 4 | `output/empirical/<net>_stability.csv` | appendix empirical stability (`post/15`) |
-| post | `post/10`-`15` | | `manuscript/tables/`, `manuscript/figures/`, calibration table copied into both packages | |
+| post | `post/10`-`16` | | `manuscript/tables/`, `manuscript/figures/`, calibration table copied into both packages | |
 
 `sim/lib_regimes.R` holds the generators, method wrappers and metrics shared
 by sims 1, 5 and 6. Every sim task self-skips when its output exists, so

@@ -1,0 +1,83 @@
+%% ============================================================================
+%% DRAFT for Jared, 2026-09-21. A main-text subsection: when to use which
+%% method. Numbers are from the Sept 21 front-to-end rerun (v1.3.0,
+%% tab_decision_tree.tex, tab_metrics_wide.tex, tab_app_selection_rule.tex,
+%% tab_app_empirical_stability.tex). Adopt, cut, or rewrite; nothing here is
+%% in the Overleaf project yet. Table reference assumes
+%% \input{tables/tab_decision_tree.tex} with \label{tab:decision_tree}.
+%% ============================================================================
+
+\subsection{When to Use DynMux, Multislice, or Label Matching}
+\label{sec:when_to_use}
+
+The three trackers in the \texttt{dynamicmultiplex} package differ in what
+they carry across layers. DynMux couples \emph{communities}: a community at
+$t$ is linked to a community at $t'$ when their memberships overlap, and no
+node is tied to itself. Multislice modularity couples \emph{nodes}: node $i$
+at $t$ is tied to node $i$ at $t+1$ with weight $\omega$, so the objective
+rewards every node that stays put. Hungarian label matching couples nothing;
+it detects each layer on its own and aligns labels afterwards. Which coupling
+is right depends on whether the thing that persists over time is the node or
+the community, and Table~\ref{tab:decision_tree} collects the evidence from
+every simulated scenario in the paper.
+
+\begin{table}[t]
+\centering\small
+\caption{Joint NMI of the tracked partition by scenario (means over
+replicates; Table 2 regimes use 30 replicates per configuration, the
+mechanism and lineage regimes 10 and 30). Multislice uses adjacent-layer
+links except where the generator supplies period links. Margin is the gap
+between the best method and the runner-up.}
+\label{tab:decision_tree}
+\input{tables/tab_decision_tree.tex}
+\end{table}
+
+\paragraph{Use DynMux when the node set or the community set changes.}
+DynMux is the most accurate tracker when communities are born and die
+(joint NMI 0.37 against 0.31 for multislice and 0.28 for label matching),
+when nodes enter and leave the network (0.36 against 0.28; DynMux is the more
+accurate method in 91\% of series), and when structure recurs on a period
+the analyst cannot supply as a link (0.28 against 0.10). In each case the
+identity tie has nothing to attach to, or attaches the wrong thing: an
+absent node has no copy in the next layer, a dead community's members are
+dragged toward its old label, and adjacent-layer ties cannot see a
+partition that returns after a gap. Community-level coupling ignores all
+three problems because it never asks whether node $i$ is the same node.
+%% [CLAUDE 2026-09-21] Abrupt rewiring: in the 30-replicate Table 2 run DynMux and multislice tie (0.489 vs 0.487, paired p = 0.59); in the 10-replicate omega sweep on the same seeds DynMux leads by 0.10. The gap is optimiser noise in the multislice fit at n <= 100 (see the note I sent you). Until that is settled, do not list abrupt rewiring as a DynMux win; the safe sentence is "at an abrupt change-point the two are indistinguishable on joint NMI, and DynMux has the lower K error (1.35 vs 1.26 is actually multislice lower; check tab_metrics_wide)".
+
+\paragraph{Use multislice when nodes persist and the signal is weak.}
+When most nodes keep their community from one layer to the next, the
+identity tie is the right prior and it also pools evidence across layers.
+Multislice wins by wide margins under gradual switching (0.54 against 0.27),
+under a stable core with a rotating periphery (0.87 against 0.46), and on
+long series with many small communities (0.69 against 0.23), where DynMux's
+second stage over-splits ($K$ error 5.3 against 1.5). It also wins in every
+lineage regime of Appendix~X (splits, merges, shrinking and nested
+communities), because its supra-graph carries a community through the event
+as one object while DynMux's community graph fragments it. When the period
+of a recurring structure is known, multislice with period links matches or
+beats DynMux (0.43 against 0.28). None of these results depend on $\omega$:
+across $\omega \in \{0.25, 0.5, 1, 2, 4\}$ the multislice numbers move by
+less than 0.01 (Appendix~X).
+
+\paragraph{Use label matching only to preserve per-layer partitions.}
+Hungarian matching is never the most accurate method in any scenario. Its
+use case is procedural: when the analyst needs each layer's partition exactly
+as a single-layer algorithm returns it, with labels aligned afterwards and no
+information shared across layers.
+
+\paragraph{When the regime is unknown, compare stability scores.}
+Fitting both DynMux and multislice and keeping the one with the higher
+stability score (Section~4) selects the more accurate method in 82\% of
+simulated series across the four Table~2 regimes, and yields a mean joint
+NMI of 0.47 against 0.35 for always choosing DynMux, 0.44 for always
+choosing multislice, and 0.48 for an oracle that knows the answer
+(Appendix~X). On the four empirical networks the rule prefers multislice in
+every case (Appendix~X): its stability scores are 0.97, 0.75, 0.80 and 0.59
+on the alliance, defense cooperation, IGO and trade networks against 0.85,
+0.51, 0.72 and 0.12 for DynMux. The two methods recover the coded orders
+about equally well (Section~5), so the difference is in how confidently the
+node-level assignments can be read, and Section~5 reports both.
+%% [CLAUDE 2026-09-21] The last two sentences are the honest version of the empirical stability result; they weaken the "DynMux is the method for the empirical networks" framing in Sec. 5 and the conclusion. If you would rather keep Sec. 5 as is, this paragraph still has to state the empirical stability numbers somewhere, because tab_app_empirical_stability.tex is in the appendix.
+
+%% [CLAUDE 2026-09-21] Overlap: one sentence somewhere in Sec. 3.1, not here: "An overlap-coefficient coupling is also available; it never beats Jaccard on membership accuracy and is worse when communities split (-0.05) or merge (-0.06), so the main text uses Jaccard throughout (Appendix X)."

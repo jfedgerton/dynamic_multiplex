@@ -1,0 +1,860 @@
+\documentclass[11pt, letterpaper]{article}
+\ProvidesClass{classname}[notes]
+\PassOptionsToPackage{dvipsnames,table}{xcolor}
+\usepackage[left=2.5cm, right=2.5cm, top=2.15cm, bottom=2.15cm]{geometry}
+ \usepackage{helvet}
+ \usepackage{pgfplots}
+ \usepackage[english]{babel}
+ \usepackage{quiver}
+ \usepackage{tcolorbox}
+  \usepackage{array}
+  \usepackage{multirow}
+ \usepackage{booktabs}
+ \usepackage{multirow}
+\usepackage{siunitx}
+\usepackage{booktabs}
+ \usepackage{float}
+ \usepackage[hyphens,spaces,obeyspaces]{url}
+ \usepackage{caption}
+ \usepackage{algorithmic}
+ \usepackage{adjustbox}
+\usepackage{subcaption}
+\usepackage{bigdelim}
+\usepackage{tikz}
+\usepackage{tkz-tab}
+\usepackage{amssymb}
+\usetikzlibrary{shapes.geometric}
+\usetikzlibrary{positioning}
+ \usepackage[labelfont=bf]{caption}
+ \usepackage{nicematrix,tikz}
+ \usetikzlibrary{decorations.pathreplacing}
+% \usepackage{longtable, array, ragged2e}
+%	\newcolumntype{L}[1]{>{\RaggedRight\hspace{0pt}}p{#1}}
+ \usepackage{amssymb,amsmath,amsthm}
+ \usepackage{color}
+ \usepackage{setspace}
+ \usepackage{titling,lipsum}
+ \usepackage{fixltx2e}
+ %\usepackage{graphicx}
+ \usepackage{fancyvrb}
+ \usepackage{setspace}
+ \usepackage{changepage}
+ \usepackage{rotating}
+\usepackage{dcolumn}
+\newcolumntype{d}[1]{D{.}{.}{#1}}
+ \DeclareMathOperator{\aVar}{aVar}
+ \renewcommand{\theequation}{\thesection.\arabic{equation}}
+ \numberwithin{equation}{section}
+%\renewcommand{\headrulewidth}{0pt}
+\usepackage{fancyhdr}
+\pagestyle{fancy}
+\usepackage{abstract}
+\usepackage{listings}
+\usepackage{xcolor}
+
+\lstset{
+    language=R,
+    basicstyle=\small\ttfamily\setstretch{1},   % <-- line 57, add \setstretch{1}
+    numbers=left,
+    numberstyle=\tiny,
+    frame=tb,
+    tabsize=4,
+    aboveskip=1em,
+    belowskip=1em,
+    xleftmargin=1.5em,
+    columns=fixed,
+    showstringspaces=false,
+    showtabs=false,
+    keepspaces,
+    commentstyle=\color{green!60!black},
+    keywordstyle=\color{blue},
+    stringstyle=\color{purple!40!black},
+    breaklines=true,
+    breakatwhitespace=true,
+    escapeinside={\%*}{*)},
+    morekeywords={tibble}, %>%, mutate, filter, bind_rows, left_join}
+}
+% \usepackage[nomarkers,figuresonly]{endfloat}
+\usepackage{enumerate, booktabs, dcolumn, lscape, enumitem, listing, setspace, multicol, natbib, amsfonts, amsmath, amssymb, subcaption, centernot}
+%\usepackage[pdftex]{graphicx}
+\usepackage[toc,page]{appendix}
+\usepackage{adjustbox}
+\usepackage[table]{xcolor}
+\usepackage{longtable}
+\usepackage{amsmath}
+ \usepackage{natbib}
+ \setcitestyle{aysep={,}} 
+ \renewcommand{\bibsection}{}
+\fancyhf{}
+\fancyhead[R]{\thepage}
+\fancyhead[L]{Jared F. Edgerton}
+\let\oldthebibliography=\thebibliography
+\let\endoldthebibliography=\endthebibliography
+\usetikzlibrary{arrows,positioning} 
+\tikzset{
+  %Define standard arrow tip
+  >=stealth',
+  %Define style for boxes
+  punkt/.style={
+      rectangle,
+      rounded corners,
+      draw=black, very thick,
+      text width=6.5em,
+      minimum height=2em,
+      text centered},
+  % Define arrow style
+  pil/.style={
+      ->,
+      thick,
+      shorten <=2pt,
+      shorten >=2pt,}
+}
+\newcommand\blfootnote[1]{%
+ \begingroup
+ \renewcommand\thefootnote{}\footnote{#1}%
+ \addtocounter{footnote}{-1}%
+ \endgroup
+}
+
+\newcommand\MyTikzMark[2]{%
+ \tikz[overlay,remember picture] \node (#1) at (#2){};
+}
+
+
+\begin{document}
+\appendix
+\renewcommand{\thesection}{A\arabic{section}}
+\renewcommand{\thetable}{A\arabic{table}}
+\renewcommand{\thefigure}{A\arabic{figure}}
+\renewcommand{\theequation}{A\arabic{equation}}
+\setcounter{section}{0}\setcounter{table}{0}
+\setcounter{figure}{0}\setcounter{equation}{0}
+
+\doublespacing
+\setcounter{page}{1}
+\spacing{2}
+\renewcommand{\contentsname}{Table of Contents}
+\vspace{-10pt}
+\begin{singlespace}
+\tableofcontents
+\end{singlespace}\vspace{-10pt}
+
+\newpage
+% -----------------------------------------------------------------
+\section{Simulation Regimes}
+In the main text, I examine the proposed dynamic multiplex approaches against Hungarian label matching, pooled multiplex, dynamic stochastic block models (DynSBM), full multislice (\texttt{multinet}), and multislice with adjacent connected layers using four network simulation regimes. Here, I describe the regimes further and provide the code used to generate these networks. 
+
+%% [CLAUDE 2026-09-20] removed an exact duplicate of the 'Shared Generative Structure' subsection that preceded this one (same text, same \label{eq:dens}, which LaTeX reports as multiply defined).
+%% [CLAUDE 2026-09-20] A1: 'the proposed dynamic multiplex approaches' -> singular (DynMux with Jaccard coupling); overlap appears only in A2 (paired tables) and the new A3 coupling section.
+\subsection{Shared Generative Structure}
+All four regimes are generated in base \textsf{R} version 4.5.0. All simulations use undirected and unweighted network layers. Each configuration is defined by its network size $N$, an inter- and intra-community tie ratio $\rho$, and a change intensity. The $\rho$ value is held constant at 0.10, meaning that as the proportion of ties within and between communities changes the overall network density remains the same. The within and between-community tie probabilities follow: \begin{equation}\label{eq:dens}
+p_{\text{in}} \;=\; \frac{\rho\, r K}{r + K - 1},
+\qquad
+p_{\text{out}} \;=\; \frac{p_{\text{in}}}{r},
+\end{equation}
+
+
+\noindent the $p_{\text{in}}$ and $p_{\text{out}}$ values are clipped to $[0,1]$. Holding $\rho$ fixed ensures that the results are not confounded with sparsity. Each regime follows three separate conditions ($r \in \{1.5, 3, 6\}$; i.e., low, medium, and high community separation), network sizes ($N \in \{50, 100, 200\}$), and change intensity (low or high); this results in 72 network configurations total. For the analyses, I replicate each configuration 30 times for 2,160 simulated networks total. See listing \ref{lst:build_layer} for the code snippet. 
+
+
+\begin{lstlisting}[caption={Density parameterization and layer construction.},
+                   label={lst:build_layer}]
+dens_params <- function(r, K, rho = RHO) {
+  p_in  <- rho * r * K / (r + K - 1)
+  p_out <- p_in / r
+  list(p_in  = min(max(p_in,  0), 1),
+       p_out = min(max(p_out, 0), 1))
+}
+
+# A single undirected 0/1 symmetric SBM layer from a membership vector.
+build_layer <- function(m, p_in, p_out) {
+  n  <- length(m)
+  P  <- outer(m, m, "==")
+  Pr <- ifelse(P, p_in, p_out); diag(Pr) <- 0
+  A  <- matrix(0, n, n); up <- upper.tri(Pr)
+  A[up] <- rbinom(sum(up), 1, Pr[up]); A + t(A)
+}
+\end{lstlisting}
+
+\subsection{The Four Network Regimes}
+Table \ref{tab:app_simgrid} reports additional information on the network regimes. Each regime has a set of parameters that vary the intensity of network changes; because the underlying mechanism differs across regimes, the parameters governing intensity are regime-specific.
+
+\begin{table}[ht]\centering
+\caption{Simulation design. Each regime is crossed with network size
+$N \in \{50, 100, 200\}$ and separation ratio $r \in \{1.5, 3, 6\}$ at two
+change intensities, giving 72 configurations, each replicated 30 times for
+2,160 simulated networks.}
+\label{tab:app_simgrid}
+\begin{tabular}{llccl}
+\toprule
+Regime & Parameter & Low & High & Layer links \\
+\midrule
+\multirow{3}{*}{Births \& deaths}
+  & Layers $T$              & 12   & 12   & \multirow{3}{*}{Adjacent} \\
+  & Node turnover / layer   & 0.10 & 0.30 & \\
+  & Birth cohort            & 0.15 & 0.25 & \\
+\addlinespace
+\multirow{2}{*}{Gradual switching}
+  & Layers $T$              & 8    & 14   & \multirow{2}{*}{Adjacent} \\
+  & Switch prob.\ $p$       & 0.05 & 0.15 & \\
+\addlinespace
+\multirow{3}{*}{Abrupt rewiring}
+  & Layers $T$ (break $t^*$)& 12 (6) & 12 (6) & \multirow{3}{*}{Adjacent} \\
+  & Era-1 communities $K_1$ & 3    & 2    & \\
+  & Era-2 communities $K_2$ & 4    & 6    & \\
+\addlinespace
+\multirow{2}{*}{Recurring structure}
+  & Period                  & 2    & 4    & \multirow{2}{*}{Period-lagged} \\
+  & Layers $T = 4\times$period & 8 & 16   & \\
+\bottomrule
+\end{tabular}
+
+\vspace{0.5em}
+\begin{minipage}{0.92\textwidth}
+\footnotesize \textit{Note:} Births \& deaths uses $K_0 = 4$ initial
+communities; gradual switching and recurring structure use $K = 4$. Abrupt
+rewiring reconfigures from $K_1$ to $K_2$ disjoint communities at $t^*$, with
+3\% within-era drift per layer. Recurring structure drifts 2\% of nodes on
+each revisit to a partition. Configurations are shuffled under
+\texttt{set.seed(123)} before the array index selects one, so a partial run
+samples every regime, $N$, $r$, and intensity condition.
+\end{minipage}
+\end{table}
+
+In the birth and death network regime, the low intensity simulations flip the activity status of 10\% of nodes each layer---the node turnover rate---and assign 15\% of nodes to each newly created community---the birth cohort. In the high intensity simulations, these values increase to 30\% and 25\%, respectively. Every third layer, the oldest surviving community dies and its members disperse among the remaining communities while a new community is born, so communities exist only within time windows and no single pooled partition can represent them. Inactive nodes receive unique singleton labels in the ground truth, and all metrics are computed on active nodes only. Listing \ref{lst:birthdeath} displays a code snippet used to generate these networks.
+
+\begin{lstlisting}[caption={Births and deaths generator.},
+                   label={lst:birthdeath}]
+sim_birthdeath <- function(n, K0, r, intensity, seed) {
+  set.seed(seed)
+  dp <- dens_params(r, K0)
+  T_      <- 12L
+  frac    <- if (identical(intensity, "high")) 0.30 else 0.10   # node turnover
+  recruit <- if (identical(intensity, "high")) 0.25 else 0.15   # birth cohort
+  mem <- sample(seq_len(K0), n, replace = TRUE)
+  alive <- seq_len(K0); nxt <- K0 + 1L; state <- rep(TRUE, n)
+  truth <- vector("list", T_); layers <- vector("list", T_)
+  active <- vector("list", T_)
+  for (t in seq_len(T_)) {
+    if (t > 1L) {
+      toggle <- sample(seq_len(n), floor(frac * n))
+      state[toggle] <- !state[toggle]
+      if (t %% 3L == 0L) {
+        dead <- alive[1]; alive <- alive[-1]
+        mv <- which(mem == dead)
+        if (length(mv) && length(alive))
+          mem[mv] <- sample(alive, length(mv), replace = TRUE)
+        born <- nxt; nxt <- nxt + 1L; alive <- c(alive, born)
+        rec <- sample(seq_len(n), floor(recruit * n)); mem[rec] <- born
+      }
+    }
+    act <- state; active[[t]] <- act
+    A <- matrix(0, n, n); ai <- which(act)
+    if (length(ai) >= 2L) {
+      ma <- mem[ai]; P <- outer(ma, ma, "==")
+      Pr <- ifelse(P, dp$p_in, dp$p_out); diag(Pr) <- 0
+      sub <- matrix(0, length(ai), length(ai)); up <- upper.tri(Pr)
+      sub[up] <- rbinom(sum(up), 1, Pr[up]); sub <- sub + t(sub)
+      A[ai, ai] <- sub
+    }
+    layers[[t]] <- A
+    tr <- mem; inact <- which(!act)
+    if (length(inact)) tr[inact] <- max(mem) + seq_along(inact)
+    truth[[t]] <- tr
+  }
+  links <- data.frame(from = seq_len(T_ - 1L), to = 2:T_, weight = 1)
+  list(layers = layers, truth = truth, links = links, active = active)
+}
+\end{lstlisting}
+
+
+In the gradual switching network regime, the low intensity simulations have eight layers---or temporal periods---and a switch probability $p$---the rate at which nodes change communities---of 0.05. In the high intensity simulations, these values increase to 14 and 0.15, respectively. Every layer is a fresh draw from the current membership, so edges churn completely even when community membership is stable. Listing \ref{lst:churnswitch} displays a code snippet used to generate these networks.
+
+\begin{lstlisting}[caption={Gradual switching generator.},
+                   label={lst:churnswitch}]
+sim_churnswitch <- function(n, K, r, intensity, seed) {
+  set.seed(seed)
+  dp <- dens_params(r, K)
+  T_       <- if (identical(intensity, "high")) 14L else 8L
+  p_switch <- if (identical(intensity, "high")) 0.15 else 0.05
+  mem <- sample(seq_len(K), n, replace = TRUE)
+  truth <- vector("list", T_); layers <- vector("list", T_)
+  for (t in seq_len(T_)) {
+    if (t > 1L) {
+      sw <- runif(n) < p_switch
+      if (any(sw)) mem[sw] <- sample(seq_len(K), sum(sw), replace = TRUE)
+    }
+    layers[[t]] <- build_layer(mem, dp$p_in, dp$p_out)
+    truth[[t]]  <- mem
+  }
+  links <- data.frame(from = seq_len(T_ - 1L), to = 2:T_, weight = 1)
+  list(layers = layers, truth = truth, links = links)
+}
+\end{lstlisting}
+
+In the abrupt rewiring network regime, both the low and high intensity simulations have 12 layers and a structural break after layer 6. The low intensity simulations begin with three era-1 communities $K_1$---the number of latent groups before the structural break---and reconfigure into four era-2
+communities $K_2$---the number of latent groups after the break. In the high intensity simulations, the network begins with two communities and reconfigures into six, producing a larger structural break. The era-2 communities are disjoint from the era-1 communities, so no single pooled
+partition can fit both eras. Listing \ref{lst:regimeshift} displays a code snippet used to generate these networks.
+
+\begin{lstlisting}[caption={Abrupt rewiring generator.},
+                   label={lst:regimeshift}]
+sim_regimeshift <- function(n, r, intensity, seed) {
+  set.seed(seed)
+  K1 <- if (identical(intensity, "high")) 2L else 3L
+  K2 <- if (identical(intensity, "high")) 6L else 4L
+  dp <- dens_params(r, max(K1, K2))
+  T_ <- 12L; tstar <- 6L; drift <- 0.03
+  m1 <- sample(seq_len(K1), n, replace = TRUE)
+  m2 <- sample(K1 + seq_len(K2), n, replace = TRUE)  # disjoint era-2 ids
+  truth <- vector("list", T_); layers <- vector("list", T_)
+  cur <- m1
+  for (t in seq_len(T_)) {
+    if (t == tstar + 1L) {
+      cur <- m2                                      # abrupt reconfiguration
+    } else if (t > 1L) {
+      dr <- runif(n) < drift
+      if (any(dr)) {
+        pool <- if (t <= tstar) seq_len(K1) else K1 + seq_len(K2)
+        cur[dr] <- sample(pool, sum(dr), replace = TRUE)
+      }
+    }
+    layers[[t]] <- build_layer(cur, dp$p_in, dp$p_out)
+    truth[[t]]  <- cur
+  }
+  links <- data.frame(from = seq_len(T_ - 1L), to = 2:T_, weight = 1)
+  list(layers = layers, truth = truth, links = links)
+}
+\end{lstlisting}
+ 
+In the recurring structure network regime, a cycle of two recurring partitions runs across eight layers in the low intensity simulations, and a cycle of four partitions across 16 layers in the high intensity simulations. Unlike the other network regimes, the interlayer links connect layer $t$ to layer $t-\text{period}$ rather than to layer $t-1$, so the coupling bridges non-adjacent recurrences. Listing \ref{lst:seasonality} displays a code snippet used to generate these networks.
+
+\begin{lstlisting}[caption={Recurring structure generator. Interlayer links
+connect layer $t$ to layer $t-\text{period}$ rather than to layer $t-1$.},
+                   label={lst:seasonality}]
+sim_seasonality <- function(n, K, period, r, seed) {
+  set.seed(seed)
+  dp  <- dens_params(r, K)
+  cur <- lapply(seq_len(period), function(s) sample(seq_len(K), n, replace = TRUE))
+  T_  <- 4L * period
+  truth <- vector("list", T_); layers <- vector("list", T_)
+  for (t in seq_len(T_)) {
+    s    <- ((t - 1L) %% period) + 1L
+    mask <- runif(n) < 0.02                  # light drift each visit
+    if (any(mask)) cur[[s]][mask] <- sample(seq_len(K), sum(mask), replace = TRUE)
+    m <- cur[[s]]
+    truth[[t]]  <- m
+    layers[[t]] <- build_layer(m, dp$p_in, dp$p_out)
+  }
+  tt    <- (period + 1L):T_
+  links <- data.frame(from = tt - period, to = tt, weight = 1)   # period-lagged
+  list(layers = layers, truth = truth, links = links)
+}
+\end{lstlisting}
+% --- prose per regime, from the bullets above ---
+
+% PLACEHOLDER: lstlisting of the generator for each regime
+
+% =====  [main text fn 7 — your existing section]  =====
+%% [CLAUDE 2026-09-20] A2: this is where the overlap row lives now (you chose: one sentence in the main text + appendix). Keep the Jaccard and Overlap columns.
+%% [CLAUDE 2026-09-20]  - The 'Multislice (adjacent)' rows and both figures regenerate from the corrected implementation (post/11 after the final rerun); the prose sentences about beating adjacent-layer multislice will change (it now beats DynMux under gradual switching).
+%% [CLAUDE 2026-09-20]  - The Jaccard numbers also shift slightly (Table 2 Jaccard: 0.37/0.27/0.49/0.28), so every number in the two tables below is to be replaced by the regenerated tab_app_paired_ci_{nmi,kmae}.tex.
+\section{Pairwise Differences Between Approaches}
+\label{app:paired}
+In the main text, I present a table comparing the NMI and $K$ MAE values for each method across the regimes. Figures \ref{fig:pairwise_nmi} and \ref{fig:pairwise_kmae} display the differences as pairwise comparisons for the Jaccard and overlap DynMux against existing approaches. 
+
+Figure \ref{fig:pairwise_nmi} displays the joint NMI results. In the birth and death, abrupt rewiring, and recurring structure network regimes, both DynMux approaches outperform every alternative approach at both low and high change intensity, with all forty of these comparisons having confidence intervals excluding zero. In contrast, for the gradual switching regime both DynMux approaches produce worse estimates than Hungarian label matching, DynSBM, pooled Leiden, and full-coupling multislice at low and high intensities. The DynMux approaches only outperform adjacent-layer multislice.
+
+\begin{figure}
+    \centering
+    \includegraphics[width=0.95\linewidth]{figs/fig_regime_paired_nmi.pdf}
+    \caption{Pairwise comparisons for the DynMux approaches against existing methods for the NMI results across the network regimes and change intensity.}
+    \label{fig:pairwise_nmi}
+\end{figure}
+
+Figure \ref{fig:pairwise_kmae} displays the  $K$ MAE results. Across this outcome, overlap DynMux outperforms the Jaccard specification. Across all regimes, the overlap DynMux beats every alternative in the birth and death and abrupt rewiring regimes at high intensity, and in recurring structure at high intensity. At low intensity in abrupt rewiring, the overlap DynMux beats Hungarian label matching and adjacent-layer multislice, while tying the other approaches. The Jaccard specification performs worse. It beats all alternatives in the birth and death regime at low intensity and in abrupt rewiring at high intensity, but produces worse community-count estimates than pooled Leiden and full-coupling multislice in the birth and death regime at high intensity, in recurring structure at low intensity, and---along with DynSBM---in abrupt rewiring at low intensity. Both DynMux approaches perform worse in the gradual switching regime. For both the low and high intensities, the overlap approach only beats the Hungarian label matching, adjacent-layer multislice, and DynSBM, while the Jaccard DynMux only beats the Hungarian label matching and adjacent-layer multislice.
+
+\begin{figure}
+    \centering
+    \includegraphics[width=0.95\linewidth]{figs/fig_regime_paired_kmae.pdf}
+    \caption{Pairwise comparisons for the DynMux approaches against existing methods for the $K$ MAE results across the network regimes and change intensity.}
+    \label{fig:pairwise_kmae}
+\end{figure}
+
+Table \ref{tab:app_paired_ci_nmi} displays the full NMI scores paired difference point estimates and 95\% confidence intervals. Table \ref{tab:app_paired_ci_kmae} displays the full $K$ MAE scores paired difference point estimates and 95\% confidence intervals. 
+% ---------------------------------------------------------------------------
+% Appendix Table: paired 95% CIs, joint NMI
+% Requires: booktabs, setspace
+% ---------------------------------------------------------------------------
+\begin{table}[htbp]
+\centering
+\singlespacing
+\scriptsize
+\setlength{\tabcolsep}{4pt}
+\caption{Paired differences and 95\% confidence intervals for every
+DynMux-versus-baseline comparison of joint NMI, by network regime and change
+intensity. Differences are computed within each simulated network
+($n = 270$ per comparison) as DynMux minus baseline, so positive values
+favor DynMux. Repeated regime labels are blank for readability.}
+\label{tab:app_paired_ci_nmi}
+\begin{tabular}{llcc}
+\toprule
+Regime (intensity) & Baseline & Jaccard & Overlap \\
+\midrule
+Births \& deaths (Low) & Hungarian matching & 0.095 [0.088, 0.101] & 0.087 [0.081, 0.093] \\
+ & Multislice (adjacent) & 0.137 [0.115, 0.159] & 0.129 [0.106, 0.152] \\
+ & Dynamic SBM & 0.163 [0.148, 0.177] & 0.155 [0.141, 0.169] \\
+ & Pooled Leiden & 0.111 [0.096, 0.125] & 0.103 [0.087, 0.120] \\
+ & Multislice full (\texttt{multinet}) & 0.115 [0.101, 0.130] & 0.108 [0.091, 0.124] \\
+Births \& deaths (High) & Hungarian matching & 0.105 [0.099, 0.110] & 0.091 [0.085, 0.097] \\
+ & Multislice (adjacent) & 0.118 [0.098, 0.137] & 0.104 [0.084, 0.125] \\
+ & Dynamic SBM & 0.249 [0.240, 0.259] & 0.236 [0.227, 0.245] \\
+ & Pooled Leiden & 0.176 [0.164, 0.187] & 0.162 [0.150, 0.175] \\
+ & Multislice full (\texttt{multinet}) & 0.186 [0.174, 0.197] & 0.172 [0.160, 0.184] \\
+Gradual switching (Low) & Hungarian matching & $-$0.110 [$-$0.126, $-$0.094] & $-$0.119 [$-$0.135, $-$0.103] \\
+ & Multislice (adjacent) & 0.216 [0.188, 0.245] & 0.207 [0.179, 0.235] \\
+ & Dynamic SBM & $-$0.221 [$-$0.250, $-$0.193] & $-$0.231 [$-$0.260, $-$0.202] \\
+ & Pooled Leiden & $-$0.340 [$-$0.368, $-$0.312] & $-$0.350 [$-$0.377, $-$0.322] \\
+ & Multislice full (\texttt{multinet}) & $-$0.330 [$-$0.358, $-$0.303] & $-$0.340 [$-$0.368, $-$0.312] \\
+Gradual switching (High) & Hungarian matching & $-$0.142 [$-$0.164, $-$0.120] & $-$0.153 [$-$0.175, $-$0.130] \\
+ & Multislice (adjacent) & 0.170 [0.148, 0.193] & 0.160 [0.137, 0.182] \\
+ & Dynamic SBM & $-$0.190 [$-$0.222, $-$0.158] & $-$0.201 [$-$0.234, $-$0.168] \\
+ & Pooled Leiden & $-$0.070 [$-$0.087, $-$0.053] & $-$0.081 [$-$0.098, $-$0.064] \\
+ & Multislice full (\texttt{multinet}) & $-$0.067 [$-$0.083, $-$0.050] & $-$0.077 [$-$0.094, $-$0.061] \\
+Abrupt rewiring (Low) & Hungarian matching & 0.075 [0.066, 0.084] & 0.064 [0.054, 0.075] \\
+ & Multislice (adjacent) & 0.104 [0.078, 0.130] & 0.093 [0.068, 0.118] \\
+ & Dynamic SBM & 0.125 [0.110, 0.140] & 0.114 [0.098, 0.131] \\
+ & Pooled Leiden & 0.200 [0.181, 0.218] & 0.189 [0.171, 0.207] \\
+ & Multislice full (\texttt{multinet}) & 0.203 [0.185, 0.221] & 0.192 [0.175, 0.209] \\
+Abrupt rewiring (High) & Hungarian matching & 0.065 [0.055, 0.075] & 0.046 [0.034, 0.059] \\
+ & Multislice (adjacent) & 0.105 [0.080, 0.129] & 0.086 [0.063, 0.108] \\
+ & Dynamic SBM & 0.150 [0.140, 0.159] & 0.131 [0.119, 0.142] \\
+ & Pooled Leiden & 0.247 [0.228, 0.267] & 0.229 [0.210, 0.247] \\
+ & Multislice full (\texttt{multinet}) & 0.249 [0.230, 0.268] & 0.230 [0.212, 0.248] \\
+Recurring structure (Low) & Hungarian matching & 0.087 [0.072, 0.102] & 0.081 [0.065, 0.096] \\
+ & Multislice (adjacent) & 0.233 [0.203, 0.264] & 0.227 [0.196, 0.258] \\
+ & Dynamic SBM & 0.083 [0.070, 0.097] & 0.077 [0.063, 0.091] \\
+ & Pooled Leiden & 0.087 [0.063, 0.112] & 0.081 [0.056, 0.106] \\
+ & Multislice full (\texttt{multinet}) & 0.091 [0.066, 0.115] & 0.084 [0.060, 0.109] \\
+Recurring structure (High) & Hungarian matching & 0.149 [0.126, 0.172] & 0.145 [0.122, 0.168] \\
+ & Multislice (adjacent) & 0.191 [0.165, 0.216] & 0.187 [0.161, 0.213] \\
+ & Dynamic SBM & 0.142 [0.125, 0.159] & 0.138 [0.121, 0.155] \\
+ & Pooled Leiden & 0.154 [0.130, 0.178] & 0.150 [0.126, 0.175] \\
+ & Multislice full (\texttt{multinet}) & 0.154 [0.130, 0.178] & 0.150 [0.126, 0.174] \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+% ---------------------------------------------------------------------------
+% Appendix Table: paired 95% CIs, K MAE
+% ---------------------------------------------------------------------------
+\begin{table}[htbp]
+\centering
+\singlespacing
+\scriptsize
+\setlength{\tabcolsep}{4pt}
+\caption{Paired differences and 95\% confidence intervals for every
+DynMux-versus-baseline comparison of $K$ MAE, by network regime and change
+intensity. Differences are computed within each simulated network
+($n = 270$ per comparison) as baseline minus DynMux, since a lower
+community-count error is better, so positive values favor DynMux.
+Repeated regime labels are blank for readability.}
+\label{tab:app_paired_ci_kmae}
+\begin{tabular}{llcc}
+\toprule
+Regime (intensity) & Baseline & Jaccard & Overlap \\
+\midrule
+Births \& deaths (Low) & Hungarian matching & 0.419 [0.381, 0.458] & 1.197 [1.115, 1.278] \\
+ & Multislice (adjacent) & 1.334 [1.232, 1.436] & 2.111 [2.044, 2.179] \\
+ & Dynamic SBM & 0.279 [0.212, 0.346] & 1.056 [0.982, 1.131] \\
+ & Pooled Leiden & $-$0.575 [$-$0.670, $-$0.480] & 0.202 [0.091, 0.313] \\
+ & Multislice full (\texttt{multinet}) & $-$0.543 [$-$0.640, $-$0.445] & 0.235 [0.124, 0.345] \\
+Births \& deaths (High) & Hungarian matching & 0.357 [0.317, 0.396] & 1.168 [1.101, 1.234] \\
+ & Multislice (adjacent) & 0.820 [0.693, 0.947] & 1.631 [1.518, 1.745] \\
+ & Dynamic SBM & 0.231 [0.166, 0.295] & 1.042 [0.974, 1.110] \\
+ & Pooled Leiden & $-$0.603 [$-$0.714, $-$0.493] & 0.208 [0.086, 0.330] \\
+ & Multislice full (\texttt{multinet}) & $-$0.604 [$-$0.717, $-$0.490] & 0.207 [0.081, 0.334] \\
+Gradual switching (Low) & Hungarian matching & 0.268 [0.228, 0.309] & 0.622 [0.566, 0.678] \\
+ & Multislice (adjacent) & 1.463 [1.335, 1.591] & 1.817 [1.708, 1.925] \\
+ & Dynamic SBM & $-$0.262 [$-$0.329, $-$0.194] & 0.092 [0.026, 0.158] \\
+ & Pooled Leiden & $-$0.916 [$-$1.016, $-$0.817] & $-$0.562 [$-$0.653, $-$0.472] \\
+ & Multislice full (\texttt{multinet}) & $-$0.816 [$-$0.914, $-$0.718] & $-$0.463 [$-$0.553, $-$0.372] \\
+Gradual switching (High) & Hungarian matching & 0.416 [0.373, 0.459] & 0.891 [0.820, 0.962] \\
+ & Multislice (adjacent) & 1.702 [1.589, 1.814] & 2.177 [2.092, 2.261] \\
+ & Dynamic SBM & $-$0.062 [$-$0.122, $-$0.002] & 0.413 [0.343, 0.484] \\
+ & Pooled Leiden & $-$0.679 [$-$0.764, $-$0.594] & $-$0.204 [$-$0.278, $-$0.129] \\
+ & Multislice full (\texttt{multinet}) & $-$0.634 [$-$0.722, $-$0.546] & $-$0.159 [$-$0.238, $-$0.080] \\
+Abrupt rewiring (Low) & Hungarian matching & 0.325 [0.285, 0.366] & 0.760 [0.694, 0.827] \\
+ & Multislice (adjacent) & 0.962 [0.821, 1.102] & 1.397 [1.284, 1.510] \\
+ & Dynamic SBM & $-$0.447 [$-$0.548, $-$0.347] & $-$0.012 [$-$0.089, 0.065] \\
+ & Pooled Leiden & $-$0.509 [$-$0.614, $-$0.405] & $-$0.074 [$-$0.156, 0.008] \\
+ & Multislice full (\texttt{multinet}) & $-$0.376 [$-$0.478, $-$0.274] & 0.059 [$-$0.026, 0.145] \\
+Abrupt rewiring (High) & Hungarian matching & 0.178 [0.140, 0.215] & 0.202 [0.143, 0.262] \\
+ & Multislice (adjacent) & 1.741 [1.624, 1.858] & 1.766 [1.669, 1.862] \\
+ & Dynamic SBM & 0.722 [0.606, 0.838] & 0.747 [0.651, 0.842] \\
+ & Pooled Leiden & 0.784 [0.671, 0.898] & 0.809 [0.715, 0.902] \\
+ & Multislice full (\texttt{multinet}) & 0.825 [0.716, 0.934] & 0.850 [0.758, 0.941] \\
+Recurring structure (Low) & Hungarian matching & 0.264 [0.217, 0.312] & 0.656 [0.593, 0.719] \\
+ & Multislice (adjacent) & 1.532 [1.409, 1.655] & 1.924 [1.821, 2.027] \\
+ & Dynamic SBM & $-$0.078 [$-$0.147, $-$0.008] & 0.314 [0.243, 0.384] \\
+ & Pooled Leiden & $-$0.554 [$-$0.650, $-$0.458] & $-$0.162 [$-$0.252, $-$0.072] \\
+ & Multislice full (\texttt{multinet}) & $-$0.472 [$-$0.578, $-$0.366] & $-$0.081 [$-$0.176, 0.015] \\
+Recurring structure (High) & Hungarian matching & 0.669 [0.610, 0.729] & 1.178 [1.081, 1.274] \\
+ & Multislice (adjacent) & 1.991 [1.901, 2.082] & 2.500 [2.443, 2.557] \\
+ & Dynamic SBM & 0.534 [0.460, 0.609] & 1.043 [0.963, 1.123] \\
+ & Pooled Leiden & $-$0.153 [$-$0.248, $-$0.058] & 0.356 [0.268, 0.443] \\
+ & Multislice full (\texttt{multinet}) & 0.028 [$-$0.069, 0.126] & 0.537 [0.444, 0.630] \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{Jaccard Versus Overlap Coupling}
+\label{app:coupling}
+%% [CLAUDE 2026-09-20] NEW SECTION (header only). Content for you, from output/coupling_summary and manuscript/tables/tab_app_coupling_regimes.tex, fig_coupling_purity.pdf:
+%% [CLAUDE 2026-09-20]  - Six regimes (balanced control, split, merge, size skew, shrink, nested), 48 configurations x 30 replicates, all five couplings on the same series.
+%% [CLAUDE 2026-09-21]  - FINAL: Jaccard beats overlap on joint NMI only under split (+0.051, break convention; +0.034 continue) and merge (+0.064; +0.046), paired 95% CIs exclude zero; elsewhere overlap is ahead by 0.005 (CIs exclude zero but the difference is immaterial). Overlap has the lower K MAE in balanced (0.11 vs 0.27), shrink (0.30 vs 0.48) and nested (0.02 vs 0.04); Jaccard has the lower K MAE under split, merge and size skew. Multislice beats both couplings in every lineage regime (0.75-0.997 vs 0.39-0.78). aggressively.
+%% [CLAUDE 2026-09-20]  - Both truth conventions (break / continue) reported; the ranking is the same under both.
+%% [CLAUDE 2026-09-20]  - Suggested table: tab_app_coupling_regimes.tex; figure: fig_coupling_purity.pdf (purity vs completeness by regime).
+
+\begin{table}[ht]\centering
+\caption{Jaccard minus overlap coupling by regime: joint NMI (break and continuation conventions), purity, completeness and $K$ MAE, with paired 95\% confidence intervals.}
+\label{tab:app_coupling}
+% PLACEHOLDER: tab_app_coupling_regimes.tex
+\end{table}
+
+\begin{figure}[htbp]\centering
+\includegraphics[width=0.9\linewidth]{figs/fig_coupling_purity.pdf}
+\caption{Purity against completeness of the tracked partition by coupling and regime.}
+\label{fig:app_coupling}
+\end{figure}
+
+% =====  [main text fn 4]  =====
+\section{Calibration and Robustness of the Stability Floor}
+\label{app:coverage_robust}
+%% [CLAUDE 2026-09-20] SECTION RENAMED (was 'Robustness of the Coverage Results'; label kept so main-text refs still resolve; the duplicated header/label pair that followed was removed).
+%% [CLAUDE 2026-09-20] Everything below was written for the coverage/gate design and is superseded. The prose is left for you; what replaces it:
+%% [CLAUDE 2026-09-21]  - Design (FINAL): 594 configurations x 50 simulations x B = 100 (sim/02 stability, binary arm), Jaccard + Leiden; odd/even split by configuration; 14,850 validation fits. Degree-corrected arm 216 configurations (10,800 fits), weighted arm 72 (3,600 fits).
+%% [CLAUDE 2026-09-20]  - Main table: stability bin -> n, median accuracy, 5th-percentile floor, validation share above the floor (from output/alternatives/stability_partition_level__nmi.csv; ARI and node-level tables likewise).
+%% [CLAUDE 2026-09-21]  - Robustness arms (FINAL, tab_app_stability_arms.tex): degree-corrected 0.861 overall (none/balanced 0.978, none/skewed 0.824, moderate/balanced 0.833, moderate/skewed 0.758, severe/balanced 0.951, severe/skewed 0.821); weighted 0.960 (aligned 0.973, orthogonal 0.946). State plainly that the floor is optimistic under degree heterogeneity combined with unequal community sizes.
+%% [CLAUDE 2026-09-21]  - Leave-one-level-out (FINAL, tab_app_stability_lolo.tex): share above floor when the level is held out: n = 50 0.495, 100 0.811, 200 0.685, 400 0.881; density default 0.909, strong 0.883, weak 0.669; K = 3 0.938, 5 0.855, 10 0.731. The floor does not extrapolate; say so.
+%% [CLAUDE 2026-09-21]  - Selection-rule check (FINAL, tab_app_selection_rule.tex): rule picks the more accurate method in 0.84 (births & deaths), 0.76 (gradual switching), 0.88 (abrupt rewiring), 0.79 (recurring), 0.82 overall; rule accuracy 0.467 vs always-DynMux 0.354, always-multislice 0.440, oracle 0.477; the rule picks DynMux in 43% of series.
+%% [CLAUDE 2026-09-21]  - Empirical stability (FINAL, tab_app_empirical_stability.tex): see the Section 4 bullet in main.tex for the numbers; multislice arm uses B = 25 (one refit on ~200 yearly layers takes minutes), DynMux B = 100; Monte Carlo s.e. of s is in the csv (output/empirical/<net>_stability.csv).
+%% [CLAUDE 2026-09-20]  - The weighted Jaccard equation below (eq:wjaccard) describes the pre-1.2.1 bug: the sums must run over members only, i.e. s_i^{(l)} is set to 0 for i not in C_p^{(l)} and s_i^{(m)} to 0 for i not in C_q^{(m)}; as written, two disjoint communities score 1. Fix the definition when you rewrite.
+In the main text, I test the node co-membership confidence intervals within a reliability region. Here, I discuss the decision rules and the reliability gate further. For the simulations, I generate 891,000 simulated binary networks, 180,000 simulated weighted networks, and 108,000 simulated degree-corrected networks. The binary networks appear in the main text, while the weighted and degree-corrected networks are alternative specifications I examine fully here.
+
+The weighted networks follow two weighting regimes: (a) edge-weights signal community membership and (b) edge-weights carry no community signal. In the simulations with community signal, edges are assigned weights following $\mathrm{lognormal}(\mu, 0.75)$, with $\mu = 1.0$ for within-block edges and $\mu = 0.0$ for between-block edges. In the simulations without community signal, every edge-weight follows $\mathrm{lognormal}(0.5, 0.75)$ regardless of block. The simulations sweep over the following parameters: (a) $n \in \{100, 200, 400\}$, (b) $K \in \{3, 5\}$, and (c) $p_{\mathrm{switch}} \in \{0.05, 0.20, 0.80\}$.
+
+Across these permutations, the network simulations follow two density schemes: (a) default $p_{\mathrm{in}} = 0.30$, $p_{\mathrm{out}} = 0.05$ or (b) strong $p_{\mathrm{in}} = 0.50$, $p_{\mathrm{out}} = 0.02$. All simulations use $T = 10$ periods. In total, this produces 72 combinations across 10 estimation specifications---five interlayer couplings (Jaccard, overlap, weighted Jaccard, weighted overlap, and identity) crossed with two detection algorithms (Louvain and Leiden)---comprising 720 configurations at 250 simulations each. Letting $C_p^{(\ell)}$ denote community $p$ in layer $\ell$ and $s_i^{(\ell)}$ denote the strength of node $i$ in layer $\ell$, the two weighted couplings are
+%
+\begin{equation}
+J_w\!\left(C_p^{(\ell)}, C_q^{(m)}\right) =
+\frac{\sum_{i \in C_p^{(\ell)} \cup C_q^{(m)}} \min\!\left(s_i^{(\ell)}, s_i^{(m)}\right)}
+     {\sum_{i \in C_p^{(\ell)} \cup C_q^{(m)}} \max\!\left(s_i^{(\ell)}, s_i^{(m)}\right)}
+\label{eq:wjaccard}
+\end{equation}
+%
+and
+%
+\begin{equation}
+O_w\!\left(C_p^{(\ell)}, C_q^{(m)}\right) =
+\frac{\sum_{i \in C_p^{(\ell)} \cap C_q^{(m)}} \min\!\left(s_i^{(\ell)}, s_i^{(m)}\right)}
+     {\min\!\left(\sum_{i \in C_p^{(\ell)}} s_i^{(\ell)},\;
+                  \sum_{i \in C_q^{(m)}} s_i^{(m)}\right)},
+\label{eq:woverlap}
+\end{equation}
+%
+where $s_i^{(\ell)} = 0$ for nodes absent from layer $\ell$ and both quantities are defined as zero when the denominator vanishes. The weighted network simulations allow me to test whether (a) the reliability gate holds for weighted networks and (b) coverage is maintained when edge weights carry no community signal. Listing \ref{lst:valued_dgp} follows:
+
+\begin{singlespace}
+\begin{lstlisting}[language=R,
+  caption={Edges are Bernoulli draws from the
+  planted partition; weights are lognormal and either aligned with block
+  structure or orthogonal to it.},
+  label={lst:valued_dgp}]
+gen_layers <- function(memberships, cfg) {
+  n <- cfg$n
+  lapply(memberships, function(mem) {
+    P  <- outer(mem, mem, "==")
+    Pr <- ifelse(P, cfg$p_in, cfg$p_out); diag(Pr) <- 0
+    A  <- matrix(0, n, n)
+    up <- upper.tri(Pr)
+    A[up] <- rbinom(sum(up), 1, Pr[up])
+    A  <- A + t(A)
+    if (cfg$weights == "aligned") {
+      W <- matrix(0, n, n)
+      mu <- ifelse(P, 1.0, 0.0)
+      W[up] <- A[up] * rlnorm(sum(up), meanlog = mu[up], sdlog = 0.75)
+      A <- W + t(W)
+    } else if (cfg$weights == "orthogonal") {
+      W <- matrix(0, n, n)
+      W[up] <- A[up] * rlnorm(sum(up), meanlog = 0.5, sdlog = 0.75)
+      A <- W + t(W)
+    }
+    A
+  })
+}
+\end{lstlisting}
+\end{singlespace}
+
+The degree-corrected networks are drawn from a degree-corrected stochastic block model, in which each node $i$ carries a degree propensity $\theta_i$ so that $\Pr(\mathrm{edge}_{ij}) = p_{\mathrm{block}(i,j)} \cdot \theta_i \theta_j$, clipped to $[0,1]$. Because $E[\theta] = 1$ in every regime, mean density is preserved and only its concentration across nodes changes.
+
+For the simulations, $\theta$ is fixed per simulated network and not redrawn. Bootstrap resamples reuse the same $\theta$, so degree heterogeneity is a property of the network, not of the resampling. Degree heterogeneity takes three levels: (a) none ($\theta \equiv 1$), (b) moderate (lognormal, $\sigma_{\log} = 0.6$), and (c) severe (Pareto with $\alpha = 2.5$ and $x_{\min} = 1$, normalized to unit mean). The last specification produces power-law hubs. Community sizes are either balanced or skewed, with the largest group holding approximately 40\% of nodes, and this factor is fully crossed with degree heterogeneity.
+
+The degree-corrected networks vary the following parameters: (a) $n \in \{100, 200, 400\}$, (b) $K \in \{3, 5\}$, (c) $p_{\mathrm{switch}} \in \{0.05, 0.20\}$, (d) three density schemes (weak $p_{\mathrm{in}} = 0.20$, $p_{\mathrm{out}} = 0.10$; default $p_{\mathrm{in}} = 0.30$, $p_{\mathrm{out}} = 0.05$; strong $p_{\mathrm{in}} = 0.50$, $p_{\mathrm{out}} = 0.02$), (e) three levels of degree heterogeneity, and (f) two community size distributions. All simulations use $T = 10$ periods. Fully crossing these factors produces 216 combinations, estimated under two specifications---Jaccard and identity coupling, both with Leiden---for 432 configurations at 250 simulations each. This design allows me to assess whether the gate criterion fails when confidence intervals are narrow but centered on the wrong partition. Listing \ref{lst:misspec_dgp} follows:
+
+\begin{singlespace}
+\begin{lstlisting}[language=R,
+  caption={Each node draws
+  a propensity $\theta_i$ with unit mean; edge probabilities are scaled by
+  $\theta_i \theta_j$ and clipped to $[0,1]$.},
+  label={lst:misspec_dgp}]
+# per-node degree propensity, E[theta] = 1 in every regime
+gen_theta <- function(n, hetero) {
+  if (hetero == "none") return(rep(1, n))
+  if (hetero == "moderate") {
+    sdlog <- 0.6
+    return(rlnorm(n, meanlog = -sdlog^2 / 2, sdlog = sdlog))   # mean 1
+  }
+  # severe: Pareto(alpha, xmin=1) normalized to mean 1 -> power-law hubs
+  alpha <- 2.5
+  raw <- runif(n) ^ (-1 / alpha)          # inverse-CDF Pareto, xmin = 1
+  raw / (alpha / (alpha - 1))             # divide by theoretical mean
+}
+
+# DC-SBM layers: Pr(edge) = p_block * theta_i * theta_j, clipped to [0,1].
+# theta is FIXED per simulation; fresh draws reuse the same theta with new
+# Bernoulli edges. hetero = "none" reduces to the plain SBM of the main sweep.
+gen_layers <- function(memberships, cfg, theta) {
+  n <- cfg$n
+  th <- outer(theta, theta)
+  lapply(memberships, function(mem) {
+    P  <- outer(mem, mem, "==")
+    Pr <- ifelse(P, cfg$p_in, cfg$p_out) * th
+    Pr[Pr > 1] <- 1
+    diag(Pr) <- 0
+    A  <- matrix(0, n, n)
+    up <- upper.tri(Pr)
+    A[up] <- rbinom(sum(up), 1, Pr[up])
+    A + t(A)
+  })
+}
+\end{lstlisting}
+\end{singlespace}
+\subsection{Calibration of the Accuracy Floor}
+%% [CLAUDE 2026-09-20] was 'Reliability Gates'; Table tab_coverage_gate (gate ladder) is superseded by the stability-bin floor table.
+In the main text, I form a gated region for confidence interval estimation using a calibration and validation set of simulations. Table \ref{tab:coverage_gate} displays the nominal coverage for the gated and full simulation region in both sets. Both sets produce consistent results at every gate, indicating that the threshold is not an artifact of the split on which it was chosen. In the ungated region, coverage is 0.757 in both sets, across 891,000 simulations in total. Restricting to simulations whose mean confidence interval width is less than 0.05 raises coverage to 0.954 in both sets, across 395,572 simulations (44.4\% retained). Further restricting to networks with 100 nodes or more raises coverage to 0.960 in both sets, across 357,371 simulations (40.1\% retained). Within that restricted region, the Louvain simulations reach 0.968 coverage in both sets, across 168,748 simulations---47.2\% of the gated region and 18.9\% of all simulations. 
+
+\begin{table}[ht]\centering
+\footnotesize
+\caption{Coverage under candidate reliability gates in the binary arm. Each
+gate was evaluated on a calibration split of configurations and validated
+out-of-sample on the held-out split. ``Retained'' is the share of validation
+intervals passing the gate; ``Simulations'' counts all draws passing it across
+both splits. The third row is the gate adopted throughout.}
+\label{tab:coverage_gate}
+\begin{tabular}{lcccr}
+\toprule
+Gate & Calibration & Validation & Retained & Simulations \\
+\midrule
+Ungated & 0.757 & 0.757 & 100.0\% & 891,000 \\
+Width $<$ 0.05 & 0.954 & 0.954 & 44.4\% & 395,572 \\
+Width $<$ 0.05, $n \geq 100$ & 0.960 & 0.960 & 40.1\% & 357,371 \\
+Width $<$ 0.05, $n \geq 100$, Louvain & 0.968 & 0.968 & 18.9\% & 168,748 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Robustness: Weighted and Degree-Corrected Networks}
+%% [CLAUDE 2026-09-20] was 'Reliability Gates for Binary, Weighted, and Degree-Corrected Networks'; tab_app_coverage_arms -> stability validation share by arm.
+Table \ref{tab:app_coverage_arms} displays summary statistics of the coverage for the binary, weighted, and degree-corrected simulations. In the ungated regions, the binary networks achieve 0.757 coverage across 891,000 simulations, the weighted networks achieve 0.888 coverage across 180,000 simulations, and the degree-corrected simulations achieve 0.768 coverage. Within the gated regions, the nominal coverage exceeds 0.95 in the binary and weighted networks and falls just short of 0.95 in the degree-corrected simulations---with the binary networks achieving 0.960 coverage across 357,371 simulations (40.1\% retained), the weighted networks achieving 0.965 across 138,827 simulations (77.1\% retained), and the degree-corrected networks achieving 0.943 across 61,029 simulations (56.5\% retained). 
+
+
+
+\begin{table}[ht]\centering
+\caption{Coverage by simulation arm, ungated and under the final reliability
+gate (mean interval width $<$ 0.05 and $n \geq 100$). ``Retained'' is the share
+of simulated intervals passing the gate. Panel A reports out-of-sample coverage
+on the validation split, matching the main text; Panels B and C are computed on
+all simulations in their respective arms, since the calibration--validation
+split was used only to select the gate in the binary arm. The binary arm is the
+main specification, reproduced here for comparison.}
+\label{tab:app_coverage_arms}
+\begin{tabular}{lccr}
+\toprule
+ & Coverage & Retained & Simulations \\
+\midrule
+\multicolumn{4}{l}{\emph{Panel A: Binary networks (main specification)}} \\
+\quad Ungated & 0.757 & 100.0\% & 891,000 \\
+\quad Gated   & 0.960 & 40.1\%  & 357,371 \\
+\addlinespace
+\multicolumn{4}{l}{\emph{Panel B: Weighted networks}} \\
+\quad Ungated & 0.888 & 100.0\% & 180,000 \\
+\quad Gated   & 0.965 & 77.1\%  & 138,827 \\
+\addlinespace
+\multicolumn{4}{l}{\emph{Panel C: Degree-corrected generating model}} \\
+\quad Ungated & 0.768 & 100.0\% & 108,000 \\
+\quad Gated   & 0.943 & 56.5\%  & 61,029 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Sensitivity to the Detection Algorithm}
+%% [CLAUDE 2026-09-20] was 'Coverage by Estimation Specification'; the identity (multislice) rows used the pre-1.2.1 implementation and are dropped; report Leiden vs Louvain for the stability floor if you keep this.
+Table \ref{tab:app_coverage_spec} displays the confidence interval coverage by
+detection algorithm and interlayer coupling. Across both the Louvain and Leiden
+algorithms, and across the identity (multislice), Jaccard, and overlap
+couplings, node co-membership coverage exceeds 0.95.
+
+\begin{table}[ht]\centering
+\caption{Validation coverage under the final gate in the binary arm, by
+interlayer coupling and community detection algorithm. Cell entries are
+empirical coverage, with the number of retained simulations in parentheses.}
+\label{tab:app_coverage_spec}
+\begin{tabular}{lcc}
+\toprule
+Interlayer coupling & Leiden & Louvain \\
+\midrule
+Identity & 0.953 (31,434) & 0.968 (28,107) \\
+Jaccard  & 0.953 (31,419) & 0.968 (28,128) \\
+Overlap  & 0.953 (31,427) & 0.968 (28,118) \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Stability and Accuracy by Network Size}
+%% [CLAUDE 2026-09-20] was 'Coverage Against Interval Width'; figure swapped to the stability-vs-accuracy scatter by n (generated by post/12). Caption below describes the old figure.
+\begin{figure}[htbp]\centering
+\includegraphics[width=0.85\linewidth]{figs/fig_app_stability_by_n.pdf}
+\caption{Empirical coverage against mean interval width, by network size.
+Dashed line marks nominal 0.95; dotted line marks the 0.05 width threshold.}
+\label{fig:app_coverage_curve}
+\end{figure}
+
+\subsection{Weighted Networks}
+%% [CLAUDE 2026-09-20] table becomes: stability floor validation on the weighted arm (tab_app_stability_valued.tex, pending).
+\begin{table}[ht]\centering
+\caption{Coverage under the reliability gate, weighted-network arm.}
+\label{tab:app_coverage_valued}
+% PLACEHOLDER: tab_coverage_valued.csv
+\end{table}
+
+\subsection{Misspecified Generating Model}
+% [main text fn 4 and Conclusion limitation 2]
+%% [CLAUDE 2026-09-20] table becomes: stability floor validation on the degree-corrected arm (tab_app_stability_misspec.tex, from sim/03, pending). This is the arm that answers 'does a stable-but-wrong partition get a floor it does not deserve'.
+\begin{table}[ht]\centering
+\caption{Coverage under the reliability gate, degree-corrected
+generating model.}
+\label{tab:app_coverage_misspec}
+% PLACEHOLDER: tab_coverage_misspec.csv
+\end{table}
+
+\subsection{Leave-One-Level-Out Calibration}
+%% [CLAUDE 2026-09-20] NEW (header only): floor recalibrated with each n level, then each density level, held out; table of validation share above the floor per held-out level (post, pending).
+\begin{table}[ht]\centering
+\caption{Validation share of fits above the calibrated floor when each network size or density level is held out of calibration.}
+\label{tab:app_stability_lolo}
+% PLACEHOLDER: tab_app_stability_lolo.tex
+\end{table}
+
+\subsection{Stability as a Selection Rule}
+%% [CLAUDE 2026-09-20] NEW (header only): on the 72-configuration regime grid, DynMux and multislice adjacent each get a stability score; table of how often the higher-stability method is the more accurate one, by regime (sim/06 selection, pending).
+\begin{table}[ht]\centering
+\caption{Share of simulated series in which the method with the higher stability score also has the higher joint NMI, by regime.}
+\label{tab:app_selection_rule}
+% PLACEHOLDER: tab_app_selection_rule.tex
+\end{table}
+
+\subsection{Stability Scores for the Empirical Networks}
+%% [CLAUDE 2026-09-20] NEW (header only): s and floor for DynMux and multislice on alliances, DCA, IGO, trade; share of decided pairs (empirical/10, pending).
+\begin{table}[ht]\centering
+\caption{Bootstrap stability score, calibrated accuracy floor, and share of decided node pairs for each empirical network and method.}
+\label{tab:app_empirical_stability}
+% PLACEHOLDER: tab_app_empirical_stability.tex
+\end{table}
+
+% =====  [main text fn 12]  =====
+\section{International Order Codings}
+\label{app:orders}
+% Source: Braumoeller (2019) replication archive. State membership by order
+% and year. Note which orders are membership-based vs. geographic, and why
+% the geographic orders are excluded from Figure 3.
+
+\begin{table}[ht]\centering
+\caption{Coded international orders, their type, active years, and the
+networks in which each is observed.}
+\label{tab:app_orders}
+% PLACEHOLDER
+\end{table}
+
+\begin{table}[ht]\centering
+\caption{State membership in each coded international order.}
+\label{tab:app_order_membership}
+% PLACEHOLDER: long table, consider \longtable
+\end{table}
+
+% =====  [main text fn 13]  =====
+\section{Full Recovery Metrics by Network}
+\label{app:prec_recall}
+
+\begin{table}[ht]\centering
+\caption{Precision, recall, and intersection-over-union for each method
+and network, averaged across the membership-based orders in that layer.}
+\label{tab:app_prec_recall_iou}
+% PLACEHOLDER
+\end{table}
+
+\begin{figure}[htbp]\centering
+\includegraphics[width=0.95\linewidth]{figs/fig_recovery_by_order.png}
+\caption{Recovery of each coded order over time, by method and network.}
+\label{fig:app_recovery_time}
+\end{figure}
+
+% =====  [Conclusion limitation 3]  =====
+\section{Sensitivity of the External Validation}
+\label{app:validity_robust}
+
+\subsection{Perturbing the Coded Orders}
+% Randomly drop and add 5-10\% of states in each coded order.
+\begin{figure}[htbp]\centering
+\includegraphics[width=0.9\linewidth]{figs/fig_order_perturb.png}
+\caption{Recovery metrics when 5--10\% of states are randomly added to or
+dropped from each coded order.}
+\label{fig:app_order_perturb}
+\end{figure}
+
+\subsection{Alternative Alignment Codings}
+\begin{table}[ht]\centering
+\caption{Recovery against independently identified sets of strongly
+aligned states.}
+\label{tab:app_alt_alignment}
+% PLACEHOLDER
+\end{table}
+
+% =====  supporting =====
+\section{Resolution Parameter and Coupling Sensitivity}
+\label{app:resolution}
+% A reviewer will ask. Grid over gamma, and over multislice omega --
+% the omega sweep is the important one, since multislice's poor
+% simulation performance may otherwise read as a tuning artifact.
+%% [CLAUDE 2026-09-21] omega sweep (FINAL, tab_app_omega_sweep.tex, fig_omega_sweep.pdf): across omega in 0.25-4 the multislice joint NMI moves by at most 0.01 in every regime (births & deaths 0.30-0.31, gradual switching 0.53-0.54, abrupt rewiring 0.39-0.39 [10-rep run; the 30-rep Table 2 run gives 0.49, see the optimiser note], recurring 0.10 adjacent / 0.47 with period links). The gamma part of the caption can stay only if you also sweep gamma; otherwise rename the section to 'Multislice Coupling Sensitivity'.
+
+\begin{figure}[htbp]\centering
+\includegraphics[width=0.9\linewidth]{figs/fig_gamma_omega_sweep.png}
+\caption{Joint NMI across resolution ($\gamma$) and multislice coupling
+($\omega$) values, by regime.}
+\label{fig:app_sweep}
+\end{figure}
+
+\section{Computational Performance}
+\label{app:runtime}
+\begin{table}[ht]\centering
+\caption{Runtime by number of nodes and layers for each approach,
+including the DynSBM scaling limit referenced in the main text.}
+\label{tab:app_runtime}
+% PLACEHOLDER
+\end{table}
+% -----------------------------------------------------------------
+\section*{References}
+\bibliographystyle{chicago-ff}
+\bibliography{bibliography}
+
+\end{document}

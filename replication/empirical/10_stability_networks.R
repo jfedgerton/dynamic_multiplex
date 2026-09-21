@@ -15,7 +15,9 @@
 # it is inlined here because the package function assumes a fixed node set.
 #
 # Usage: DM_ROOT=... Rscript replication/empirical/10_stability_networks.R <net>
-# Env: STAB_B (default 100), FORCE=1 to recompute.
+# Env: STAB_B (default 100; DynMux), STAB_B_MS (default 25; multislice, whose
+#      refit on ~200 yearly layers takes minutes), FORCE=1 to recompute. The
+#      output records B per method and the Monte Carlo s.e. of the stability.
 # Input:  output/empirical_data/<net>_{series,union}.rds
 # Output: output/empirical/<net>_stability.csv (one row per method) and
 #         output/empirical/<net>_stability_years.csv (per-year stability)
@@ -26,7 +28,7 @@ suppressPackageStartupMessages(library(igraph))
 args <- commandArgs(trailingOnly = TRUE)
 if (length(args) < 1) stop("Usage: Rscript 10_stability_networks.R <atop|dca|igo|trade>", call. = FALSE)
 net <- args[1]; stopifnot(net %in% c("atop", "dca", "igo", "trade"))
-B_BOOT <- as.integer(Sys.getenv("STAB_B", "100"))
+B_ALL <- as.integer(Sys.getenv("STAB_B", "100")); B_MS <- as.integer(Sys.getenv("STAB_B_MS", "25"))   # multislice refit on 200 yearly layers takes minutes, so fewer replicates
 EMP_DATA <- file.path(ROOT, "output", "empirical_data"); EMP_OUT <- file.path(ROOT, "output", "empirical")
 outf <- file.path(EMP_OUT, sprintf("%s_stability.csv", net)); outy <- file.path(EMP_OUT, sprintf("%s_stability_years.csv", net))
 if (file.exists(outf) && !identical(Sys.getenv("FORCE", "0"), "1")) { cat("[skip]", outf, "exists\n"); quit(save = "no") }
@@ -54,7 +56,7 @@ tab <- dynamicmultiplex:::.load_stability_table(NULL)
 
 rows <- list(); yrows <- list()
 for (mname in names(FITS)) {
-  t0 <- proc.time()[["elapsed"]]
+  t0 <- proc.time()[["elapsed"]]; B_BOOT <- if (mname == "Multislice adjacent") B_MS else B_ALL
   fit0 <- FITS[[mname]](AL); mem0 <- lapply(extract_meta_membership(fit0), as.integer)
   S_rep <- matrix(NA_real_, 0, T_); node_acc <- lapply(seq_len(T_), function(t) numeric(nrow(AL[[t]])))
   co <- lapply(seq_len(T_), function(t) matrix(0, nrow(AL[[t]]), nrow(AL[[t]]))); b_ok <- 0L
@@ -65,7 +67,7 @@ for (mname in names(FITS)) {
     for (t in seq_len(T_)) if (length(mem0[[t]]) >= 2) { node_acc[[t]] <- node_acc[[t]] + node_jaccard(bmem[[t]], mem0[[t]]); co[[t]] <- co[[t]] + outer(bmem[[t]], bmem[[t]], "==") }
     if (b %% 10 == 0) cat(sprintf("  %s: %d/%d replicates (%.1f min)\n", mname, b, B_BOOT, (proc.time()[["elapsed"]] - t0) / 60))
   }
-  stopifnot(b_ok >= 10)
+  if (b_ok < min(10L, B_BOOT)) stop(sprintf("%s %s: only %d of %d bootstrap replicates fitted", net, mname, b_ok, B_BOOT))
   by_year <- colMeans(S_rep, na.rm = TRUE); per_rep <- rowMeans(S_rep, na.rm = TRUE); s <- mean(per_rep)
   fl <- dynamicmultiplex:::.floor_lookup(s, tab[tab$level == "partition_nmi", ])
   node_st <- unlist(lapply(seq_len(T_), function(t) node_acc[[t]] / b_ok))

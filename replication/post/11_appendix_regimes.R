@@ -102,7 +102,7 @@ for (rg in names(rn)) for (it in c("low", "high")) for (mt in c("nmi_joint", "k_
   }
 }
 r <- do.call(rbind, rows)
-stopifnot(nrow(r) == 160)                        # 4 x 2 x 2 x 2 x 5
+stopifnot(nrow(r) == 4 * 2 * 2 * length(refs) * length(baselines))   # regime x intensity x metric x ref x baseline
 cat("paired comparisons:", nrow(r), " n per comparison:",
     paste(unique(r$n), collapse = ","), "\n")
 cat("CIs excluding zero:", sum(r$lo > 0 | r$hi < 0), "of", nrow(r), "\n")
@@ -180,7 +180,7 @@ for (rg in names(rn)) for (mt in c("nmi_joint", "k_mae")) {
   }
 }
 wx <- do.call(rbind, res)
-stopifnot(nrow(wx) == 80)                        # 4 x 2 x 2 x 5
+stopifnot(nrow(wx) == 4 * 2 * length(refs) * length(baselines))   # regime x metric x ref x baseline
 wx$p_lab      <- ifelse(wx$p < 1e-16, "$<10^{-16}$", sprintf("%.2g", wx$p))
 wx$metric_lab <- ifelse(wx$metric == "nmi_joint", "Joint NMI", "$K$ MAE")
 write_tex(

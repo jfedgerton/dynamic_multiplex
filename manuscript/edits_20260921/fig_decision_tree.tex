@@ -2,7 +2,8 @@
 %% \input{figs/fig_decision_tree.tex} inside a figure environment; needs only
 %% tikz + positioning (already in the preamble). Root at the top, questions
 %% in diamonds, methods in shaded leaves, one line of evidence (mean joint
-%% NMI, this method vs runner-up) under each leaf.
+%% NMI, DynMux vs multislice) under each leaf. Numbers: v1.3.1 rerun, 2026-09-21
+%% (multislice n_starts = 10).
 \begin{tikzpicture}[
   font=\small, >=stealth,
   q/.style={diamond, aspect=2.2, draw=black!70, thick, fill=white,
@@ -21,7 +22,7 @@
 
 %% level 1
 \node[leaf] (hung) at (-4.6, -3.0) {Hungarian label matching};
-\node[ev, below=1mm of hung] {procedural guarantee only; never the most accurate (Table~2: 0.27 / 0.33 / 0.37 / 0.10)};
+\node[ev, below=1mm of hung] {procedural guarantee only; never the most accurate (Table~2: 0.28 / 0.32 / 0.36 / 0.10)};
 \node[q] (q2) at (3.2, -3.0) {Does the node set or the community set change over time?};
 
 %% level 2
@@ -31,7 +32,7 @@
 
 %% level 3
 \node[leaf] (ms) at (3.0, -9.4) {Multislice modularity\\{\normalfont\small(identity ties, $\omega = 1$)}};
-\node[ev, below=1mm of ms] {gradual switching 0.53 vs 0.27\\core/periphery 0.87 vs 0.46\\long series 0.69 vs 0.23; all splits/merges};
+\node[ev, below=1mm of ms] {gradual switching 0.53 vs 0.28\\core/periphery 0.86 vs 0.46\\long series 0.69 vs 0.23; all splits/merges};
 \node[leaf, fill=black!14] (both) at (9.8, -9.4) {Fit both; keep the higher stability score $s$};
 \node[ev, below=1mm of both] {picks the more accurate method in 82\% of series (0.47 vs 0.35 / 0.44; oracle 0.48)};
 

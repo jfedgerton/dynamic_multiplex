@@ -855,12 +855,14 @@ detect_multislice_communities <- function(
 #' @param gamma resolution.
 #' @param max_levels,max_passes safety caps.
 #' @param n_starts number of random restarts (random vertex visiting order);
-#'   the partition with the highest objective is returned.
+#'   the partition with the highest objective is returned. Default 10 (was 3
+#'   in 1.3.0): with 3 restarts the joint NMI of a fit on small networks
+#'   (n <= 100) at an abrupt change-point varied by up to 0.2 across runs.
 #'
 #' @return Integer membership vector for the original vertices (1..C).
 #'
 #' @noRd
-genlouvain_multislice <- function(edges, K, twom, gamma = 1, max_levels = 20L, max_passes = 50L, n_starts = 3L) {
+genlouvain_multislice <- function(edges, K, twom, gamma = 1, max_levels = 20L, max_passes = 50L, n_starts = 10L) {
   inv2m <- ifelse(twom > 0, 1 / twom, 0)
   # objective (unnormalised): sum of within-community edge weight minus
   # gamma * sum_s sum_c Ktot[c, s]^2 / 2m_s ----

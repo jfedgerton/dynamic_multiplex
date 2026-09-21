@@ -186,7 +186,7 @@ for (mn in names(METHODS)) {
   if (!is.null(results[[mn]])) { cat(sprintf("[%s] %-28s cached\n", net, mn)); next }
   gc(); t0 <- proc.time()["elapsed"]
   det <- tryCatch({
-    setTimeLimit(elapsed = 1500, transient = TRUE); r <- METHODS[[mn]](); setTimeLimit(); r
+    setTimeLimit(elapsed = 7200, transient = TRUE); r <- METHODS[[mn]](); setTimeLimit(); r
   }, error = function(e) { setTimeLimit(); message(sprintf("  %s FAILED: %s", mn, conditionMessage(e))); NULL })
   el <- as.numeric(proc.time()["elapsed"] - t0)
   if (!is.null(det)) {

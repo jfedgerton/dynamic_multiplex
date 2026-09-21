@@ -1,0 +1,48 @@
+%% fig_decision_tree.tex  --  decision tree for DynMux / multislice / Hungarian.
+%% Use as \input{figs/fig_decision_tree.tex} inside a figure environment; the
+%% preamble already loads tikz with shapes.geometric and positioning. Numbers
+%% are mean joint NMI from the Sept 21 rerun (multislice rows may move by
+%% ~0.01 after the restart rerun).
+\begin{tikzpicture}[
+  font=\small,
+  node distance=6mm and 10mm,
+  q/.style={rectangle, rounded corners=3pt, draw=black!70, thick, fill=white,
+            text width=58mm, align=center, inner sep=5pt, font=\small},
+  m/.style={rectangle, rounded corners=3pt, draw=black!70, thick, fill=black!6,
+            text width=50mm, align=center, minimum height=9mm, inner sep=4pt,
+            font=\small\bfseries},
+  ev/.style={rectangle, draw=none, text width=50mm, align=left,
+             font=\scriptsize\color{black!65}, inner sep=1pt},
+  arr/.style={->, thick, draw=black!70, >=stealth},
+  lab/.style={font=\scriptsize\itshape, fill=white, inner sep=1.5pt}
+]
+
+%% left column: questions
+\node[q] (q1) {\textbf{1.}~Must each layer's partition be kept exactly as a single-layer algorithm returns it, with labels aligned afterwards and no information shared across layers?};
+\node[q, below=9mm of q1] (q2) {\textbf{2.}~Does the \emph{node set} or the \emph{community set} change over time?\\[2pt]{\scriptsize\itshape states enter and exit; blocs form and dissolve; structure recurs on a period that cannot be supplied as a link}};
+\node[q, below=13mm of q2] (q3) {\textbf{3.}~Do nodes persist and mostly keep their community, with per-layer signal weak enough that pooling across layers helps?\\[2pt]{\scriptsize\itshape gradual switching; stable core with rotating periphery; long series; splits, merges, nesting}};
+\node[m, below=of q3, fill=black!12, text width=58mm] (both) {\textbf{4.}~Regime unknown: fit both, keep the higher stability score $s$};
+\node[ev, below=1mm of both, text width=58mm] (bothev) {Picks the more accurate method in 82\% of simulated series; mean joint NMI 0.47 against 0.35 (always DynMux), 0.44 (always multislice) and 0.48 (oracle). Prefers multislice on all four empirical networks.};
+
+%% right column: methods + evidence
+\node[m, right=of q1] (hung) {Hungarian label matching};
+\node[ev, below=1mm of hung] (hungev) {A procedural guarantee, not an accuracy choice: never the most accurate tracker in any scenario (Table~2: 0.27, 0.33, 0.37, 0.10).};
+
+\node[m, right=of q2] (dyn) {DynMux\\{\normalfont\small(Jaccard coupling)}};
+\node[ev, below=1mm of dyn] (dynev) {Births \& deaths 0.37 vs 0.31. Node turnover 0.36 vs 0.28, more accurate in 91\% of series. Recurring structure with unknown period 0.28 vs 0.10. Identity ties have nothing to attach to for an absent node.};
+
+\node[m, right=of q3] (ms) {Multislice modularity\\{\normalfont\small(identity ties, $\omega = 1$)}};
+\node[ev, below=1mm of ms] (msev) {Gradual switching 0.53 vs 0.27. Core/periphery 0.87 vs 0.46. Long series 0.69 vs 0.23 (DynMux over-splits). Every split/merge regime. Insensitive to $\omega \in [0.25, 4]$. With period links, 0.43 vs 0.28.};
+
+%% arrows
+\draw[arr] (q1) -- node[lab, above] {yes} (hung);
+\draw[arr] (q1) -- node[lab, right] {no} (q2);
+\draw[arr] (q2) -- node[lab, above] {yes} (dyn);
+\draw[arr] (q2) -- node[lab, right] {no} (q3);
+\draw[arr] (q3) -- node[lab, above] {yes} (ms);
+\draw[arr] (q3) -- node[lab, right] {unsure} (both);
+
+%% footnote
+\node[ev, text width=118mm, below=5mm of bothev.south west, anchor=north west, xshift=0mm]
+  {Abrupt rewiring with a fixed node set is a tie (0.49 vs 0.49). Whichever tracker is used, report $s$ and its calibrated accuracy floor; below $s \approx 0.6$ the partition should not be read node by node. An overlap-coefficient coupling never beats Jaccard on accuracy and is worse under splits and merges.};
+\end{tikzpicture}

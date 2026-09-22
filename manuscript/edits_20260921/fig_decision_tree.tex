@@ -1,6 +1,6 @@
 %% fig_decision_tree.tex  --  decision tree for choosing a tracker.
 %% \input{figs/fig_decision_tree.tex} inside a figure environment; needs only
-%% tikz + positioning (already in the preamble). Root at the top, questions
+%% tikz + shapes.geometric + positioning (all in the main.tex preamble). Root at the top, questions
 %% in diamonds, methods in shaded leaves, one line of evidence (mean joint
 %% NMI, DynMux vs multislice) under each leaf. Numbers: v1.3.1 rerun, 2026-09-21
 %% (multislice n_starts = 10).
@@ -15,7 +15,6 @@
   arr/.style={->, thick, draw=black!70},
   lab/.style={font=\scriptsize\itshape, fill=white, inner sep=1.5pt}
 ]
-\usetikzlibrary{shapes.geometric}
 
 %% level 0
 \node[q] (q1) at (0, 0) {Keep each layer's partition exactly as detected, labels aligned afterwards?};

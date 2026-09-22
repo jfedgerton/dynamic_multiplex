@@ -110,7 +110,7 @@ cat("wrote tab_metrics_wide.tex; row order:", paste(unname(disp[ord]), collapse 
 # =============================================================================
 # FIGURE 3: fig_order_recovery.pdf
 # Precision vs recall of coded-order recovery. One panel per network, one
-# point per (order, method), averaged over the years the order is active.
+# point per method: the mean over every order-year of that network.
 # Dashed lines at 0.5 split the plane into quadrants; the upper-right
 # quadrant is "the community both contains most of the order and is mostly
 # the order".
@@ -128,16 +128,20 @@ meth_lab <- c(Jaccard = "DynMux (Jaccard)", multislice = "Multislice adjacent",
 stopifnot(all(o$net %in% names(net_lab)), all(setdiff(o$method, "Overlap") %in% names(meth_lab)))
 
 o <- o[o$method != "Overlap", ]                   # overlap coupling: appendix only (post/13)
-om <- aggregate(cbind(prec, rec, J) ~ net + order + kind + method, data = o, FUN = mean)
-om$net_lab  <- factor(unname(net_lab[om$net]),   levels = unname(net_lab))
-om$meth_lab <- factor(unname(meth_lab[om$method]), levels = unname(meth_lab))
+# One point per (network, method): mean precision and recall over every
+# order-year row, the same aggregation as tab_order_recovery_summary.tex
+# (post/13), so the figure and the appendix table agree cell for cell.
+os <- aggregate(cbind(prec, rec, J) ~ net + method, data = o, FUN = mean)
+os$net_lab <- factor(unname(net_lab[os$net]), levels = unname(net_lab))
+os$meth_lab <- factor(unname(meth_lab[os$method]), levels = unname(meth_lab))
+stopifnot(nrow(os) == length(net_lab) * length(meth_lab))
 
-p3 <- ggplot(om, aes(rec, prec, colour = meth_lab, shape = meth_lab)) +
+p3 <- ggplot(os, aes(rec, prec, colour = meth_lab, shape = meth_lab)) +
   annotate("rect", xmin = 0.5, xmax = 1, ymin = 0.5, ymax = 1, fill = "grey92", colour = NA) +
   geom_hline(yintercept = 0.5, linetype = "dashed", colour = "grey55") +
   geom_vline(xintercept = 0.5, linetype = "dashed", colour = "grey55") +
   geom_abline(slope = 1, intercept = 0, linetype = "dotted", colour = "grey70") +
-  geom_point(size = 2, alpha = 0.85) +
+  geom_point(size = 3.2, alpha = 0.95) +
   facet_wrap(~net_lab, ncol = 2) +
   scale_colour_brewer(palette = "Dark2", name = "Method") +
   scale_shape_manual(values = c(16, 15, 18, 3, 4), name = "Method") +
@@ -151,6 +155,6 @@ p3 <- ggplot(om, aes(rec, prec, colour = meth_lab, shape = meth_lab)) +
   guides(colour = guide_legend(nrow = 2), shape = guide_legend(nrow = 2))
 ggsave(file.path(FIG, "fig_order_recovery.pdf"), p3, width = 6.5, height = 7.2)
 ggsave(file.path(FIG, "fig_order_recovery.png"), p3, width = 6.5, height = 7.2, dpi = 300)
-cat("wrote fig_order_recovery.pdf/.png (", nrow(om), "points )\n")
+cat("wrote fig_order_recovery.pdf/.png (", nrow(os), "points: one per network x method )\n")
 
 cat("done 10_main_text\n")

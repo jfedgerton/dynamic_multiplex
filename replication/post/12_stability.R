@@ -16,7 +16,8 @@
 #          arm (by weight regime)
 #   manuscript/tables/tab_app_stability_lolo.tex       leave-one-level-out:
 #          recalibrate with each n, each density and each K held out; share
-#          above the floor on the held-out level
+#          above the floor on the held-out level (share among held-out fits whose
+#       stability bin has a calibrated floor; fits below the calibrated range are counted separately)
 #   manuscript/tables/tab_app_stability_pairs.tex      decided / undetermined
 #          pair shares and the accuracy of the decided calls
 #   manuscript/figures/fig_stability_floor.pdf         Figure 2: stability vs
@@ -60,13 +61,17 @@ calibrate <- function(stab, acc, split) {
   med <- tapply(acc[cal], factor(b[cal], levels = 1:10), median)
   ncal <- as.integer(table(factor(b[cal], levels = 1:10)))
   tab <- data.frame(bin = 1:10, stab_lo = BR[-11], stab_hi = BR[-1], n_calib = ncal, acc_median = as.numeric(med), acc_q05 = as.numeric(q05))
-  # validation: share above the floor (empty calibration bins fall back to the nearest populated bin below)
+  # validation: share above the floor. An empty calibration bin falls back to the nearest populated bin
+  # below; a fit whose bin has no populated bin at or below it has NO floor (NA) and is reported separately.
   floor_of <- function(bb) { i <- bb; while (i > 1 && (is.na(tab$acc_q05[i]) || tab$n_calib[i] == 0)) i <- i - 1L
-    f <- tab$acc_q05[i]; if (is.na(f)) 0 else f }                     # no populated bin below: floor 0 (no guarantee)
-  fl <- vapply(b, floor_of, numeric(1)); val <- !cal
+    f <- tab$acc_q05[i]; if (is.na(f) || tab$n_calib[i] == 0) NA_real_ else f } # no populated bin at or below: no floor
+  fl <- vapply(b, floor_of, numeric(1)); val <- !cal; def <- !is.na(fl)
   tab$n_valid <- as.integer(table(factor(b[val], levels = 1:10)))
-  tab$valid_share_above <- as.numeric(tapply(acc[val] >= fl[val], factor(b[val], levels = 1:10), mean))
-  list(tab = tab, share = mean(acc[val] >= fl[val], na.rm = TRUE), rho = cor(stab[val], acc[val], method = "spearman"), floor_of = floor_of)
+  tab$n_valid_nofloor <- as.integer(table(factor(b[val & !def], levels = 1:10)))
+  tab$valid_share_above <- as.numeric(tapply(acc[val & def] >= fl[val & def], factor(b[val & def], levels = 1:10), mean))
+  if (any(val & !def)) cat(sprintf("  [%d of %d validation fits have no calibrated floor (no calibration fits in or below their bin); excluded from the share]\n", sum(val & !def), sum(val)))
+  list(tab = tab, share = mean(acc[val & def] >= fl[val & def]), n_nofloor = sum(val & !def), n_valid = sum(val),
+       rho = cor(stab[val], acc[val], method = "spearman"), floor_of = floor_of)
 }
 P_nmi <- calibrate(s$stab_nmi, s$acc_nmi, s$split)
 P_ari <- calibrate(s$stab_ari, s$acc_ari, s$split)
@@ -108,7 +113,8 @@ write_tex("Level & Stability bin & Calibration fits & Median accuracy & Accuracy
 # ---- robustness arms: binary-calibrated NMI floor applied to each arm ----------------
 floor_nmi <- function(stab) vapply(bin_of(stab), P_nmi$floor_of, numeric(1))
 arm_rows <- list(); add <- function(label, stab, acc) arm_rows[[length(arm_rows) + 1]] <<- data.frame(label = label, n = length(stab),
-  share = mean(acc >= floor_nmi(stab)), rho = cor(stab, acc, method = "spearman"), mean_stab = mean(stab), mean_acc = mean(acc))
+  n_floor = sum(!is.na(floor_nmi(stab))), share = mean((acc >= floor_nmi(stab))[!is.na(floor_nmi(stab))]),
+  rho = cor(stab, acc, method = "spearman"), mean_stab = mean(stab), mean_acc = mean(acc))
 sv <- s[s$split == "validation", ]; add("Binary, validation half (main)", sv$stab_nmi, sv$acc_nmi)
 dc <- read_arm("dcsbm", "stab")
 if (!is.null(dc)) { add("Degree-corrected, all", dc$stab_nmi, dc$acc_nmi)
@@ -118,9 +124,9 @@ wt <- read_arm("weighted", "stab")
 if (!is.null(wt)) { add("Weighted, all", wt$stab_nmi, wt$acc_nmi)
   for (w in c("aligned", "orthogonal")) { x <- wt[wt$weights == w, ]; if (nrow(x)) add(sprintf("\\quad weights %s", w), x$stab_nmi, x$acc_nmi) } } else cat("(no weighted arm output yet)\n")
 ar <- do.call(rbind, arm_rows)
-write_tex("Arm & Fits & Share above floor & Spearman & Mean stability & Mean accuracy \\\\",
-          sprintf("%s & %d & %s & %s & %s & %s \\\\", ar$label, ar$n, fmt(ar$share), fmt(ar$rho), fmt(ar$mean_stab, 2), fmt(ar$mean_acc, 2)),
-          "lccccc", file.path(TAB, "tab_app_stability_arms.tex"))
+write_tex("Arm & Fits & Fits with a floor & Share above floor & Spearman & Mean stability & Mean accuracy \\\\",
+  sprintf("%s & %d & %d & %s & %s & %s & %s \\\\", ar$label, ar$n, ar$n_floor, fmt(ar$share), fmt(ar$rho), fmt(ar$mean_stab, 2), fmt(ar$mean_acc, 2)),
+  "lcccccc", file.path(TAB, "tab_app_stability_arms.tex"))
 cat("\n--- robustness arms (binary-calibrated floor) ---\n"); print(ar, row.names = FALSE, digits = 3)
 
 # ---- leave-one-level-out ----------------------------------------------------------
@@ -129,14 +135,16 @@ for (fac in c("n", "density", "K")) for (lev in sort(unique(s[[fac]]))) {
   hold <- s[[fac]] == lev; cal <- !hold
   b <- bin_of(s$stab_nmi); q05 <- tapply(s$acc_nmi[cal], factor(b[cal], levels = 1:10), quantile, probs = 0.05, names = FALSE)
   ncal <- as.integer(table(factor(b[cal], levels = 1:10)))
-  fo <- function(bb) { i <- bb; while (i > 1 && (is.na(q05[i]) || ncal[i] == 0)) i <- i - 1L; f <- q05[i]; if (is.na(f)) 0 else f }
+  fo <- function(bb) { i <- bb; while (i > 1 && (is.na(q05[i]) || ncal[i] == 0)) i <- i - 1L; f <- q05[i]; if (is.na(f) || ncal[i] == 0) NA_real_ else f }
   fl <- vapply(b[hold], fo, numeric(1))
-  lolo[[length(lolo) + 1]] <- data.frame(factor = fac, level = as.character(lev), n = sum(hold), share = mean(s$acc_nmi[hold] >= fl))
+  def <- !is.na(fl)
+  lolo[[length(lolo) + 1]] <- data.frame(factor = fac, level = as.character(lev), n = sum(hold), n_floor = sum(def),
+    share = if (any(def)) mean(s$acc_nmi[hold][def] >= fl[def]) else NA_real_)
 }
 lo <- do.call(rbind, lolo)
-write_tex("Held-out factor & Level & Held-out fits & Share above floor \\\\",
-          sprintf("%s & %s & %d & %s \\\\", c("Network size $n$", "Density", "Communities $K$")[match(lo$factor, c("n", "density", "K"))], lo$level, lo$n, fmt(lo$share)),
-          "llcc", file.path(TAB, "tab_app_stability_lolo.tex"))
+write_tex("Held-out factor & Level & Held-out fits & Fits with a floor & Share above floor \\\\",
+  sprintf("%s & %s & %d & %d & %s \\\\", c("Network size $n$", "Density", "Communities $K$")[match(lo$factor, c("n", "density", "K"))], lo$level, lo$n, lo$n_floor, fmt(lo$share)),
+  "llccc", file.path(TAB, "tab_app_stability_lolo.tex"))
 cat("\n--- leave-one-level-out ---\n"); print(lo, row.names = FALSE, digits = 3)
 
 # ---- decided / undetermined pairs ----------------------------------------------------

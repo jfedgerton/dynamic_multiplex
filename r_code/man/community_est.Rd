@@ -43,9 +43,9 @@ rest. Rather than ship an interval that silently undercovers, the
 function now reports how often the community count reproduces under
 resampling. This is a descriptive stability measure, not a calibrated
 interval: it makes no claim about the probability that any range contains
-the true community count. For a validated interval, use
-\code{\link{co_assignment_ci}}, whose node-pair coverage held across the
-same misspecification stress tests. The raw per-replicate community counts
+the true community count. For a calibrated reliability measure use
+\code{\link{partition_stability}}, which bounds the accuracy of the tracked
+partition from below. The raw per-replicate community counts
 are intentionally not exposed anywhere in the package output; only this
 reproducibility summary is returned.
 }
@@ -71,6 +71,6 @@ est$report
 
 }
 \seealso{
-\code{\link{co_assignment_ci}} for calibrated node-pair
-co-assignment intervals.
+\code{\link{partition_stability}} for the calibrated reliability
+score of the tracked partition.
 }

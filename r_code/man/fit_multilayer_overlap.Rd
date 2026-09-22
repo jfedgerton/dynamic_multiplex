@@ -14,7 +14,8 @@ fit_multilayer_overlap(
   add_self_loops = TRUE,
   self_loop_multiplier = 1,
   objective = NULL,
-  seed = NULL
+  seed = NULL,
+  allow_unequal_nodes = FALSE
 )
 }
 \arguments{
@@ -52,6 +53,13 @@ duration of the call, and the previous state is restored on exit, so the
 caller's random number stream (e.g. bootstrap resampling) is unaffected.
 Defaults to \code{NULL} (detection inherits the caller's RNG stream, matching
 previous behavior; call \code{set.seed()} beforehand for reproducibility).}
+
+\item{allow_unequal_nodes}{Logical; if \code{TRUE}, layers may contain
+different node sets (nodes entering or exiting the system). Layers must
+then carry vertex names (or row names on the adjacency matrices) so nodes
+can be matched across layers; only nodes present in both layers of a
+linked pair contribute to the interlayer similarity. Defaults to \code{FALSE}:
+layers must share the same node universe.}
 }
 \value{
 A list of class \code{"multilayer_community_fit"} with components:

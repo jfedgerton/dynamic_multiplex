@@ -55,6 +55,13 @@ values.}
 share of completed replicates whose meta-community count equals
 the observed-network count. A descriptive stability measure. The raw
 per-replicate community counts are intentionally not returned.}
+\item{stability_samples}{List with matrices \code{nmi} and \code{ari}
+(completed replicates x layers): agreement of each replicate's
+meta-partition with the point-estimate partition. Summarised by
+\code{\link{partition_stability}}.}
+\item{node_jaccard_stability}{Per-layer vectors: for each node, the
+mean Jaccard overlap between its replicate community and its
+point-estimate community.}
 \item{point_estimate}{The fit result from the original data.}
 }
 }

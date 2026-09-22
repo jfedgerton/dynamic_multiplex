@@ -2,51 +2,54 @@
 % Please edit documentation in R/co_assignment_ci.R
 \name{co_assignment_ci}
 \alias{co_assignment_ci}
-\title{Wilson confidence intervals for node-pair co-assignment}
+\title{Descriptive Monte Carlo interval for node-pair co-assignment}
 \usage{
-co_assignment_ci(boot_result, alpha = 0.05)
+co_assignment_ci(
+  boot_result,
+  alpha = 0.05,
+  method = c("wilson", "calibrated"),
+  calibration_table = NULL
+)
 }
 \arguments{
 \item{boot_result}{Output from \code{\link{bootstrap_multilayer}}.}
 
-\item{alpha}{Significance level (default 0.05 for 95 percent intervals).}
+\item{alpha}{Significance level; \code{alpha = 0.05} gives 95 percent
+Wilson intervals.}
+
+\item{method}{\code{"wilson"}. \code{"calibrated"} is accepted only to
+raise an informative error pointing to \code{partition_stability()}.}
+
+\item{calibration_table}{Ignored; retained for backward compatibility.}
 }
 \value{
 A list with one element per layer. Each element is a list with
 components:
 \describe{
-\item{estimate}{n x n matrix of co-assignment probabilities.}
-\item{lower}{n x n matrix of Wilson lower bounds.}
-\item{upper}{n x n matrix of Wilson upper bounds.}
+\item{estimate}{n x n matrix of co-assignment shares.}
+\item{lower}{n x n matrix of interval lower bounds.}
+\item{upper}{n x n matrix of interval upper bounds.}
 }
-Diagonals are 1 by construction.
+Diagonals are 1 by construction. The list carries the attribute
+\code{"method"}.
 }
 \description{
-For every pair of nodes in every layer, computes a Wilson
-score interval for the co-clustering propensity: the probability that the
-fitted community detection procedure places the two nodes in the same
-community when the data are perturbed. The point estimate is the
-co-assignment probability from \code{\link{bootstrap_multilayer}} (the
-share of bootstrap replicates in which the pair was co-assigned), and the
-interval treats the \code{n_boot} replicates as binomial draws.
+For every pair of nodes in every layer, returns the bootstrap
+co-assignment share (the fraction of replicates in which the pair landed in
+the same meta-community) with a Wilson score interval treating the
+replicates as binomial draws.
 
-Because co-assignment is label-invariant (it never compares community
-labels across replicates, only whether two nodes sit together), it avoids
-the label-switching problem that makes per-node membership intervals
-ill-defined.
+\strong{Read this interval as a diagnostic, not as a calibrated confidence
+interval.} In the package's simulation study its width shrinks with the
+number of replicates while its coverage of the fresh-data co-assignment
+propensity was near nominal only for pairs whose share is close to 0 or 1
+and fell to 0.03-0.15 for ambiguous pairs (share between 0.3 and 0.8).
+No conditioning or alternative bootstrap repaired this, so versions
+from 1.3.0 no longer offer a "calibrated" pair interval. The validated
+reliability product is \code{\link{partition_stability}}: a stability score
+for the tracked partition with a calibrated lower bound on its accuracy,
+plus a decided / undetermined flag for each pair.
 }
-\section{Warning}{
-
-These intervals quantify the stability of the detection procedure, not
-the probability that two nodes truly share a community. The Wilson
-interval is exact for the binomial sampling of bootstrap replicates;
-its coverage of the fresh-data co-clustering propensity was evaluated in
-the package's simulation study (see the package NEWS for the release in
-which validation results were incorporated). Interpret cautiously on
-networks with fewer than 100 nodes, where community detection itself is
-unstable.
-}
-
 \examples{
 set.seed(123)
 layers <- lapply(1:3, function(i) {
@@ -62,12 +65,11 @@ boot <- bootstrap_multilayer(
   n_boot = 5,
   seed = 123
 )
-pci <- co_assignment_ci(boot, alpha = 0.05)
+pci <- co_assignment_ci(boot)
 pci[[1]]$estimate[1:4, 1:4]
-pci[[1]]$lower[1:4, 1:4]
 
 }
 \seealso{
-\code{\link{community_est}} for community-count point estimates and
-node stability summaries.
+\code{\link{partition_stability}} for the calibrated reliability
+score; \code{\link{community_est}} for community-count summaries.
 }

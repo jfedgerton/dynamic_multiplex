@@ -34,7 +34,7 @@ write_tex <- function(header, body, align, path) {
 orf <- file.path(EMP, "order_recovery.csv")
 if (!file.exists(orf)) stop("Missing ", orf, " -- run empirical/09 first.", call. = FALSE)
 o <- read.csv(orf, stringsAsFactors = FALSE)
-stopifnot(all(c("net", "order", "kind", "year", "method", "J", "prec", "rec", "nB") %in% names(o)))
+stopifnot(all(c("net", "order", "kind", "year", "method", "J", "prec", "rec", "nB", "K") %in% names(o)))
 cat("rows:", nrow(o), "\n")
 
 net_lab  <- c(atop = "Alliances (ATOP)", dca = "Defense cooperation (DCA)",
@@ -50,16 +50,16 @@ stopifnot(all(o$net %in% names(net_lab)), all(o$method %in% meth_ord),
           all(o$order %in% order_ord))
 
 # --- summary: net x method ------------------------------------------------
-s <- aggregate(cbind(J, prec, rec) ~ net + method, data = o, FUN = mean)
+s <- aggregate(cbind(J, prec, rec, K) ~ net + method, data = o, FUN = mean)
 s <- s[order(factor(s$net, levels = names(net_lab)), factor(s$method, levels = meth_ord)), ]
 print(s)
 grp  <- unname(net_lab[s$net])
 show <- c(TRUE, grp[-1] != grp[-length(grp)])
 write_tex(
-  header = "Network & Method & Jaccard $J$ & Precision & Recall \\\\",
-  body   = sprintf("%s & %s & %.3f & %.3f & %.3f \\\\",
-                   ifelse(show, grp, ""), unname(meth_lab[s$method]), s$J, s$prec, s$rec),
-  align  = "llccc",
+  header = "Network & Method & Jaccard $J$ & Precision & Recall & $K$ \\\\",
+  body   = sprintf("%s & %s & %.3f & %.3f & %.3f & %.1f \\\\",
+                   ifelse(show, grp, ""), unname(meth_lab[s$method]), s$J, s$prec, s$rec, s$K),
+  align  = "llcccc",
   path   = file.path(TAB, "tab_order_recovery_summary.tex"))
 
 # --- per network: orders x methods, cell = precision / recall -------------

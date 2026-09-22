@@ -8,11 +8,20 @@
 #
 # For coded order B (states coded into the order in year y, restricted to the
 # states that are present with degree > 0 in that year's layer) and detected
-# communities C:
-#   J    = max_C |B n C| / |B u C|        (best-matching community)
-#   prec = |B n C| / |C|                  at the argmax C
-#   rec  = |B n C| / |B|                  at the argmax C
-#   nB   = |B|
+# communities C, every order active in year y is assigned to a distinct
+# community by a Hungarian assignment that maximises the total Jaccard index
+# (clue::solve_LSAP), so one community can recover at most one order per
+# year. For the assigned community C*:
+# J = |B n C*| / |B u C*|
+# prec = |B n C*| / |C*|
+# rec = |B n C*| / |B|
+# nB = |B|
+# K = number of communities among the active states in that year
+# Orders left without a community (more active orders than communities, as
+# with a two-community partition in the Cold War years) score J = prec =
+# rec = 0. Nested orders (Warsaw Pact within PW Communist, Concert great
+# powers within Concert Europe) therefore require the tracker to resolve the
+# finer structure to score on both.
 # Needs only the target SET, so it works for partial/overlapping orders where
 # ARI cannot.
 #
@@ -35,7 +44,7 @@
 #         long format: net, order, kind, year, method, J, prec, rec, nB
 # =============================================================================
 set.seed(123)
-suppressMessages(library(igraph))
+suppressMessages({ library(igraph); library(clue) })
 
 ROOT     <- Sys.getenv("DM_ROOT", unset = getwd())
 EMP_DATA <- file.path(ROOT, "output", "empirical_data")
@@ -96,11 +105,38 @@ meth<-c("DynMux Jaccard r1","DynMux Overlap r1","DynMux multislice r1","multinet
 mlab<-c("Jaccard","Overlap","multislice","multinet","Hungarian","Pooled")
 stopifnot(length(meth) == length(mlab))
 
-# best-matching community for set B among membership `mem` over `nodes`:
-# returns c(J, precision, recall, |B|), or NULL if fewer than 3 of B are in nodes
-best<-function(B,mem,nodes){ bs<-nodes %in% B; if(sum(bs)<3) return(NULL); out<-c(0,0,0)
- for(cc in unique(mem)){cs<-mem==cc; i<-sum(bs&cs); j<-i/sum(bs|cs); if(j>out[1]) out<-c(j,i/sum(cs),i/sum(bs))}
- c(out,sum(bs))}
+# One-to-one assignment of the coded sets in `Bs` (named list, each with at
+# least 3 members in `nodes`) to the communities of membership `mem` over
+# `nodes`, maximising total Jaccard. Returns one row per order:
+# J, precision, recall, |B|, K (communities among `nodes`); unmatched orders
+# score 0.
+score_year <- function(Bs, mem, nodes) {
+  comms <- unique(mem); K <- length(comms); nO <- length(Bs)
+  Jm <- matrix(0, nO, K); Pm <- Jm; Rm <- Jm
+  for (a in seq_len(nO)) {
+    bs <- nodes %in% Bs[[a]]
+    for (b in seq_len(K)) {
+      cs <- mem == comms[b]; i <- sum(bs & cs)
+      Jm[a, b] <- i / sum(bs | cs); Pm[a, b] <- i / sum(cs); Rm[a, b] <- i / sum(bs)
+    }
+  }
+  pick <- rep(NA_integer_, nO)
+  if (nO <= K) {
+    pick <- as.integer(clue::solve_LSAP(Jm, maximum = TRUE))
+  } else {
+    asg <- as.integer(clue::solve_LSAP(t(Jm), maximum = TRUE))  # community -> order
+    pick[asg] <- seq_len(K)
+  }
+  matched <- !is.na(pick)
+  out <- data.frame(order = names(Bs), J = 0, prec = 0, rec = 0,
+                    nB = vapply(Bs, function(B) sum(nodes %in% B), numeric(1)), K = K,
+                    stringsAsFactors = FALSE)
+  out$J[matched]    <- Jm[cbind(which(matched), pick[matched])]
+  out$prec[matched] <- Pm[cbind(which(matched), pick[matched])]
+  out$rec[matched]  <- Rm[cbind(which(matched), pick[matched])]
+  stopifnot(!anyDuplicated(pick[matched]))
+  out
+}
 
 # ---------------------------------------------------------------------------
 # Score every network x order x year x method
@@ -123,20 +159,33 @@ for(net in NETS){
  G<-lapply(seq_along(S$graph_layers),function(k) delete_vertices(S$graph_layers[[k]],which(!mask[[k]])))
  dg<-lapply(G,function(g) setNames(degree(g),V(g)$name))
  n0<-length(rows)
- for(o in ORD) for(y in o$y[1]:o$y[2]){t<-which(yrs==y); if(!length(t))next
-  d<-dg[[t]]; A0<-P[[meth[1]]][[t]]; al<-names(d)[d>0]; al<-al[al%in%names(A0)]
-  if(length(al)<8) next
-  B<-o$f(y,al); if(length(B)<3) next
-  for(j in seq_along(meth)){A<-P[[meth[j]]][[t]]; if(!all(al%in%names(A)))next
-   r<-best(B,as.integer(unlist(A[al])),al); if(is.null(r))next
-   rows[[length(rows)+1]]<-data.frame(net=net,order=o$id,kind=o$kind,year=y,method=mlab[j],
-     J=r[1],prec=r[2],rec=r[3],nB=r[4],stringsAsFactors=FALSE)}}
- cat(sprintf("[%s] years=%d (%d-%d) rows=%d\n",net,length(yrs),min(yrs),max(yrs),length(rows)-n0))
+for (t in seq_along(yrs)) {
+  y <- yrs[t]; d <- dg[[t]]; A0 <- P[[meth[1]]][[t]]
+  al <- names(d)[d > 0]; al <- al[al %in% names(A0)]
+  if (length(al) < 8) next
+  # coded sets of the orders active in year y, at least 3 members present
+  Bs <- list(); kinds <- character(0)
+  for (o in ORD) {
+    if (y < o$y[1] || y > o$y[2]) next
+    B <- o$f(y, al); if (length(B) < 3) next
+    Bs[[o$id]] <- B; kinds[o$id] <- o$kind
+  }
+  if (!length(Bs)) next
+  for (j in seq_along(meth)) {
+    if (!meth[j] %in% names(P)) next
+    A <- P[[meth[j]]][[t]]; if (!all(al %in% names(A))) next
+    sc <- score_year(Bs, as.integer(unlist(A[al])), al)
+    rows[[length(rows) + 1]] <- data.frame(net = net, order = sc$order, kind = unname(kinds[sc$order]),
+      year = y, method = mlab[j], J = sc$J, prec = sc$prec, rec = sc$rec, nB = sc$nB, K = sc$K,
+      stringsAsFactors = FALSE)
+  }
+}
+cat(sprintf("[%s] years=%d (%d-%d) rows=%d\n",net,length(yrs),min(yrs),max(yrs),length(rows)-n0))
  stopifnot(length(rows) > n0)
 }
 D<-do.call(rbind,rows); rownames(D)<-NULL
 stopifnot(is.data.frame(D), nrow(D) > 0,
-          identical(names(D), c("net","order","kind","year","method","J","prec","rec","nB")),
+          identical(names(D), c("net","order","kind","year","method","J","prec","rec","nB","K")),
           all(D$J >= 0 & D$J <= 1), all(D$prec >= 0 & D$prec <= 1), all(D$rec >= 0 & D$rec <= 1),
           all(D$nB >= 3), !anyNA(D))
 
@@ -149,9 +198,9 @@ write.csv(D, csv_f, row.names = FALSE)
 saveRDS(D, rds_f)
 stopifnot(file.exists(csv_f), file.exists(rds_f))
 
-a<-aggregate(cbind(J,prec,rec,nB)~net+order+kind+method,D,mean)
+a<-aggregate(cbind(J,prec,rec,nB,K)~net+order+kind+method,D,mean)
 n<-aggregate(year~net+order+method,D,length); a<-merge(a,n,by=c("net","order","method"))
 cat("obs:",nrow(D)," cells:",nrow(a),"\n"); print(table(D$net,D$order))
 cat("\nmean recovery by net x method (across orders and years):\n")
-print(aggregate(cbind(J,prec,rec)~net+method,D,function(x) round(mean(x),3)))
+print(aggregate(cbind(J,prec,rec,K)~net+method,D,function(x) round(mean(x),3)))
 cat("SCORE_DONE ->", csv_f, "\n")

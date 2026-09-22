@@ -32,6 +32,7 @@
 #   post/14_coupling.R              -> Jaccard vs overlap appendix table + figure
 #   post/15_omega_selection.R       -> omega sweep, selection rule, empirical stability tables
 #   post/16_mechanism_decision.R    -> main-text decision table (tab_decision_tree), mechanism appendix tables
+#   post/17_runtime.R               -> appendix runtime table (tab_app_runtime) from output/regime runtime_s + fit logs
 # Tables land in manuscript/tables/, figures in manuscript/figures/. The
 # calibration table is copied into r_code/inst/extdata and
 # python_code/src/dynamic_multiplex/data by `post`.
@@ -121,7 +122,7 @@ case "$ACTION" in
 
   post)
     load_r
-    for s in 10_main_text 11_appendix_regimes 12_stability 13_appendix_empirical 14_coupling 15_omega_selection 16_mechanism_decision; do
+    for s in 10_main_text 11_appendix_regimes 12_stability 13_appendix_empirical 14_coupling 15_omega_selection 16_mechanism_decision 17_runtime; do
       echo "=================== post/$s.R ==================="
       Rscript "replication/post/$s.R"
     done

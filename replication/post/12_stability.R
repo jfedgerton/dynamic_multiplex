@@ -23,6 +23,8 @@
 #   manuscript/figures/fig_stability_floor.pdf         Figure 2: stability vs
 #          accuracy (validation fits) with the calibrated floor as a step
 #   manuscript/figures/fig_app_stability_by_n.pdf      same, faceted by n
+#   manuscript/figures/fig_stability_floor_node.pdf    Figure 2b: node-level Jaccard
+#                                                      stability vs accuracy with the node floor
 # Rule (pre-registered 2026-09-20): the section survives if, on the validation
 # half, Spearman(stability, accuracy) >= 0.7 and the calibrated 5th percentile
 # is non-decreasing in stability and >= 0.8 for stability >= 0.9. The script
@@ -173,6 +175,20 @@ ggsave(file.path(FIG, "fig_stability_floor.pdf"), g, width = 5.2, height = 5.2)
 ggsave(file.path(FIG, "fig_stability_floor.png"), g, width = 5.2, height = 5.2, dpi = 300)
 g2 <- g + facet_wrap(~ n_lab, ncol = 2)
 ggsave(file.path(FIG, "fig_app_stability_by_n.pdf"), g2, width = 7, height = 7)
+
+# node level (Figure 2b): per-node Jaccard stability vs per-node Jaccard accuracy on the
+# validation half of the node sample, with the node-level calibrated floor as the step ----
+tbn <- N_jac$tab; stepn <- data.frame(x = c(tbn$stab_lo, 1), y = c(tbn$acc_q05, tbn$acc_q05[10]))
+ndv <- nd[nd$split == "validation", ]
+gn <- ggplot(ndv, aes(stab, acc)) + geom_point(alpha = 0.08, size = 0.6, colour = "#1f4e79") +
+  geom_step(data = stepn, aes(x, y), colour = "#b2182b", linewidth = 0.9, direction = "hv") +
+  geom_abline(slope = 1, intercept = 0, linetype = 3, colour = "grey60") +
+  scale_x_continuous(limits = c(0, 1)) + scale_y_continuous(limits = c(0, 1)) + coord_equal() +
+  labs(x = "Bootstrap stability (mean Jaccard, replicate vs point estimate)", y = "Accuracy (Jaccard, point estimate vs truth)") +
+  theme_bw(base_size = 11)
+ggsave(file.path(FIG, "fig_stability_floor_node.pdf"), gn, width = 5.2, height = 5.2)
+ggsave(file.path(FIG, "fig_stability_floor_node.png"), gn, width = 5.2, height = 5.2, dpi = 300)
+cat(sprintf("node-level figure: %d validation node-layer observations\n", nrow(ndv)))
 
 cat(sprintf("\nDECISION: partition NMI %s | partition ARI %s | node %s\n", if (pass_nmi) "PASS" else "FAIL", if (pass_ari) "PASS" else "FAIL", if (pass_node) "PASS" else "FAIL"))
 if (!(pass_nmi || pass_ari)) { cat("=> partition-level rule FAILED: the stability section cannot be supported by this run\n"); quit(status = 2) }

@@ -168,20 +168,20 @@ sv$n_lab <- factor(paste0("n = ", sv$n), levels = paste0("n = ", sort(unique(sv$
 N_LEVELS <- sort(unique(s$n))
 sv$n_lab <- factor(sv$n, levels = N_LEVELS)
 # one panel per number of communities K (3, 5, 10), pooled floor drawn in every panel,
-# legend (network size) on the right ----
+# legend (network size) in one row below the panels ----
 sv$K_lab <- factor(paste0("K = ", sv$K), levels = paste0("K = ", sort(unique(sv$K))))
 g <- ggplot(sv, aes(stab_nmi, acc_nmi, colour = n_lab)) + geom_point(alpha = 0.12, size = 0.6) +
   geom_step(data = step, aes(x, y), inherit.aes = FALSE, colour = "#b2182b", linewidth = 0.9, direction = "hv") +
   geom_abline(slope = 1, intercept = 0, linetype = 3, colour = "grey60") +
   facet_wrap(~ K_lab, nrow = 1) +
   scale_colour_brewer(palette = "Dark2", name = "Network size") +
-  guides(colour = guide_legend(override.aes = list(alpha = 1, size = 2.5), ncol = 1)) +
+  guides(colour = guide_legend(override.aes = list(alpha = 1, size = 2.5), nrow = 1)) +
   scale_x_continuous(limits = c(0, 1), breaks = seq(0, 1, 0.25)) + scale_y_continuous(limits = c(0, 1)) + coord_equal() +
   labs(x = "Bootstrap stability (mean NMI, replicate vs point estimate)", y = "Accuracy (NMI, point estimate vs truth)") +
-  theme_bw(base_size = 11) + theme(legend.position = "right", strip.text = element_text(size = 11),
+  theme_bw(base_size = 11) + theme(legend.position = "bottom", strip.text = element_text(size = 11),
                                    axis.text = element_text(size = 10))
-ggsave(file.path(FIG, "fig_stability_floor.pdf"), g, width = 10, height = 3.9)
-ggsave(file.path(FIG, "fig_stability_floor.png"), g, width = 10, height = 3.9, dpi = 300)
+ggsave(file.path(FIG, "fig_stability_floor.pdf"), g, width = 9, height = 4.2)
+ggsave(file.path(FIG, "fig_stability_floor.png"), g, width = 9, height = 4.2, dpi = 300)
 
 # node level (Figure 2b): per-node Jaccard stability vs per-node Jaccard accuracy on the
 # validation half of the node sample, with the node-level calibrated floor as the step ----

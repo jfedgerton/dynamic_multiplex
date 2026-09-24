@@ -19,9 +19,9 @@ Summary of changes:
 
 ## Test environments
 
+* Ubuntu 22.04, R 4.3.3 (R CMD check --as-cran, examples with --run-donttest)
 * local macOS, R 4.5.x
-* win-builder (devel and release)
-* R-hub: ubuntu-latest (R-devel), windows-latest (R-release)
+* win-builder (R-devel)
 
 ## R CMD check results
 

@@ -22,7 +22,6 @@
 #          pair shares and the accuracy of the decided calls
 #   manuscript/figures/fig_stability_floor.pdf         Figure 2: stability vs
 #          accuracy (validation fits) with the calibrated floor as a step
-#   manuscript/figures/fig_app_stability_by_n.pdf      same, faceted by n
 #   manuscript/figures/fig_stability_floor_node.pdf    Figure 2b: node-level Jaccard
 #                                                      stability vs accuracy with the node floor
 # Rule (pre-registered 2026-09-20): the section survives if, on the validation
@@ -165,15 +164,13 @@ if (!is.null(pr)) {
 # ---- figures -------------------------------------------------------------------------
 step <- data.frame(x = c(tb$stab_lo, 1), y = c(tb$acc_q05, tb$acc_q05[10]))
 sv$n_lab <- factor(paste0("n = ", sv$n), levels = paste0("n = ", sort(unique(sv$n))))
-# points coloured by community separation (the density level of the generator): the low-
-# stability cluster is the weak-separation configurations ----
-SEP_LEVELS <- c(weak = "Weak", default = "Default", strong = "Strong")
-SEP_COLS   <- c(Weak = "#d95f02", Default = "#7570b3", Strong = "#1b9e77")
-sv$sep <- factor(SEP_LEVELS[sv$density], levels = SEP_LEVELS)
-g <- ggplot(sv, aes(stab_nmi, acc_nmi, colour = sep)) + geom_point(alpha = 0.12, size = 0.6) +
+# points coloured by network size (Dark2), one panel; the pooled floor is the same for every n ----
+N_LEVELS <- sort(unique(s$n))
+sv$n_lab <- factor(sv$n, levels = N_LEVELS)
+g <- ggplot(sv, aes(stab_nmi, acc_nmi, colour = n_lab)) + geom_point(alpha = 0.12, size = 0.6) +
   geom_step(data = step, aes(x, y), inherit.aes = FALSE, colour = "#b2182b", linewidth = 0.9, direction = "hv") +
   geom_abline(slope = 1, intercept = 0, linetype = 3, colour = "grey60") +
-  scale_colour_manual(values = SEP_COLS, name = "Community separation") +
+  scale_colour_brewer(palette = "Dark2", name = "Network size") +
   guides(colour = guide_legend(override.aes = list(alpha = 1, size = 2))) +
   scale_x_continuous(limits = c(0, 1)) + scale_y_continuous(limits = c(0, 1)) + coord_equal() +
   labs(x = "Bootstrap stability (mean NMI, replicate vs point estimate)", y = "Accuracy (NMI, point estimate vs truth)") +
@@ -181,8 +178,6 @@ g <- ggplot(sv, aes(stab_nmi, acc_nmi, colour = sep)) + geom_point(alpha = 0.12,
                                    legend.background = element_rect(fill = "white", colour = "grey70"))
 ggsave(file.path(FIG, "fig_stability_floor.pdf"), g, width = 5.2, height = 5.2)
 ggsave(file.path(FIG, "fig_stability_floor.png"), g, width = 5.2, height = 5.2, dpi = 300)
-g2 <- g + facet_wrap(~ n_lab, ncol = 2)
-ggsave(file.path(FIG, "fig_app_stability_by_n.pdf"), g2, width = 7, height = 7)
 
 # node level (Figure 2b): per-node Jaccard stability vs per-node Jaccard accuracy on the
 # validation half of the node sample, with the node-level calibrated floor as the step ----
@@ -190,11 +185,11 @@ tbn <- N_jac$tab; stepn <- data.frame(x = c(tbn$stab_lo, 1), y = c(tbn$acc_q05, 
 ndv <- nd[nd$split == "validation", ]
 set.seed(123); NODE_PLOT_N <- 30000L
 ndp <- ndv[sample(nrow(ndv), min(NODE_PLOT_N, nrow(ndv))), ]   # plotted subsample; the floor uses all fits
-ndp$sep <- factor(SEP_LEVELS[ndp$density], levels = SEP_LEVELS)
-gn <- ggplot(ndp, aes(stab, acc, colour = sep)) + geom_point(alpha = 0.12, size = 0.6) +
+ndp$n_lab <- factor(ndp$n, levels = N_LEVELS)
+gn <- ggplot(ndp, aes(stab, acc, colour = n_lab)) + geom_point(alpha = 0.12, size = 0.6) +
   geom_step(data = stepn, aes(x, y), inherit.aes = FALSE, colour = "#b2182b", linewidth = 0.9, direction = "hv") +
   geom_abline(slope = 1, intercept = 0, linetype = 3, colour = "grey60") +
-  scale_colour_manual(values = SEP_COLS, guide = "none") +
+  scale_colour_brewer(palette = "Dark2", guide = "none") +
   scale_x_continuous(limits = c(0, 1)) + scale_y_continuous(limits = c(0, 1)) + coord_equal() +
   labs(x = "Bootstrap stability (mean Jaccard, replicate vs point estimate)", y = "Accuracy (Jaccard, point estimate vs truth)") +
   theme_bw(base_size = 11)

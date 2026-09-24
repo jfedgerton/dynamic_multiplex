@@ -1,12 +1,75 @@
-# dynamicmultiplex 1.1.1
+# dynamicmultiplex 1.3.1
+
+This release collects every change since 1.1.0 (CRAN, 2026-08-07). Versions
+1.2.1 and 1.3.0 were internal and never submitted.
+
+## New features
+
+* **`partition_stability()`**: a reliability report for a tracked partition
+  built from a `bootstrap_multilayer()` result. It returns (i) the stability
+  score `s`, the mean NMI (or ARI) between each bootstrap replicate's
+  meta-partition and the point estimate; (ii) a calibrated accuracy floor,
+  the 5th percentile of accuracy against the planted partition among
+  simulated fits with the same stability, so that accuracy exceeded the floor
+  in 95 percent of held-out fits; (iii) node-level Jaccard stability with its
+  own floor (reported only above stability 0.9); and (iv) decided node pairs
+  (co-assignment share below/above user thresholds). The calibration table
+  ships in `inst/extdata/stability_calibration_table.csv` and can be
+  overridden with `calibration_table`.
+
+* **`bootstrap_multilayer()`** now records `stability_samples` (replicate x
+  layer NMI and ARI to the point estimate) and `node_jaccard_stability`
+  (per-node mean Jaccard overlap with the point-estimate community), which
+  `partition_stability()` summarises.
+
+* **`allow_unequal_nodes`** argument for every `fit_multilayer_*()` function.
+  Layers may now contain different node sets (nodes entering and exiting the
+  system); nodes are matched across layers by vertex name and only nodes
+  present in both layers of a linked pair contribute to the interlayer
+  similarity. Default `FALSE` keeps the previous requirement of a shared node
+  universe.
 
 ## Bug fixes
 
-* `weighted_overlap_similarity()` errored (`subscript out of bounds`) when a
-  community contained a node with no recorded strength in that layer (e.g.,
-  an isolate). Missing strengths now contribute 0, matching
-  `weighted_jaccard_similarity()` and the Python implementation. This affected
-  `fit_multilayer_weighted_overlap()` on layers with isolates.
+* **`fit_multilayer_identity_ties()`** now optimises Mucha et al. (2010)
+  multislice modularity with a generalized Louvain (local moving plus
+  aggregation), using each slice's own configuration null model
+  `k_is k_js / 2 m_s` and null-free interlayer identity ties. Previously the
+  function ran single-graph modularity on the stacked supra-graph, whose
+  pooled null model is roughly `T` times too small and penalises cross-slice
+  co-membership; at `omega <= 1` that returned each slice as one community.
+  `algorithm` is kept for API compatibility but the optimiser is always the
+  generalized Louvain. The optimiser uses 10 random restarts (3 in the
+  internal 1.3.0); on small change-point series joint NMI varied by up to 0.2
+  across runs at 3.
+
+* **`weighted_jaccard_similarity()`** and **`weighted_overlap_similarity()`**
+  used layer-wide node strengths, so a node's strength counted toward a
+  community it was not a member of. Two disjoint communities could score 1.0
+  whenever their members had non-zero strength in both layers. A node's
+  strength now counts toward community `a` only when the node is a member of
+  `a` (and likewise for `b`).
+
+* **`weighted_overlap_similarity()`** errored (`subscript out of bounds`)
+  when a community contained a node with no recorded strength in that layer
+  (e.g., an isolate). Missing strengths now contribute 0, matching
+  `weighted_jaccard_similarity()` and the Python implementation. This
+  affected `fit_multilayer_weighted_overlap()` on layers with isolates.
+
+## Changes
+
+* **`co_assignment_ci()`** is now documented as a descriptive Monte Carlo
+  interval for the bootstrap co-assignment share, not a calibrated confidence
+  interval. The simulation study found pair-level intervals are not
+  calibratable for ambiguous pairs; use `partition_stability()` for a
+  calibrated reliability measure of the tracked partition. Function signature
+  and output are unchanged.
+
+* Documentation regenerated with roxygen2 7.3.3; `partition_stability` help
+  page added; cross-references synced.
+
+* Regression tests added for the weighted similarity fixes, the multislice
+  null model, and `partition_stability()`.
 
 # dynamicmultiplex 1.1.0
 

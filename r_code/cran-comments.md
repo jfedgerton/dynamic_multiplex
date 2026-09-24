@@ -1,42 +1,31 @@
-# Resubmission
+# dynamicmultiplex 1.3.1
 
-This is a resubmission of the `dynamicmultiplex` 1.0.0 submission, addressing
-the review comments of 2026-07-29 (Konstanze Lauseker), together with the
-1.1.0 feature release. Changes in response to the review:
+Update of the CRAN release 1.1.0 (2026-08-07). No changes were requested
+by CRAN; this is a maintainer release. NEWS.md lists every change since
+1.1.0 (the intermediate 1.2.1 and 1.3.0 were internal and never submitted).
 
-* `\dontrun{}` removed. The single wrapped example
-  (`animate_multilayer_gif()`) is now `\donttest{}`: it renders a GIF via
-  'gganimate', which exceeds the 5-second example limit. All other examples
-  are unwrapped and executable.
+Summary of changes:
 
-* No function writes to the user's filespace by default.
-  `animate_multilayer_gif()` previously defaulted to writing
-  "multilayer_animation.gif" in the working directory; `output_file` is
-  now a required argument with no default, and the function errors with
-  instructions (pointing to `tempfile()`) when it is missing. Its example
-  writes only to `tempfile()`. No other function, example, or test writes
-  outside `tempdir()`.
-
-The version is 1.1.0 (rather than 1.0.1) because the resubmission also
-includes the planned 1.1.0 release: an uncertainty-quantification overhaul,
-cross-layer meta-community tracking, a Hungarian snapshot-matching method,
-seed arguments for reproducible detection, and node-universe validation. See
-NEWS.md.
+* New exported function `partition_stability()` (stability score and a
+  calibrated accuracy floor for a tracked partition), with its calibration
+  table shipped in `inst/extdata/` (31 rows, 2 KB).
+* `bootstrap_multilayer()` returns two additional list elements consumed by
+  `partition_stability()`; existing elements are unchanged.
+* New `allow_unequal_nodes` argument (default `FALSE`, previous behaviour)
+  on the `fit_multilayer_*()` functions.
+* Bug fixes to `fit_multilayer_identity_ties()` (multislice null model) and
+  to the two weighted similarity helpers; regression tests added.
+* No new dependencies. Imports remain clue, igraph (>= 2.0.0), rlang.
 
 ## Test environments
 
-* local Windows 11
+* local macOS, R 4.5.x
 * win-builder (devel and release)
-* Ubuntu (R 4.3.3)
+* R-hub: ubuntu-latest (R-devel), windows-latest (R-release)
 
 ## R CMD check results
 
-0 errors | 0 warnings | 1 note
-
-* This is a new submission (resubmission after review).
-
-The possibly-misspelled words flagged in DESCRIPTION (Jaccard, Louvain,
-interlayer, multislice) are standard network-analysis terms and method names.
+0 errors | 0 warnings | 0 notes
 
 ## Downstream dependencies
 

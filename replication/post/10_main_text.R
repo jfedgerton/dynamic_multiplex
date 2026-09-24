@@ -142,19 +142,22 @@ p3 <- ggplot(os, aes(rec, prec, colour = meth_lab, shape = meth_lab)) +
   geom_vline(xintercept = 0.5, linetype = "dashed", colour = "grey55") +
   geom_abline(slope = 1, intercept = 0, linetype = "dotted", colour = "grey70") +
   geom_point(size = 3.2, alpha = 0.95) +
-  facet_wrap(~net_lab, ncol = 2) +
+  facet_wrap(~net_lab, nrow = 1) +
   scale_colour_brewer(palette = "Dark2", name = "Method") +
   scale_shape_manual(values = c(16, 15, 18, 3, 4), name = "Method") +
-  scale_x_continuous(limits = c(0, 1), breaks = seq(0, 1, 0.25)) +
+  scale_x_continuous(limits = c(0, 1), breaks = seq(0, 1, 0.5)) +
   scale_y_continuous(limits = c(0, 1), breaks = seq(0, 1, 0.25)) +
   coord_equal() +
-  labs(x = "Recall (share of the coded order inside its best-matching community)",
-       y = "Precision (share of that community belonging to the order)") +
-  theme_bw(base_size = 9) +
-  theme(legend.position = "bottom", panel.grid.minor = element_blank()) +
-  guides(colour = guide_legend(nrow = 2), shape = guide_legend(nrow = 2))
-ggsave(file.path(FIG, "fig_order_recovery.pdf"), p3, width = 6.5, height = 7.2)
-ggsave(file.path(FIG, "fig_order_recovery.png"), p3, width = 6.5, height = 7.2, dpi = 300)
+  labs(x = "Recall (share of the coded order in its assigned community)",
+       y = "Precision (share of the assigned\ncommunity in the order)") +
+  theme_bw(base_size = 11) +
+  theme(legend.position = "bottom", panel.grid.minor = element_blank(),
+        axis.text = element_text(size = 10), axis.title = element_text(size = 11),
+        strip.text = element_text(size = 11), legend.text = element_text(size = 10),
+        legend.title = element_text(size = 11)) +
+  guides(colour = guide_legend(nrow = 1), shape = guide_legend(nrow = 1))
+ggsave(file.path(FIG, "fig_order_recovery.pdf"), p3, width = 8, height = 3.3)
+ggsave(file.path(FIG, "fig_order_recovery.png"), p3, width = 8, height = 3.3, dpi = 300)
 cat("wrote fig_order_recovery.pdf/.png (", nrow(os), "points: one per network x method )\n")
 
 cat("done 10_main_text\n")

@@ -241,25 +241,27 @@ sv$n_lab <- factor(paste0("n = ", sv$n), levels = paste0("n = ", sort(unique(sv$
 # points coloured by network size (Dark2); the pooled floor is the same for every n ----
 N_LEVELS <- sort(unique(s$n))
 sv$n_lab <- factor(sv$n, levels = N_LEVELS)
-# grid: rows = density setting (within / between tie probability), columns = number of
-# communities K (3, 5, 10); pooled floor drawn in every panel; legend (network size) in
-# one row below the panels ----
+# one row of panels by number of communities K (3, 5, 10); colour = network size, shape =
+# density setting (within / between tie probability); pooled floor drawn in every panel;
+# legends below the panels ----
 sv$K_lab <- factor(paste0("K = ", sv$K), levels = paste0("K = ", sort(unique(sv$K))))
-DENS_LAB <- c(weak = "Weak density\n(0.20 / 0.10)", default = "Default density\n(0.30 / 0.05)", strong = "Strong density\n(0.50 / 0.02)")
+DENS_LAB <- c(weak = "Weak (0.20 / 0.10)", default = "Default (0.30 / 0.05)", strong = "Strong (0.50 / 0.02)")
 stopifnot(all(sv$density %in% names(DENS_LAB)))
 sv$dens_lab <- factor(unname(DENS_LAB[sv$density]), levels = unname(DENS_LAB))
-g <- ggplot(sv, aes(stab_nmi, acc_nmi, colour = n_lab)) + geom_point(alpha = 0.12, size = 0.6) +
+g <- ggplot(sv, aes(stab_nmi, acc_nmi, colour = n_lab, shape = dens_lab)) + geom_point(alpha = 0.2, size = 0.9) +
   geom_step(data = step, aes(x, y), inherit.aes = FALSE, colour = "#b2182b", linewidth = 0.9, direction = "hv") +
   geom_abline(slope = 1, intercept = 0, linetype = 3, colour = "grey60") +
-  facet_grid(dens_lab ~ K_lab) +
+  facet_wrap(~ K_lab, nrow = 1) +
   scale_colour_brewer(palette = "Dark2", name = "Network size") +
-  guides(colour = guide_legend(override.aes = list(alpha = 1, size = 2.5), nrow = 1)) +
-  scale_x_continuous(limits = c(0, 1), breaks = c(0, 0.5, 1)) + scale_y_continuous(limits = c(0, 1), breaks = c(0, 0.5, 1)) +
+  scale_shape_manual(values = c(16, 17, 15), name = "Density (within / between)") +
+  guides(colour = guide_legend(override.aes = list(alpha = 1, size = 2.5), nrow = 1, order = 1),
+         shape = guide_legend(override.aes = list(alpha = 1, size = 2.5, colour = "grey30"), nrow = 1, order = 2)) +
+  scale_x_continuous(limits = c(0, 1), breaks = c(0, 0.5, 1)) + scale_y_continuous(limits = c(0, 1), breaks = c(0, 0.5, 1)) + coord_equal() +
   labs(x = "Bootstrap stability (mean NMI, replicate vs point estimate)", y = "Accuracy (NMI, point estimate vs truth)") +
-  theme_bw(base_size = 11) + theme(legend.position = "bottom", aspect.ratio = 0.6, strip.text = element_text(size = 11),
+  theme_bw(base_size = 11) + theme(legend.position = "bottom", legend.box = "vertical", strip.text = element_text(size = 11),
                                    axis.text = element_text(size = 10))
-ggsave(file.path(FIG, "fig_stability_floor.pdf"), g, width = 9, height = 6.3)
-ggsave(file.path(FIG, "fig_stability_floor.png"), g, width = 9, height = 6.3, dpi = 300)
+ggsave(file.path(FIG, "fig_stability_floor.pdf"), g, width = 9, height = 4.8)
+ggsave(file.path(FIG, "fig_stability_floor.png"), g, width = 9, height = 4.8, dpi = 300)
 
 # node level (Figure 2b): per-node Jaccard stability vs per-node Jaccard accuracy on the
 # validation half of the node sample, with the node-level calibrated floor as the step ----

@@ -18,6 +18,8 @@
 #          recalibrate with each n, each density and each K held out; share
 #          above the floor on the held-out level (share among held-out fits whose
 #       stability bin has a calibrated floor; fits below the calibrated range are counted separately)
+#   manuscript/tables/tab_app_stability_stratified.tex stratified (worst-type) floor vs pooled floor
+#          by bin, with validation shares; output/stability/stratified_floor_{bins,types,lolo}.csv
 #   manuscript/tables/tab_app_stability_pairs.tex      decided / undetermined
 #          pair shares and the accuracy of the decided calls
 #   manuscript/figures/fig_stability_floor.pdf         Figure 2: stability vs
@@ -147,6 +149,78 @@ write_tex("Held-out factor & Level & Held-out fits & Fits with a floor & Share a
   sprintf("%s & %s & %d & %d & %s \\\\", c("Network size $n$", "Density", "Communities $K$")[match(lo$factor, c("n", "density", "K"))], lo$level, lo$n, lo$n_floor, fmt(lo$share)),
   "llccc", file.path(TAB, "tab_app_stability_lolo.tex"))
 cat("\n--- leave-one-level-out ---\n"); print(lo, row.names = FALSE, digits = 3)
+
+# ---- stratified (worst-type) floor: comparison, not shipped ---------------------------
+# Network type = density x n x K (24 populated types). For each stability bin the
+# stratified floor is the LOWEST 5th percentile of accuracy among types with at least
+# MIN_TYPE calibration fits in that bin; a bin with no such type keeps the pooled floor.
+# Compared with the pooled (shipped) floor on the validation half overall, by bin, by
+# type, and under leave-one-level-out. Writes output/stability/stratified_floor_*.csv and
+# manuscript/tables/tab_app_stability_stratified.tex. Does not change the shipped table.
+MIN_TYPE <- 20
+s$type <- paste(s$density, s$n, s$K, sep = "|")
+b_all <- bin_of(s$stab_nmi)
+bin_floors <- function(use) {
+  pooled <- tapply(s$acc_nmi[use], factor(b_all[use], levels = 1:10), quantile, probs = 0.05, names = FALSE)
+  ncal <- as.integer(table(factor(b_all[use], levels = 1:10)))
+  strat <- rep(NA_real_, 10); set_by <- rep(NA_character_, 10); ntyp <- integer(10)
+  for (j in 1:10) { k <- use & b_all == j; if (!any(k)) next
+    qt <- tapply(s$acc_nmi[k], s$type[k], function(a) if (length(a) >= MIN_TYPE) quantile(a, 0.05, names = FALSE) else NA_real_)
+    qt <- qt[!is.na(qt)]; ntyp[j] <- length(qt)
+    # never above the pooled floor: types with fewer than MIN_TYPE fits in the bin still count through the pooled quantile
+    if (length(qt) && min(qt) < pooled[j]) { strat[j] <- min(qt); set_by[j] <- names(qt)[which.min(qt)] } else { strat[j] <- pooled[j]; set_by[j] <- "pooled" } }
+  list(pooled = as.numeric(pooled), strat = strat, ncal = ncal, set_by = set_by, ntyp = ntyp)
+}
+lookup <- function(q, ncal, bb) vapply(bb, function(i0) { i <- i0
+  while (i > 1 && (is.na(q[i]) || ncal[i] == 0)) i <- i - 1L
+  if (is.na(q[i]) || ncal[i] == 0) NA_real_ else q[i] }, numeric(1))
+share_above <- function(acc, fl) { d <- !is.na(fl); if (any(d)) mean(acc[d] >= fl[d]) else NA_real_ }
+
+val <- s$split == "validation"
+BF <- bin_floors(!val)
+stopifnot(isTRUE(all.equal(BF$pooled, as.numeric(P_nmi$tab$acc_q05))))   # pooled floor here = shipped floor
+fl_p <- lookup(BF$pooled, BF$ncal, b_all); fl_s <- lookup(BF$strat, BF$ncal, b_all)
+stopifnot(all(fl_s <= fl_p | is.na(fl_p), na.rm = TRUE))                  # stratified floor is never above pooled
+
+# by bin
+sb <- data.frame(bin = 1:10, stab_lo = BR[-11], stab_hi = BR[-1], n_calib = BF$ncal, pooled = BF$pooled, stratified = BF$strat,
+                 n_types = BF$ntyp, set_by = BF$set_by, n_valid = as.integer(table(factor(b_all[val], levels = 1:10))))
+sb$valid_pooled <- vapply(1:10, function(j) share_above(s$acc_nmi[val & b_all == j], fl_p[val & b_all == j]), numeric(1))
+sb$valid_strat  <- vapply(1:10, function(j) share_above(s$acc_nmi[val & b_all == j], fl_s[val & b_all == j]), numeric(1))
+write.csv(sb, file.path(IN, "stratified_floor_bins.csv"), row.names = FALSE)
+
+# by network type (validation half)
+types <- sort(unique(s$type))
+st <- data.frame(type = types, n_valid = vapply(types, function(t) sum(val & s$type == t), integer(1)),
+  pooled = vapply(types, function(t) share_above(s$acc_nmi[val & s$type == t], fl_p[val & s$type == t]), numeric(1)),
+  stratified = vapply(types, function(t) share_above(s$acc_nmi[val & s$type == t], fl_s[val & s$type == t]), numeric(1)))
+write.csv(st, file.path(IN, "stratified_floor_types.csv"), row.names = FALSE)
+
+# leave-one-level-out with both floors
+ls_rows <- list()
+for (fac in c("n", "density", "K")) for (lev in sort(unique(s[[fac]]))) { hold <- s[[fac]] == lev
+  F <- bin_floors(!hold)
+  ls_rows[[length(ls_rows) + 1]] <- data.frame(factor = fac, level = as.character(lev), n = sum(hold),
+    pooled = share_above(s$acc_nmi[hold], lookup(F$pooled, F$ncal, b_all[hold])),
+    stratified = share_above(s$acc_nmi[hold], lookup(F$strat, F$ncal, b_all[hold]))) }
+lss <- do.call(rbind, ls_rows)
+stopifnot(isTRUE(all.equal(lss$pooled, lo$share)))                          # pooled column reproduces tab_app_stability_lolo
+write.csv(lss, file.path(IN, "stratified_floor_lolo.csv"), row.names = FALSE)
+
+pretty_type <- function(x) ifelse(is.na(x) | x == "pooled", ifelse(is.na(x), "--", "pooled"), vapply(strsplit(x, "|", fixed = TRUE), function(p) sprintf("%s, $n=%s$, $K=%s$", p[1], p[2], p[3]), character(1)))
+kb <- sb$n_calib > 0 | sb$n_valid > 0
+write_tex("Stability bin & Pooled floor & Stratified floor & Types in bin & Set by & Share above (pooled) & Share above (stratified) \\\\",
+  sprintf("%s & %s & %s & %d & %s & %s & %s \\\\", bin_lab(sb)[kb], fmt(sb$pooled[kb]), fmt(sb$stratified[kb]), sb$n_types[kb],
+          pretty_type(sb$set_by[kb]), fmt(sb$valid_pooled[kb]), fmt(sb$valid_strat[kb])),
+  "lcccccc", file.path(TAB, "tab_app_stability_stratified.tex"))
+
+cat(sprintf("\n--- stratified floor (min over %d types with >= %d calibration fits per bin) ---\n", length(types), MIN_TYPE))
+print(sb[, c("bin", "stab_lo", "n_calib", "pooled", "stratified", "n_types", "set_by", "valid_pooled", "valid_strat")], row.names = FALSE, digits = 3)
+cat(sprintf("validation share above floor: pooled %.3f | stratified %.3f\n", share_above(s$acc_nmi[val], fl_p[val]), share_above(s$acc_nmi[val], fl_s[val])))
+cat(sprintf("types (validation) with coverage < 0.90: pooled %d | stratified %d of %d; minimum: pooled %.3f | stratified %.3f\n",
+            sum(st$pooled < 0.90, na.rm = TRUE), sum(st$stratified < 0.90, na.rm = TRUE), nrow(st), min(st$pooled, na.rm = TRUE), min(st$stratified, na.rm = TRUE)))
+cat("worst six types under the pooled floor:\n"); print(head(st[order(st$pooled), ], 6), row.names = FALSE, digits = 3)
+cat("leave-one-level-out, pooled vs stratified:\n"); print(lss, row.names = FALSE, digits = 3)
 
 # ---- decided / undetermined pairs ----------------------------------------------------
 pr <- read_arm("binary", "pair")

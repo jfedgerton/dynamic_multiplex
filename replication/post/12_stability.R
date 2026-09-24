@@ -22,8 +22,8 @@
 #          pair shares and the accuracy of the decided calls
 #   manuscript/figures/fig_stability_floor.pdf         Figure 2: stability vs
 #          accuracy (validation fits) with the calibrated floor as a step
-#   manuscript/figures/fig_stability_floor_node.pdf    Figure 2b: node-level Jaccard
-#                                                      stability vs accuracy with the node floor
+#   manuscript/figures/fig_app_stability_node.pdf      appendix: node-level Jaccard stability vs
+#                                                      accuracy (hexbin density) with the node floor
 # Rule (pre-registered 2026-09-20): the section survives if, on the validation
 # half, Spearman(stability, accuracy) >= 0.7 and the calibrated 5th percentile
 # is non-decreasing in stability and >= 0.8 for stability >= 0.9. The script
@@ -183,19 +183,18 @@ ggsave(file.path(FIG, "fig_stability_floor.png"), g, width = 5.2, height = 5.2, 
 # validation half of the node sample, with the node-level calibrated floor as the step ----
 tbn <- N_jac$tab; stepn <- data.frame(x = c(tbn$stab_lo, 1), y = c(tbn$acc_q05, tbn$acc_q05[10]))
 ndv <- nd[nd$split == "validation", ]
-set.seed(123); NODE_PLOT_N <- 30000L
-ndp <- ndv[sample(nrow(ndv), min(NODE_PLOT_N, nrow(ndv))), ]   # plotted subsample; the floor uses all fits
-ndp$n_lab <- factor(ndp$n, levels = N_LEVELS)
-gn <- ggplot(ndp, aes(stab, acc, colour = n_lab)) + geom_point(alpha = 0.12, size = 0.6) +
+# appendix figure: 2-D density (hexagonal bins, log count) of the full validation node sample
+# with the node-level floor; node accuracy is discrete for small communities, so points overplot ----
+gn <- ggplot(ndv, aes(stab, acc)) + geom_hex(bins = 40) +
   geom_step(data = stepn, aes(x, y), inherit.aes = FALSE, colour = "#b2182b", linewidth = 0.9, direction = "hv") +
   geom_abline(slope = 1, intercept = 0, linetype = 3, colour = "grey60") +
-  scale_colour_brewer(palette = "Dark2", guide = "none") +
+  scale_fill_viridis_c(trans = "log10", name = "Node-layer\nobservations") +
   scale_x_continuous(limits = c(0, 1)) + scale_y_continuous(limits = c(0, 1)) + coord_equal() +
   labs(x = "Bootstrap stability (mean Jaccard, replicate vs point estimate)", y = "Accuracy (Jaccard, point estimate vs truth)") +
-  theme_bw(base_size = 11)
-ggsave(file.path(FIG, "fig_stability_floor_node.pdf"), gn, width = 5.2, height = 5.2)
-ggsave(file.path(FIG, "fig_stability_floor_node.png"), gn, width = 5.2, height = 5.2, dpi = 300)
-cat(sprintf("node-level figure: %d validation node-layer observations, %d plotted\n", nrow(ndv), nrow(ndp)))
+  theme_bw(base_size = 11) + theme(legend.position = "right")
+ggsave(file.path(FIG, "fig_app_stability_node.pdf"), gn, width = 6.2, height = 5.2)
+ggsave(file.path(FIG, "fig_app_stability_node.png"), gn, width = 6.2, height = 5.2, dpi = 300)
+cat(sprintf("node-level appendix figure: %d validation node-layer observations\n", nrow(ndv)))
 
 cat(sprintf("\nDECISION: partition NMI %s | partition ARI %s | node %s\n", if (pass_nmi) "PASS" else "FAIL", if (pass_ari) "PASS" else "FAIL", if (pass_node) "PASS" else "FAIL"))
 if (!(pass_nmi || pass_ari)) { cat("=> partition-level rule FAILED: the stability section cannot be supported by this run\n"); quit(status = 2) }

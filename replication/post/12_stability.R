@@ -183,9 +183,9 @@ ggsave(file.path(FIG, "fig_stability_floor.png"), g, width = 5.2, height = 5.2, 
 # validation half of the node sample, with the node-level calibrated floor as the step ----
 tbn <- N_jac$tab; stepn <- data.frame(x = c(tbn$stab_lo, 1), y = c(tbn$acc_q05, tbn$acc_q05[10]))
 ndv <- nd[nd$split == "validation", ]
-# appendix figure: 2-D density (hexagonal bins, log count) of the full validation node sample
+# appendix figure: 2-D density (square bins, log count) of the full validation node sample
 # with the node-level floor; node accuracy is discrete for small communities, so points overplot ----
-gn <- ggplot(ndv, aes(stab, acc)) + geom_hex(bins = 40) +
+gn <- ggplot(ndv, aes(stab, acc)) + geom_bin2d(bins = 40) +
   geom_step(data = stepn, aes(x, y), inherit.aes = FALSE, colour = "#b2182b", linewidth = 0.9, direction = "hv") +
   geom_abline(slope = 1, intercept = 0, linetype = 3, colour = "grey60") +
   scale_fill_viridis_c(trans = "log10", name = "Node-layer\nobservations") +

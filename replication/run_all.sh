@@ -8,7 +8,7 @@
 #   bash replication/run_all.sh submit sims     sim/01, 02 (three arms), 03, 04, 05, 06 only
 #   bash replication/run_all.sh submit empirical   empirical/07-10 only
 #   bash replication/run_all.sh submit post     post-processing only (after the above finished)
-#   bash replication/run_all.sh post            run post/10-16 in the current shell
+#   bash replication/run_all.sh post            run post/10-18 in the current shell
 #   bash replication/run_all.sh status          queue + output counts
 #   bash replication/run_all.sh archive         move existing output/ and manuscript tables/figures
 #                                               to output/_archive/<stamp>/ before a clean rerun
@@ -26,13 +26,14 @@
 #   empirical/09_score_orders.R     -> output/empirical/order_recovery.csv
 #   empirical/10_stability_networks.R -> output/empirical/<net>_stability.csv  4 tasks
 #   post/10_main_text.R             -> Table 2, Figure 3
-#   post/11_appendix_regimes.R      -> paired-difference figures and CI tables (Jaccard + overlap columns)
+#   post/11_appendix_regimes.R      -> paired-difference figures and CI tables (DynMux Jaccard vs each baseline)
 #   post/12_stability.R             -> calibration table, Figure 2, stability tables (main + appendix)
 #   post/13_appendix_empirical.R    -> order-recovery tables
 #   post/14_coupling.R              -> Jaccard vs overlap appendix table + figure
 #   post/15_omega_selection.R       -> omega sweep, selection rule, empirical stability tables
 #   post/16_mechanism_decision.R    -> main-text decision table (tab_decision_tree), mechanism appendix tables
 #   post/17_runtime.R               -> appendix runtime table (tab_app_runtime) from output/regime runtime_s + fit logs
+#   post/18_mechanism_paired.R      -> paired-difference figures and CI table for the mechanism tests (sim/03)
 # Tables land in manuscript/tables/, figures in manuscript/figures/. The
 # calibration table is copied into r_code/inst/extdata and
 # python_code/src/dynamic_multiplex/data by `post`.
@@ -122,7 +123,7 @@ case "$ACTION" in
 
   post)
     load_r
-    for s in 10_main_text 11_appendix_regimes 12_stability 13_appendix_empirical 14_coupling 15_omega_selection 16_mechanism_decision 17_runtime; do
+    for s in 10_main_text 11_appendix_regimes 12_stability 13_appendix_empirical 14_coupling 15_omega_selection 16_mechanism_decision 17_runtime 18_mechanism_paired; do
       echo "=================== post/$s.R ==================="
       Rscript "replication/post/$s.R"
     done

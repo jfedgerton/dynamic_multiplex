@@ -65,7 +65,7 @@ rn_tex <- c(birthdeath  = "Births \\& deaths",
             churnswitch = "Gradual switching",
             regimeshift = "Abrupt rewiring",
             seasonality = "Recurring structure")
-refs      <- c("DynMux Jaccard", "DynMux Overlap")
+refs      <- "DynMux Jaccard"                         # overlap coupling: appendix coupling section only (post/14)
 baselines <- c("Hungarian matching", "Multislice (adjacent)", "Multislice (same links)",
                "Dynamic SBM", "Pooled Leiden", "multinet GLouvain")
 blab <- c("Hungarian matching"    = "Hungarian\nmatching",
@@ -116,17 +116,14 @@ r$ref_short     <- sub("DynMux ", "", r$ref)
 
 mk <- function(mt, xlab) {
   s <- r[r$metric == mt, ]
-  ggplot(s, aes(diff, baseline_lab, colour = ref_short, shape = ref_short)) +
+  ggplot(s, aes(diff, baseline_lab)) +
     geom_vline(xintercept = 0, linetype = 2, colour = "grey40") +
-    geom_errorbar(aes(xmin = lo, xmax = hi),
-                  position = position_dodge(width = 0.55), width = 0.25) +
-    geom_point(position = position_dodge(width = 0.55), size = 1.8) +
+    geom_errorbar(aes(xmin = lo, xmax = hi), width = 0.25, colour = "#1b9e77") +
+    geom_point(size = 1.8, colour = "#1b9e77") +
     facet_grid(regime_lab ~ intensity_lab) +
-    scale_colour_manual(values = c(Jaccard = "#1b9e77", Overlap = "#d95f02")) +
-    scale_shape_manual(values  = c(Jaccard = 16, Overlap = 17)) +
-    labs(x = xlab, y = NULL, colour = "DynMux coupling", shape = "DynMux coupling") +
+    labs(x = xlab, y = NULL) +
     theme_bw(base_size = 9) +
-    theme(legend.position  = "bottom",
+    theme(legend.position  = "none",
           panel.grid.minor = element_blank(),
           strip.text       = element_text(face = "bold", size = 8.5),
           axis.text.y      = element_text(size = 8))
@@ -139,7 +136,7 @@ ggsave(file.path(FIG, "fig_regime_paired_kmae.pdf"), p2, width = 6.5, height = 8
 ggsave(file.path(FIG, "fig_regime_paired_kmae.png"), p2, width = 6.5, height = 8.0, dpi = 300)
 cat("wrote fig_regime_paired_nmi / _kmae (.pdf/.png)\n")
 
-# --- CI tables: one tabular per metric, Jaccard and Overlap side by side --
+# --- CI tables: one tabular per metric, DynMux (Jaccard) minus baseline ---
 fmt3 <- function(x) sub("-", "$-$", sprintf("%.3f", round(x, 3) + 0), fixed = TRUE)  # +0 kills "-0.000"
 r$cell <- sprintf("%s [%s, %s]", fmt3(r$diff), fmt3(r$lo), fmt3(r$hi))
 for (mt in c("nmi_joint", "k_mae")) {
@@ -148,16 +145,16 @@ for (mt in c("nmi_joint", "k_mae")) {
                idvar = c("regime", "intensity", "baseline"),
                timevar = "ref_short", direction = "wide")
   names(w) <- sub("cell.", "", names(w), fixed = TRUE)
-  stopifnot(all(c("Jaccard", "Overlap") %in% names(w)), nrow(w) == 8 * length(baselines))
+  stopifnot("Jaccard" %in% names(w), nrow(w) == 8 * length(baselines))
   w <- w[order(factor(w$regime,    levels = names(rn)),
                factor(w$intensity, levels = c("low", "high")),
                factor(w$baseline,  levels = baselines)), ]
   grp  <- sprintf("%s (%s)", unname(rn_tex[w$regime]), ifelse(w$intensity == "low", "Low", "High"))
   show <- c(TRUE, grp[-1] != grp[-length(grp)])          # blank repeated group labels
-  body <- sprintf("%s & %s & %s & %s \\\\",
-                  ifelse(show, grp, ""), unname(bl_tex[w$baseline]), w$Jaccard, w$Overlap)
-  write_tex(header = "Regime (intensity) & Baseline & Jaccard & Overlap \\\\",
-            body   = body, align = "llcc",
+  body <- sprintf("%s & %s & %s \\\\",
+                  ifelse(show, grp, ""), unname(bl_tex[w$baseline]), w$Jaccard)
+  write_tex(header = "Regime (intensity) & Baseline & DynMux $-$ baseline [95\\% CI] \\\\",
+            body   = body, align = "llc",
             path   = file.path(TAB, sprintf("tab_app_paired_ci_%s.tex",
                                             if (mt == "nmi_joint") "nmi" else "kmae")))
 }

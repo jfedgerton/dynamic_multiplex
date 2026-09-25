@@ -6,6 +6,7 @@
 #          multislice at omega in {0.25, 0.5, 1, 2, 4}, adjacent and same links,
 #          with DynMux Jaccard on the same series
 #   manuscript/figures/fig_omega_sweep.pdf
+#   manuscript/tables/tab_app_selection_ci.tex     paired differences (rule vs always-DynMux / always-multislice / oracle) with 95% CIs
 #   manuscript/tables/tab_app_selection_rule.tex   by regime: share of series
 #          in which the method with the higher stability is the more accurate,
 #          accuracy of the rule vs always-DynMux vs always-multislice
@@ -62,6 +63,19 @@ if (!is.null(se)) {
             sprintf("%s & %d & %.3f & %.2f & %.3f & %.3f & %.3f & %.3f \\\\", c(rn, all = "All regimes")[sr$regime], sr$n, sr$correct, sr$pickD, sr$rule, sr$dyn, sr$ms, sr$oracle),
             "lccccccc", file.path(TAB, "tab_app_selection_rule.tex"))
   cat("\n--- selection rule ---\n"); print(sr, row.names = FALSE, digits = 3)
+  # paired differences: rule minus always-DynMux, rule minus always-multislice,
+  # oracle minus rule; mean over series with 1.96 * sd / sqrt(n) intervals
+  pd <- function(x) c(est = mean(x), lo = mean(x) - 1.96 * sd(x) / sqrt(length(x)), hi = mean(x) + 1.96 * sd(x) / sqrt(length(x)))
+  ci <- do.call(rbind, lapply(c(regs, "all"), function(rg) { i <- if (rg == "all") rep(TRUE, nrow(D)) else D$regime == rg
+    rbind(data.frame(regime = rg, comp = "Rule $-$ always multislice", t(pd(rule_acc[i] - M$acc_joint[i]))),
+          data.frame(regime = rg, comp = "Rule $-$ always DynMux",     t(pd(rule_acc[i] - D$acc_joint[i]))),
+          data.frame(regime = rg, comp = "Oracle $-$ rule",            t(pd(best[i] - rule_acc[i])))) }))
+  stopifnot(nrow(ci) == 15L, sum(D$regime %in% regs) == nrow(D))
+  fmt <- function(v) gsub("-", "$-$", sprintf("%.3f", v))
+  write_tex("Regime & Comparison & Mean difference [95\\% CI] \\\\",
+            sprintf("%s & %s & %s [%s, %s] \\\\", ifelse(duplicated(ci$regime), "", c(rn, all = "All regimes")[ci$regime]), ci$comp, fmt(ci$est), fmt(ci$lo), fmt(ci$hi)),
+            "llc", file.path(TAB, "tab_app_selection_ci.tex"))
+  cat("\n--- selection rule, paired differences ---\n"); print(ci, row.names = FALSE, digits = 3)
 } else cat("(no selection output)\n")
 
 # ---- empirical stability ---------------------------------------------------------

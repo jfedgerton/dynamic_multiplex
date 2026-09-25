@@ -121,8 +121,8 @@ o <- read.csv(orf, stringsAsFactors = FALSE)
 stopifnot(all(c("net", "order", "kind", "year", "method", "J", "prec", "rec", "nB") %in% names(o)))
 cat("order-recovery rows:", nrow(o), " nets:", paste(sort(unique(o$net)), collapse = ","), "\n")
 
-net_lab <- c(atop = "Alliances (ATOP)", dca = "Defense cooperation (DCA)",
-             igo = "IGO co-membership", trade = "Trade")
+net_lab <- c(atop = "Alliances\n(ATOP)", dca = "Defense cooperation\n(DCA)",
+             igo = "IGO\nco-membership", trade = "Trade\n")
 meth_lab <- c(Jaccard = "DynMux (Jaccard)", multislice = "Multislice adjacent",
               multinet = "Multislice full (multinet)", Hungarian = "Hungarian matching", Pooled = "Pooled Leiden")
 stopifnot(all(o$net %in% names(net_lab)), all(setdiff(o$method, "Overlap") %in% names(meth_lab)))
@@ -141,23 +141,22 @@ p3 <- ggplot(os, aes(rec, prec, colour = meth_lab, shape = meth_lab)) +
   geom_hline(yintercept = 0.5, linetype = "dashed", colour = "grey55") +
   geom_vline(xintercept = 0.5, linetype = "dashed", colour = "grey55") +
   geom_abline(slope = 1, intercept = 0, linetype = "dotted", colour = "grey70") +
-  geom_point(size = 3.2, alpha = 0.95) +
+  geom_point(size = 3, stroke = 1.1) +
   facet_wrap(~net_lab, nrow = 1) +
   scale_colour_brewer(palette = "Dark2", name = "Method") +
-  scale_shape_manual(values = c(16, 15, 18, 3, 4), name = "Method") +
+  scale_shape_manual(values = c(1, 0, 5, 3, 4), name = "Method") +
   scale_x_continuous(limits = c(0, 1), breaks = seq(0, 1, 0.5)) +
   scale_y_continuous(limits = c(0, 1), breaks = seq(0, 1, 0.25)) +
   coord_equal() +
-  labs(x = "Recall (share of the coded order in its assigned community)",
-       y = "Precision (share of the assigned\ncommunity in the order)") +
+  labs(x = "Recall", y = "Precision") +
   theme_bw(base_size = 11) +
   theme(legend.position = "bottom", panel.grid.minor = element_blank(),
         axis.text = element_text(size = 10), axis.title = element_text(size = 11),
         strip.text = element_text(size = 11), legend.text = element_text(size = 10),
         legend.title = element_text(size = 11)) +
-  guides(colour = guide_legend(nrow = 1), shape = guide_legend(nrow = 1))
-ggsave(file.path(FIG, "fig_order_recovery.pdf"), p3, width = 8, height = 3.3)
-ggsave(file.path(FIG, "fig_order_recovery.png"), p3, width = 8, height = 3.3, dpi = 300)
+  guides(colour = guide_legend(nrow = 2), shape = guide_legend(nrow = 2))
+ggsave(file.path(FIG, "fig_order_recovery.pdf"), p3, width = 8, height = 3.9)
+ggsave(file.path(FIG, "fig_order_recovery.png"), p3, width = 8, height = 3.9, dpi = 300)
 cat("wrote fig_order_recovery.pdf/.png (", nrow(os), "points: one per network x method )\n")
 
 cat("done 10_main_text\n")

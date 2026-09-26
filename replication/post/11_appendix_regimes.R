@@ -153,7 +153,9 @@ for (mt in c("nmi_joint", "k_mae")) {
   show <- c(TRUE, grp[-1] != grp[-length(grp)])          # blank repeated group labels
   body <- sprintf("%s & %s & %s \\\\",
                   ifelse(show, grp, ""), unname(bl_tex[w$baseline]), w$Jaccard)
-  write_tex(header = "Regime (intensity) & Baseline & DynMux $-$ baseline [95\\% CI] \\\\",
+  # K MAE differences are baseline - DynMux (lower MAE is better), so the header follows the metric
+  dlab <- if (mt == "nmi_joint") "DynMux $-$ baseline" else "Baseline $-$ DynMux"
+  write_tex(header = sprintf("Regime (intensity) & Baseline & %s [95\\%% CI] \\\\", dlab),
             body   = body, align = "llc",
             path   = file.path(TAB, sprintf("tab_app_paired_ci_%s.tex",
                                             if (mt == "nmi_joint") "nmi" else "kmae")))

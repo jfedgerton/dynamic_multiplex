@@ -27,7 +27,7 @@
 #
 # Order codings: Braumoeller, Only the Dead replication archive (coding
 # credited to Andy Goodhart). Colombia/Bulgaria coding bug (ccode 100 labelled
-# Bulgaria) corrected in COM (355 in, 100 out). 19th-century orders are coded
+# Bulgaria) corrected in COM and WP (355 in, 100 out). 19th-century orders are coded
 # as "all European states (ccode 200-399)", so those eras test a
 # Europe/non-Europe split, not a fine bloc structure.
 #
@@ -68,11 +68,10 @@ PCW<-c("2"="1992:2018","20"="1992:2018","200"="1992:2018","205"="1992:2018","210
 
 # Additional codings (32_setlevel_allorders.R)
 CGP<-c("200"="1816:1852","220"="1816:1852","255"="1816:1852","300"="1816:1852","365"="1816:1852")
-WP <-c("100"="1955:1991","265"="1955:1990","290"="1955:1991","310"="1955:1991","315"="1955:1991","339"="1955:1968","360"="1955:1991","365"="1955:1991")
-# NOTE: WP is reproduced exactly as coded in 32. Its entry "100" is Colombia's
-# ccode; the Warsaw Pact member it stands in for is Bulgaria (355). This is the
-# same Colombia/Bulgaria labelling bug that 29 corrects in COM; it is left
-# uncorrected here because the sources score with it as-is.
+WP <-c("355"="1955:1991","265"="1955:1990","290"="1955:1991","310"="1955:1991","315"="1955:1991","339"="1955:1968","360"="1955:1991","365"="1955:1991")
+# NOTE: script 32 coded Bulgaria in WP with Colombia's ccode (100), the same
+# Colombia/Bulgaria labelling bug that 29 corrects in COM. Corrected here too
+# (355 in, 100 out), 2026-09-26.
 MAN<-c("645"="1922:1939","652"="1922:1939","660"="1922:1939","663"="1922:1939","666"="1922:1939")
 IAW<-c("205"="1921:1939","290"="1918:1939","305"="1918:1938","310"="1918:1939","315"="1918:1939","339"="1912:1938","345"="1919:1939","355"="1908:1938","366"="1918:1939","367"="1918:1939","368"="1918:1939","369"="1918:1920","371"="1918:1920","372"="1918:1921","373"="1918:1920","375"="1917:1939","651"="1922:1939","670"="1932:1938","678"="1918:1938","700"="1919:1938")
 

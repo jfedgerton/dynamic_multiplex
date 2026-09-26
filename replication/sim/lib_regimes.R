@@ -141,11 +141,9 @@ sim_regimeshift <- function(n, r, intensity, seed) {
 
 # 4. seasonality: a small bank of latent partitions RECUR on a period (each
 #    era returns to a prior configuration), with light drift on each visit and
-#    period-lagged (non-adjacent) interlayer links -- DynMux's designed use
-#    case, where similarity coupling that bridges non-adjacent recurrences
-#    beats pooling and adjacent-only methods. Ported from 06 so seasonality is
-#    scored with the same specs (incl. weighted) and metrics (incl. nmi_change)
-#    as the change-point regimes.
+#    period-lagged (non-adjacent) interlayer links. Ported from 06 so
+#    seasonality is scored with the same specs (incl. weighted) and metrics
+#    (incl. nmi_change) as the change-point regimes.
 sim_seasonality <- function(n, K, period, r, seed) {
   set.seed(seed)
   dp <- dens_params(r, K)

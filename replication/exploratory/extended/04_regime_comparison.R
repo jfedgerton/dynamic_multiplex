@@ -16,9 +16,9 @@
 # simulated networks, on the TRACKED (meta / cross-layer) partition:
 #
 #   seasonality : a small bank of latent partitions recur on a period, each
-#                 lightly drifting when revisited (period-lagged coupling) --
-#                 DynMux's designed win. Ported from 06 so it is scored with the
-#                 same specs (incl. weighted) and metrics (incl. nmi_change).
+#                 lightly drifting when revisited (period-lagged coupling).
+#                 Ported from 06 so it is scored with the same specs
+#                 (incl. weighted) and metrics (incl. nmi_change).
 #   churnswitch : edge churn PLUS Markov switching between latent partitions.
 #   birthdeath  : open population where whole communities are born / die over
 #                 the series (membership enters and exits existence).
@@ -217,11 +217,9 @@ sim_regimeshift <- function(n, r, intensity, seed) {
 
 # 4. seasonality: a small bank of latent partitions RECUR on a period (each
 #    era returns to a prior configuration), with light drift on each visit and
-#    period-lagged (non-adjacent) interlayer links -- DynMux's designed use
-#    case, where similarity coupling that bridges non-adjacent recurrences
-#    beats pooling and adjacent-only methods. Ported from 06 so seasonality is
-#    scored with the same specs (incl. weighted) and metrics (incl. nmi_change)
-#    as the change-point regimes.
+#    period-lagged (non-adjacent) interlayer links. Ported from 06 so
+#    seasonality is scored with the same specs (incl. weighted) and metrics
+#    (incl. nmi_change) as the change-point regimes.
 sim_seasonality <- function(n, K, period, r, seed) {
   set.seed(seed)
   dp <- dens_params(r, K)

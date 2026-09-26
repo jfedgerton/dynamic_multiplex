@@ -120,17 +120,21 @@ method_multinet <- function(sim) {
   nn <- multinet::ml_empty()
   for (t in seq_len(T_)) {
     keep <- which(ac[[t]]); if (length(keep) == 0) next
-    A <- L[[t]][keep, keep, drop = FALSE]
+    # glouvain_ml is fit on the binary layers (any positive tie is an edge).
+    # Passing the weighted matrix would make igraph read weights as edge
+    # multiplicities, dropping ties with weight below 1. ----
+    A <- (L[[t]][keep, keep, drop = FALSE] > 0) * 1
     g <- igraph::graph_from_adjacency_matrix(A, mode = "undirected", diag = FALSE)
     igraph::V(g)$name <- nm[keep]
     multinet::add_igraph_layer_ml(nn, g, paste0("layer", t))
   }
   cat("  multinet actor-layer entries:", sum(sapply(ac, sum)), " (vs padded", n * T_, ")\n")
   cm <- multinet::glouvain_ml(nn, gamma = 1, omega = 1)
+  gid <- as.integer(factor(cm$cid))   # one encoding across all layers
   lapply(seq_len(T_), function(t) {
-    s <- cm[cm$layer == paste0("layer", t), , drop = FALSE]
+    sel <- cm$layer == paste0("layer", t)
     v <- rep(NA_integer_, n)
-    if (nrow(s) > 0) v[as.integer(s$actor)] <- as.integer(as.factor(s$cid))
+    if (any(sel)) v[as.integer(cm$actor[sel])] <- gid[sel]
     if (anyNA(v)) v[is.na(v)] <- max(0L, v, na.rm = TRUE) + seq_len(sum(is.na(v)))
     v
   })

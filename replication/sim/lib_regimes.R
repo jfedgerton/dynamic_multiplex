@@ -302,10 +302,13 @@ method_multinet <- function(sim) {
     multinet::add_igraph_layer_ml(nn, g, paste0("layer", t))
   }
   cm <- multinet::glouvain_ml(nn, gamma = 1, omega = 1)
+  # encode community ids ONCE across all layers: re-factoring them within each
+  # layer would renumber the same temporal community differently by layer ----
+  gid <- as.integer(factor(cm$cid))
   lapply(seq_len(T_), function(t) {
-    s <- cm[cm$layer == paste0("layer", t), , drop = FALSE]
+    sel <- cm$layer == paste0("layer", t)
     v <- rep(NA_integer_, n)
-    if (nrow(s)) v[as.integer(s$actor)] <- as.integer(as.factor(s$cid))
+    if (any(sel)) v[as.integer(cm$actor[sel])] <- gid[sel]
     v
   })
 }

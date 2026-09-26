@@ -20,6 +20,7 @@ TAB <- file.path(ROOT, "manuscript", "tables");  dir.create(TAB, showWarnings = 
 FIG <- file.path(ROOT, "manuscript", "figures"); dir.create(FIG, showWarnings = FALSE, recursive = TRUE)
 write_tex <- function(header, body, align, path) writeLines(c(sprintf("\\begin{tabular}{%s}", align), "\\toprule", header, "\\midrule", body, "\\bottomrule", "\\end{tabular}"), path)
 rn <- c(birthdeath = "Births \\& deaths", churnswitch = "Gradual switching", regimeshift = "Abrupt rewiring", seasonality = "Recurring structure")
+rn_fig <- gsub("\\&", "&", rn, fixed = TRUE)   # plain labels for ggplot facets
 regs <- names(rn)
 rd <- function(dir, pat) { f <- list.files(file.path(ROOT, "output", dir), pat, full.names = TRUE); if (!length(f)) return(NULL); do.call(rbind, lapply(f, read.csv, stringsAsFactors = FALSE)) }
 
@@ -35,8 +36,8 @@ if (!is.null(om)) {
   write_tex(paste("Method &", paste(rn, collapse = " & "), "\\\\"), body, "lcccc", file.path(TAB, "tab_app_omega_sweep.tex"))
   os <- om[grepl("^Multislice", om$variant), ]
   os$omega <- as.numeric(sub(".*omega=", "", os$variant)); os$links <- ifelse(grepl("adjacent", os$variant), "adjacent links", "same links as DynMux")
-  oa <- aggregate(nmi_joint ~ omega + links + regime, os, mean); oa$regime_lab <- factor(rn[oa$regime], levels = rn)
-  ref <- aggregate(nmi_joint ~ regime, om[om$variant == "DynMux Jaccard", ], mean); ref$regime_lab <- factor(rn[ref$regime], levels = rn)
+  oa <- aggregate(nmi_joint ~ omega + links + regime, os, mean); oa$regime_lab <- factor(rn_fig[oa$regime], levels = rn_fig)
+  ref <- aggregate(nmi_joint ~ regime, om[om$variant == "DynMux Jaccard", ], mean); ref$regime_lab <- factor(rn_fig[ref$regime], levels = rn_fig)
   g <- ggplot(oa, aes(omega, nmi_joint, colour = links)) + geom_line() + geom_point() +
     geom_hline(data = ref, aes(yintercept = nmi_joint), linetype = 2, colour = "grey40") +
     scale_x_log10(breaks = c(0.25, 0.5, 1, 2, 4)) + facet_wrap(~ regime_lab, ncol = 2) +

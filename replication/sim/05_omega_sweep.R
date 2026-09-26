@@ -26,12 +26,14 @@ outfile <- file.path(outdir, sprintf("omega_cfg%02d.csv", TASK))
 if (nzchar(Sys.getenv("SLURM_ARRAY_TASK_ID")) && file.exists(outfile)) { cat("[skip] task", TASK, "\n"); quit(save = "no") }
 cat(sprintf("[omega] task=%d regime=%s n=%d r=%.1f intensity=%s reps=%d\n", TASK, cfg$regime, cfg$n, cfg$r, cfg$intensity, REPS))
 
-ms <- function(omega, links) function(sim) {
+# force() the arguments: without it R evaluates `om` lazily, after the loop
+# below has finished, and every variant would run at the last omega (4).
+ms <- function(omega, links) { force(omega); force(links); function(sim) {
   n <- nrow(sim$layers[[1]])
   f <- if (links) fit_multilayer_identity_ties(AL(sim), algorithm = "leiden", layer_links = sim$links, omega = omega, allow_unequal_nodes = TRUE)
        else       fit_multilayer_identity_ties(AL(sim), algorithm = "leiden", omega = omega, allow_unequal_nodes = TRUE)
   EXPn(extract_meta_membership(f), sim, n)
-}
+} }
 VARIANTS <- list("DynMux Jaccard" = METHODS[["DynMux Jaccard"]])
 for (om in OMEGAS) { VARIANTS[[sprintf("Multislice adjacent omega=%g", om)]] <- ms(om, FALSE)
                      VARIANTS[[sprintf("Multislice custom links omega=%g", om)]] <- ms(om, TRUE) }

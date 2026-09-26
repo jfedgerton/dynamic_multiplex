@@ -864,12 +864,15 @@ detect_multislice_communities <- function(
 #' @noRd
 genlouvain_multislice <- function(edges, K, twom, gamma = 1, max_levels = 20L, max_passes = 50L, n_starts = 10L) {
   inv2m <- ifelse(twom > 0, 1 / twom, 0)
-  # objective (unnormalised): sum of within-community edge weight minus
-  # gamma * sum_s sum_c Ktot[c, s]^2 / 2m_s ----
+  # objective (unnormalised multislice modularity, 2 mu Q): every undirected
+  # edge is stored once but counts twice in sum_ij A_ij, so the within-community
+  # weight is doubled before the null term gamma * sum_s sum_c Ktot[c, s]^2 / 2m_s
+  # is subtracted. (Before 1.3.2 the factor 2 was missing, which ranked the
+  # restarts as if gamma were 2; the local moves were unaffected.) ----
   quality <- function(memb) {
     within <- sum(edges$w[memb[edges$from] == memb[edges$to]])
     Ktot <- rowsum(K, memb)
-    within - gamma * sum(sweep(Ktot^2, 2, inv2m, "*"))
+    2 * within - gamma * sum(sweep(Ktot^2, 2, inv2m, "*"))
   }
   best <- NULL; best_q <- -Inf
   for (start in seq_len(n_starts)) {

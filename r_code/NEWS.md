@@ -1,3 +1,13 @@
+# dynamicmultiplex (development version)
+
+## Bug fixes
+
+* `fit_multilayer_identity_ties()` (generalized Louvain multislice): the
+  restart-selection score omitted a factor of 2 on the within-community edge
+  weight, so the best of the `n_starts` restarts was ranked as if the
+  resolution were 2 rather than `resolution_parameter`. Each restart already
+  optimised the correct objective; only the choice among restarts changes.
+
 # dynamicmultiplex 1.3.1
 
 This release collects every change since 1.1.0 (CRAN, 2026-08-07). Versions

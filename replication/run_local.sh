@@ -130,15 +130,16 @@ do_packages() {
   run r_regressions Rscript replication/tests/test_package_regressions.R
 
   # Python: fresh virtual environment, editable install, tests
-  if command -v python3 >/dev/null; then
+  PY="${PYTHON:-python3}"   # set PYTHON=python3.12 (for example) if leidenalg has no wheel for the default python
+  if command -v "$PY" >/dev/null; then
     VENV="$DM_ROOT/.venv_dm"
-    [[ -d "$VENV" ]] || python3 -m venv "$VENV"
-    run py_install "$VENV/bin/pip" install --quiet -e python_code pytest
+    [[ -d "$VENV" ]] || "$PY" -m venv "$VENV"
+    run py_install "$VENV/bin/pip" install --quiet -e "python_code[leiden,louvain,dev]"
     run py_pytest "$VENV/bin/python" -m pytest -q python_code/tests
     run py_regressions "$VENV/bin/python" replication/tests/test_package_regressions.py
     run crosscheck_r_vs_python env PATH="$VENV/bin:$PATH" Rscript replication/tests/crosscheck_multislice_r_vs_python.R
   else
-    res+="  python: skipped (python3 not found)\n"
+    res+="  python: skipped ($PY not found)\n"
   fi
   printf "packages stage results:\n$res" | tee "$P/SUMMARY.txt" | tee -a "$LOGDIR/run_local.log"
   if grep -q FAILED "$P/SUMMARY.txt"; then stage_mark packages "FAILED (see $P/SUMMARY.txt)"; else stage_mark packages ok; fi

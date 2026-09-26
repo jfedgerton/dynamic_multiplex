@@ -17,8 +17,9 @@ plot_multilayer_series(
 \arguments{
 \item{layers}{List of \code{igraph} objects or square adjacency matrices.}
 
-\item{fit}{Optional fit object from \code{fit_multilayer_jaccard()},
-\code{fit_multilayer_overlap()}, or \code{fit_multilayer_identity_ties()}.}
+\item{fit}{Optional fit object from any \verb{fit_multilayer_*()} function.
+Nodes are colored by the tracked \code{meta_communities}, so a color marks the
+same community in every layer.}
 
 \item{community_memberships}{Optional list of membership vectors
 (one per layer). Ignored when \code{fit} is provided.}

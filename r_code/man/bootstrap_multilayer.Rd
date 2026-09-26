@@ -7,7 +7,7 @@
 bootstrap_multilayer(
   layers,
   fit_type = c("jaccard", "overlap", "weighted_jaccard", "weighted_overlap", "identity"),
-  algorithm = c("louvain", "leiden"),
+  algorithm = c("leiden", "louvain"),
   n_boot = 100,
   layer_links = NULL,
   min_similarity = 0,
@@ -23,8 +23,8 @@ bootstrap_multilayer(
 \item{fit_type}{One of \code{"jaccard"}, \code{"overlap"},
 \code{"weighted_jaccard"}, \code{"weighted_overlap"}, \code{"identity"}.}
 
-\item{algorithm}{Community detection algorithm: \code{"louvain"} or
-\code{"leiden"}.}
+\item{algorithm}{Community detection algorithm: \code{"leiden"} (default)
+or \code{"louvain"}.}
 
 \item{n_boot}{Number of bootstrap replicates.}
 
@@ -38,7 +38,9 @@ bootstrap_multilayer(
 
 \item{seed}{Optional random seed for reproducibility.}
 
-\item{objective}{One of "cpm" or "modularity" for directed networks only}
+\item{objective}{Objective for the first-stage (per-layer) detection,
+passed to the fit function: \code{"modularity"} or \code{"cpm"} (Leiden only).
+Defaults to \code{"cpm"} for directed layers and \code{"modularity"} otherwise.}
 }
 \value{
 A list of class \code{"multilayer_bootstrap"} with components:

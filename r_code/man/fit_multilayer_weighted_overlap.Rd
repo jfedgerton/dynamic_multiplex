@@ -7,7 +7,7 @@ overlap ties}
 \usage{
 fit_multilayer_weighted_overlap(
   layers,
-  algorithm = c("louvain", "leiden"),
+  algorithm = c("leiden", "louvain"),
   layer_links = NULL,
   min_similarity = 0,
   resolution_parameter = 1,
@@ -22,7 +22,7 @@ fit_multilayer_weighted_overlap(
 \arguments{
 \item{layers}{List of \code{igraph} objects or square adjacency matrices.}
 
-\item{algorithm}{Community algorithm: \code{"louvain"} or \code{"leiden"}.}
+\item{algorithm}{Community algorithm: \code{"leiden"} (default) or \code{"louvain"}.}
 
 \item{layer_links}{Optional data.frame defining which layers to connect,
 with columns \code{from}, \code{to}, and optional \code{weight}. If \code{NULL}, adjacent layers
@@ -42,7 +42,11 @@ self-loop ties.}
 \item{self_loop_multiplier}{Numeric multiplier applied to self-loop weighted
 ties.}
 
-\item{objective}{One of "cpm" or "modularity" for directed networks only}
+\item{objective}{Objective for the first-stage (per-layer) detection:
+\code{"modularity"} or \code{"cpm"} (CPM requires \code{algorithm = "leiden"}). Defaults to
+\code{"cpm"} for directed layers and \code{"modularity"} otherwise. It does not
+affect the second stage, which always maximizes modularity on the
+community graph.}
 
 \item{seed}{Optional integer seed for reproducible community detection.
 When supplied, the global RNG state is saved, the RNG is seeded for the

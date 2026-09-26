@@ -7,7 +7,7 @@
 #'
 #' @param layers List of `igraph` objects or square adjacency matrices.
 #'
-#' @param algorithm Community algorithm: `"louvain"` or `"leiden"`.
+#' @param algorithm Community algorithm: `"leiden"` (default) or `"louvain"`.
 #'
 #' @param layer_links Optional data.frame defining which layers to connect,
 #' with columns `from`, `to`, and optional `weight`. If `NULL`, adjacent layers
@@ -27,7 +27,11 @@
 #' @param self_loop_multiplier Numeric multiplier applied to self-loop weighted
 #' ties.
 #'
-#' @param objective One of "cpm" or "modularity" for directed networks only
+#' @param objective Objective for the first-stage (per-layer) detection:
+#' `"modularity"` or `"cpm"` (CPM requires `algorithm = "leiden"`). Defaults to
+#' `"cpm"` for directed layers and `"modularity"` otherwise. It does not
+#' affect the second stage, which always maximizes modularity on the
+#' community graph.
 #'
 #' @param seed Optional integer seed for reproducible community detection.
 #' When supplied, the global RNG state is saved, the RNG is seeded for the
@@ -81,7 +85,7 @@
 
 fit_multilayer_weighted_overlap <- function(
     layers,
-    algorithm = c("louvain", "leiden"),
+    algorithm = c("leiden", "louvain"),
     layer_links = NULL,
     min_similarity = 0,
     resolution_parameter = 1,

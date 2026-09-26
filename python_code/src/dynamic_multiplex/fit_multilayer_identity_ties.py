@@ -3,7 +3,8 @@ from __future__ import annotations
 import pandas as pd
 
 from .multilayer_utils import (
-    _is_zero_indexed,
+    _id_offset,
+    _sort_key,
     detect_multislice_communities,
     fit_layer_communities,
     make_layer_links,
@@ -32,6 +33,15 @@ def fit_multilayer_identity_ties(
         ``layer_links`` weights. Larger ``omega`` couples layers more strongly
         and, past a point, collapses everything into one meta-community;
         smaller ``omega`` decouples toward independent per-layer detection.
+    objective : str | None
+        Objective for the first-stage (per-layer) detection stored in
+        ``layer_communities``: ``"modularity"`` or ``"cpm"`` (Leiden only).
+        Defaults to ``"cpm"`` for directed layers and ``"modularity"``
+        otherwise. It does not affect ``meta_communities``, which always
+        optimise undirected multislice modularity.
+    allow_unequal_nodes : bool
+        If True, layers may hold different node sets; they must then be
+        networkx graphs with node labels, matched across layers by label.
     resolution_parameter : float
         Also forwarded to the multislice supra-graph detection as Mucha's
         modularity resolution (larger values yield more, smaller
@@ -65,11 +75,13 @@ def fit_multilayer_identity_ties(
         g_from = graph_layers[int(row["from"]) - 1]
         g_to = graph_layers[int(row["to"]) - 1]
 
-        shared = sorted(set(g_from.nodes()) & set(g_to.nodes()))
-        both_zero = _is_zero_indexed(g_from) and _is_zero_indexed(g_to)
+        shared = sorted(set(g_from.nodes()) & set(g_to.nodes()), key=_sort_key)
+        # every layer uses the same label-to-id rule (see _id_offset), so a
+        # shared node has one id in both layers ----
+        off = _id_offset(g_from)
 
         for node in shared:
-            node_id = node + 1 if both_zero else node
+            node_id = node + off if off else node
             ties.append(
                 {
                     "from_layer": int(row["from"]),

@@ -19,6 +19,38 @@ def _is_zero_indexed(graph: nx.Graph) -> bool:
     return set(graph.nodes()) == set(range(graph.number_of_nodes()))
 
 
+def _id_offset(graph: nx.Graph) -> int:
+    """Offset from a graph's node labels to the node ids used in memberships.
+
+    Layers that share one node universe are relabelled to 0..n-1 by
+    ``prepare_multilayer_graphs`` and reported as 1..n (offset 1). Layers with
+    different node sets keep their own labels (offset 0 for every layer), so a
+    node has the same id in every layer and ids are never computed from label
+    arithmetic.
+    """
+    if graph.graph.get("dm_raw_ids", False):
+        return 0
+    return 1 if _is_zero_indexed(graph) else 0
+
+
+def _sort_key(node):
+    """Deterministic sort key for node labels of mixed types."""
+    return (type(node).__name__, node)
+
+
+def _clean_graph(graph: nx.Graph | nx.DiGraph) -> nx.Graph | nx.DiGraph:
+    """Copy of ``graph`` without self-loops or zero-weight edges.
+
+    Same input policy as the R package: within-layer self-loops (including the
+    diagonal of an adjacency matrix) and zero-weight edges are dropped.
+    """
+    out = graph.copy()
+    out.remove_edges_from(list(nx.selfloop_edges(out)))
+    zero = [(u, v) for u, v, d in out.edges(data=True) if d.get("weight", 1.0) == 0]
+    out.remove_edges_from(zero)
+    return out
+
+
 def _as_graph(layer, directed: bool) -> nx.Graph | nx.DiGraph:
     if isinstance(layer, (nx.Graph, nx.DiGraph)):
         return layer
@@ -32,6 +64,23 @@ def _as_graph(layer, directed: bool) -> nx.Graph | nx.DiGraph:
     return graph
 
 
+def _collapse_directed(graph: nx.DiGraph) -> nx.Graph:
+    """Undirected copy of a directed graph with reciprocal arc weights summed.
+
+    Matches R's ``as_undirected(mode = "collapse", weight = "sum")``;
+    ``nx.DiGraph.to_undirected()`` would keep only one of the two weights.
+    """
+    out = nx.Graph()
+    out.add_nodes_from(graph.nodes())
+    for u, v, d in graph.edges(data=True):
+        w = d.get("weight", 1.0)
+        if out.has_edge(u, v):
+            out[u][v]["weight"] += w
+        else:
+            out.add_edge(u, v, weight=w)
+    return out
+
+
 def prepare_multilayer_graphs(
     layers: list,
     directed: bool = False,
@@ -40,12 +89,17 @@ def prepare_multilayer_graphs(
     if not isinstance(layers, list) or len(layers) < 2:
         raise ValueError("`layers` must be a list with at least two network layers.")
 
-    graphs = [_as_graph(layer, directed=directed) for layer in layers]
+    is_matrix = [not isinstance(layer, (nx.Graph, nx.DiGraph)) for layer in layers]
+    graphs = [_clean_graph(_as_graph(layer, directed=directed)) for layer in layers]
+
+    for i, g in enumerate(graphs):
+        if g.number_of_nodes() == 0:
+            raise ValueError(f"Layer {i + 1} has no vertices. Drop empty layers before fitting.")
 
     # Validate a shared node universe across all layers. Layers with
     # different node sets (or adjacency matrices of different sizes) cannot
-    # be coupled: interlayer ties and meta-communities assume node i in one
-    # layer is node i in every other layer.
+    # be coupled unless the caller opts in: interlayer ties and
+    # meta-communities then match nodes across layers by label.
     node_sets = [set(g.nodes()) for g in graphs]
     aligned = all(ns == node_sets[0] for ns in node_sets[1:])
     if not aligned:
@@ -53,11 +107,21 @@ def prepare_multilayer_graphs(
             raise ValueError(
                 "All layers must share the same node set. "
                 "Found layers with different nodes; align the node universe "
-                "(adding isolates where needed) before fitting, or, for "
-                "identity ties only, pass allow_unequal_nodes=True."
+                "(adding isolates where needed) before fitting, or pass "
+                "allow_unequal_nodes=True with labelled networkx graphs."
             )
-        # Unequal universes explicitly allowed (identity ties): keep raw
-        # labels so nodes match across layers by name; no canonical remap.
+        # Positions in adjacency matrices of different sizes carry no
+        # identity, so they cannot be matched across layers (as in R).
+        if any(is_matrix):
+            raise ValueError(
+                "allow_unequal_nodes=True requires networkx graphs with node "
+                "labels on every layer so that nodes can be matched across "
+                "layers; adjacency matrices of different sizes have no labels."
+            )
+        # Keep raw labels as node ids in every layer (no +1 offset), so a node
+        # has one id across all layers.
+        for g in graphs:
+            g.graph["dm_raw_ids"] = True
         return graphs
 
     # Normalize arbitrary node labels (strings, non-contiguous integers) to
@@ -65,7 +129,7 @@ def prepare_multilayer_graphs(
     # +1 assumptions on raw labels. The original labels are preserved on each
     # graph as ``graph.graph["node_labels"]`` (index i -> original label of
     # internal node i, i.e. of node id i+1 in the returned membership).
-    reference_nodes = sorted(node_sets[0], key=lambda x: (type(x).__name__, x))
+    reference_nodes = sorted(node_sets[0], key=_sort_key)
     if reference_nodes != list(range(len(reference_nodes))):
         mapping = {node: i for i, node in enumerate(reference_nodes)}
         graphs = [nx.relabel_nodes(g, mapping, copy=True) for g in graphs]
@@ -134,7 +198,7 @@ def fit_layer_communities(
                 )
 
     for g in graph_layers:
-        zero_indexed = _is_zero_indexed(g)
+        off = _id_offset(g)
 
         if algorithm == "louvain":
             try:
@@ -142,7 +206,8 @@ def fit_layer_communities(
             except ImportError as exc:
                 raise ImportError("Install optional dependency `python-louvain` for Louvain support.") from exc
 
-            g_input = g.to_undirected() if directed else g
+            # python-louvain is undirected: collapse directed layers
+            g_input = _collapse_directed(g) if g.is_directed() else g
             # Seeded detection (default 123) so the partition is a deterministic
             # function of the graph: bootstrap variability then comes from the
             # resampled data, not from solver tie-breaking. Pass seed=None for
@@ -153,18 +218,15 @@ def fit_layer_communities(
             )
             communities = {}
             for node, comm in partition.items():
-                node_id = node + 1 if zero_indexed else node
+                node_id = node + off if off else node
                 communities.setdefault(comm, []).append(node_id)
 
             mod = None
             if not directed and effective_objective != "cpm" and g_input.number_of_edges() > 0:
-                sets = [set(n - 1 if zero_indexed else n for n in nodes) for nodes in communities.values()]
+                sets = [set(n - off if off else n for n in nodes) for nodes in communities.values()]
                 mod = nx.algorithms.community.modularity(g_input, sets, weight="weight")
 
-            membership = {
-                (node + 1 if zero_indexed else node): comm + 1
-                for node, comm in partition.items()
-            }
+            membership = {(node + off if off else node): comm + 1 for node, comm in partition.items()}
             fits.append(LayerCommunityFit(membership=membership, modularity=mod, communities={k + 1: v for k, v in communities.items()}))
         else:
             try:
@@ -174,7 +236,7 @@ def fit_layer_communities(
                 raise ImportError("Install optional dependencies `python-igraph` and `leidenalg` for Leiden support.") from exc
 
             g_input = g
-            node_list = sorted(g_input.nodes())
+            node_list = sorted(g_input.nodes(), key=_sort_key)
             node_to_idx = {n: i for i, n in enumerate(node_list)}
 
             edges = [(node_to_idx[u], node_to_idx[v]) for u, v in g_input.edges()]
@@ -201,11 +263,11 @@ def fit_layer_communities(
             comms = {}
             for idx, comm in enumerate(partition.membership):
                 node = node_list[idx]
-                node_id = node + 1 if zero_indexed else node
+                node_id = node + off if off else node
                 membership[node_id] = comm + 1
                 comms.setdefault(comm + 1, []).append(node_id)
             for k in comms:
-                comms[k] = sorted(comms[k])
+                comms[k] = sorted(comms[k], key=_sort_key)
 
             mod = None if directed or effective_objective == "cpm" or ig_graph.ecount() == 0 else ig_graph.modularity(partition.membership, weights=weights if weights else None)
             fits.append(LayerCommunityFit(membership=membership, modularity=mod, communities=comms))
@@ -258,15 +320,15 @@ def weighted_overlap_similarity(a: list[int], b: list[int], weights_a: dict[int,
 def layer_node_strengths(graph_layers: list[nx.Graph | nx.DiGraph], directed: bool = False) -> list[dict]:
     strengths: list[dict] = []
     for graph in graph_layers:
-        zero_indexed = _is_zero_indexed(graph)
+        off = _id_offset(graph)
         if directed and isinstance(graph, nx.DiGraph):
             node_strength = {
-                (node + 1 if zero_indexed else node): float(graph.in_degree(node, weight="weight") + graph.out_degree(node, weight="weight"))
+                (node + off if off else node): float(graph.in_degree(node, weight="weight") + graph.out_degree(node, weight="weight"))
                 for node in graph.nodes()
             }
         else:
             node_strength = {
-                (node + 1 if zero_indexed else node): float(graph.degree(node, weight="weight"))
+                (node + off if off else node): float(graph.degree(node, weight="weight"))
                 for node in graph.nodes()
             }
         strengths.append(node_strength)
@@ -297,7 +359,12 @@ def community_overlap_edges(
         to_comms = fit[to_idx - 1].communities
 
         for from_c, from_nodes in from_comms.items():
+            from_set = set(from_nodes)
             for to_c, to_nodes in to_comms.items():
+                # communities with no shared node have zero similarity under
+                # every metric; they are not stored (as in R) ----
+                if from_set.isdisjoint(to_nodes):
+                    continue
                 if node_weights_by_layer is None:
                     sim = sim_fun(from_nodes, to_nodes)
                 else:
@@ -433,7 +500,7 @@ def detect_interlayer_communities(
         offset = 0
         for t in range(n_layers):
             mem_dict = layer_communities[t].membership
-            node_ids = sorted(mem_dict.keys())
+            node_ids = sorted(mem_dict.keys(), key=_sort_key)
             mem = np.array([mem_dict[nid] for nid in node_ids], dtype=int)
             membership.append(mem + offset)
             offset += int(mem.max()) if mem.size else 0
@@ -500,11 +567,13 @@ def detect_interlayer_communities(
             weights = [w for _, _, w in edges]
             ig_graph = ig.Graph(n=len(supernodes), edges=ig_edges, directed=False)
             ig_graph.es["weight"] = weights
+            # three Leiden iterations, as in the R package's second stage
             partition = leidenalg.find_partition(
                 ig_graph,
                 leidenalg.RBConfigurationVertexPartition,
                 weights=weights,
                 resolution_parameter=resolution_parameter,
+                n_iterations=3,
                 seed=seed,
             )
             meta_ids = {
@@ -516,7 +585,7 @@ def detect_interlayer_communities(
     membership = []
     for t in range(n_layers):
         mem_dict = layer_communities[t].membership
-        node_ids = sorted(mem_dict.keys())
+        node_ids = sorted(mem_dict.keys(), key=_sort_key)
         mem = np.array(
             [meta_ids[key(t + 1, int(mem_dict[nid]))] for nid in node_ids],
             dtype=int,
@@ -577,16 +646,13 @@ def detect_multislice_communities(
         return f"L{layer}N{node}"
 
     # Per-layer canonical node ids: match the ids used in the per-layer
-    # membership dict (node + 1 when the layer is zero-indexed, else the node
-    # name). The identity ties' `node` values are built the same way in
+    # membership dict (see ``_id_offset``). The identity ties' `node` values are built the same way in
     # fit_multilayer_identity_ties, so intra and inter keys line up.
     layer_nodes = []  # per layer: list of (graph_node, canonical_id) in node order
     for g in graph_layers:
-        zero = _is_zero_indexed(g)
-        nodes_sorted = sorted(g.nodes())
-        layer_nodes.append(
-            [(n, (n + 1 if zero else n)) for n in nodes_sorted]
-        )
+        off = _id_offset(g)
+        nodes_sorted = sorted(g.nodes(), key=_sort_key)
+        layer_nodes.append([(n, n + off if off else n) for n in nodes_sorted])
 
     # Supra vertices: one per (layer, node), layers 1-indexed.
     supra: list[str] = []

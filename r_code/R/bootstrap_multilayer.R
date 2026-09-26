@@ -26,8 +26,8 @@
 #' @param fit_type One of \code{"jaccard"}, \code{"overlap"},
 #' \code{"weighted_jaccard"}, \code{"weighted_overlap"}, \code{"identity"}.
 #'
-#' @param algorithm Community detection algorithm: \code{"louvain"} or
-#' \code{"leiden"}.
+#' @param algorithm Community detection algorithm: \code{"leiden"} (default)
+#' or \code{"louvain"}.
 #'
 #' @param n_boot Number of bootstrap replicates.
 #'
@@ -41,7 +41,9 @@
 #'
 #' @param seed Optional random seed for reproducibility.
 #'
-#' @param objective One of "cpm" or "modularity" for directed networks only
+#' @param objective Objective for the first-stage (per-layer) detection,
+#' passed to the fit function: `"modularity"` or `"cpm"` (Leiden only).
+#' Defaults to `"cpm"` for directed layers and `"modularity"` otherwise.
 #'
 #' @return A list of class \code{"multilayer_bootstrap"} with components:
 #'   \describe{
@@ -95,7 +97,7 @@ bootstrap_multilayer <- function(
       "weighted_overlap",
       "identity"
     ),
-    algorithm = c("louvain", "leiden"),
+    algorithm = c("leiden", "louvain"),
     n_boot = 100,
     layer_links = NULL,
     min_similarity = 0,

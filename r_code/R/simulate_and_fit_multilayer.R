@@ -13,9 +13,10 @@
 #'
 #' @param p_out Probability of an out-community edge.
 #'
-#' @param fit_type One of `"jaccard"`, `"overlap"`, or `"identity"`.
+#' @param fit_type One of `"jaccard"`, `"overlap"`, `"weighted_jaccard"`,
+#' `"weighted_overlap"`, or `"identity"`.
 #'
-#' @param algorithm Community algorithm for fitting: `"louvain"` or `"leiden"`.
+#' @param algorithm Community algorithm for fitting: `"leiden"` (default) or `"louvain"`.
 #'
 #' @param layer_links Optional layer connectivity specification.
 #'
@@ -54,7 +55,7 @@ simulate_and_fit_multilayer <- function(
       "weighted_overlap",
       "identity"
     ),
-    algorithm = c("louvain", "leiden"),
+    algorithm = c("leiden", "louvain"),
     layer_links = NULL,
     min_similarity = 0,
     seed = NULL,

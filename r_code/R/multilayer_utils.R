@@ -42,6 +42,22 @@ prepare_multilayer_graphs <- function(layers, directed = FALSE, require_same_nod
       )
     }
 
+    # reject layers without vertices ----
+    if (igraph::vcount(layer_graph) == 0) {
+      stop(sprintf("Layer %d has no vertices. Drop empty layers before fitting.", i), call. = FALSE)
+    }
+
+    # input policy (same in R and Python): within-layer self-loops and
+    # zero-weight edges are dropped, so an igraph input and the equivalent
+    # adjacency matrix give the same graph ----
+    loops <- which(igraph::which_loop(layer_graph))
+    if (length(loops)) layer_graph <- igraph::delete_edges(layer_graph, loops)
+    w <- igraph::E(layer_graph)$weight
+    if (!is.null(w)) {
+      zero <- which(!is.na(w) & w == 0)
+      if (length(zero)) layer_graph <- igraph::delete_edges(layer_graph, zero)
+    }
+
     # return layer graph ----
     return(layer_graph)
   })
@@ -166,7 +182,7 @@ make_layer_links <- function(n_layers, layer_links = NULL) {
 
 fit_layer_communities <- function(
     graph_layers,
-    algorithm = c("louvain", "leiden"),
+    algorithm = c("leiden", "louvain"),
     resolution_parameter = 1,
     directed = FALSE,
     objective = NULL
@@ -637,7 +653,7 @@ add_community_self_loops <- function(
 detect_interlayer_communities <- function(
     layer_communities,
     interlayer_ties,
-    algorithm = c("louvain", "leiden"),
+    algorithm = c("leiden", "louvain"),
     resolution_parameter = 1
   ) {
 
@@ -766,7 +782,7 @@ detect_interlayer_communities <- function(
 detect_multislice_communities <- function(
     graph_layers,
     interlayer_ties,
-    algorithm = c("louvain", "leiden"),
+    algorithm = c("leiden", "louvain"),
     omega = 1,
     resolution_parameter = 1,
     seed = NULL,

@@ -20,7 +20,7 @@
 #' @param layers List of `igraph` objects or square adjacency matrices.
 #'
 #' @param algorithm Community algorithm for the per-layer (first-stage)
-#' partitions: `"louvain"` or `"leiden"`. The multislice meta-communities
+#' partitions: `"leiden"` (default) or `"louvain"`. The multislice meta-communities
 #' always use the generalized Louvain optimiser.
 #'
 #' @param layer_links Optional data.frame defining which layers to connect,
@@ -43,7 +43,11 @@
 #' community detection (igraph supports Leiden on undirected graphs only;
 #' a warning is issued for `algorithm = "leiden"`).
 #'
-#' @param objective One of "cpm" or "modularity" for directed networks only
+#' @param objective Objective for the first-stage (per-layer) detection
+#' stored in `layer_communities`: `"modularity"` or `"cpm"` (CPM requires
+#' `algorithm = "leiden"`). Defaults to `"cpm"` for directed layers and
+#' `"modularity"` otherwise. It does not affect `meta_communities`, which
+#' always optimize multislice modularity.
 #'
 #' @param seed Optional integer seed for reproducible community detection.
 #' When supplied, the global RNG state is saved, the RNG is seeded for the
@@ -96,7 +100,7 @@
 
 fit_multilayer_identity_ties <- function(
     layers,
-    algorithm = c("louvain", "leiden"),
+    algorithm = c("leiden", "louvain"),
     layer_links = NULL,
     resolution_parameter = 1,
     omega = 1,

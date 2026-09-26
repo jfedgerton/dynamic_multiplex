@@ -6,7 +6,7 @@
 \usage{
 fit_multilayer_identity_ties(
   layers,
-  algorithm = c("louvain", "leiden"),
+  algorithm = c("leiden", "louvain"),
   layer_links = NULL,
   resolution_parameter = 1,
   omega = 1,
@@ -20,7 +20,7 @@ fit_multilayer_identity_ties(
 \item{layers}{List of \code{igraph} objects or square adjacency matrices.}
 
 \item{algorithm}{Community algorithm for the per-layer (first-stage)
-partitions: \code{"louvain"} or \code{"leiden"}. The multislice meta-communities
+partitions: \code{"leiden"} (default) or \code{"louvain"}. The multislice meta-communities
 always use the generalized Louvain optimiser.}
 
 \item{layer_links}{Optional data.frame defining which layers to connect,
@@ -43,7 +43,11 @@ matrices. Directed layers are collapsed to undirected weighted graphs before
 community detection (igraph supports Leiden on undirected graphs only;
 a warning is issued for \code{algorithm = "leiden"}).}
 
-\item{objective}{One of "cpm" or "modularity" for directed networks only}
+\item{objective}{Objective for the first-stage (per-layer) detection
+stored in \code{layer_communities}: \code{"modularity"} or \code{"cpm"} (CPM requires
+\code{algorithm = "leiden"}). Defaults to \code{"cpm"} for directed layers and
+\code{"modularity"} otherwise. It does not affect \code{meta_communities}, which
+always optimize multislice modularity.}
 
 \item{seed}{Optional integer seed for reproducible community detection.
 When supplied, the global RNG state is saved, the RNG is seeded for the

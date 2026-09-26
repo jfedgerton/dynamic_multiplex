@@ -7,8 +7,9 @@
 plot_multilayer_alluvial(fit, max_nodes = NULL, palette = "Dark2")
 }
 \arguments{
-\item{fit}{Fit object from \code{fit_multilayer_jaccard()},
-\code{fit_multilayer_overlap()}, or \code{fit_multilayer_identity_ties()}.}
+\item{fit}{Fit object from any \verb{fit_multilayer_*()} function. Flows follow
+each actor (by vertex name when the layers are named) across the tracked
+\code{meta_communities}.}
 
 \item{max_nodes}{Optional cap on number of nodes to include for readability.}
 

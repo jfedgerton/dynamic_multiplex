@@ -1,6 +1,42 @@
 # dynamicmultiplex (development version)
 
+## Changes in defaults
+
+* All fit functions, `bootstrap_multilayer()` and
+  `simulate_and_fit_multilayer()` now default to `algorithm = "leiden"`
+  (previously `"louvain"`), matching the Python package. Pass
+  `algorithm = "louvain"` to reproduce earlier default results.
+
+* Input policy (shared with the Python package): within-layer self-loops and
+  zero-weight edges are dropped for both adjacency-matrix and `igraph` input.
+  Previously a loop-bearing `igraph` layer kept its loops while the
+  equivalent matrix did not. Layers with no vertices now stop with a clear
+  error.
+
 ## Bug fixes
+
+* `fit_multilayer_hungarian()` matched nodes by position, so two layers with
+  the same named vertices stored in different orders produced spurious label
+  changes. Matching now uses vertex names (positions only for unnamed
+  layers), and the function gains `allow_unequal_nodes` for layers with
+  different named node sets.
+
+* `plot_multilayer_series()` and `animate_multilayer_gif()` dropped every edge
+  of graphs with named vertices (coordinates were indexed by name). Both now
+  color nodes by the tracked `meta_communities` rather than the layer-local
+  first-stage labels, interpolate the palette when there are more than eight
+  communities (previously an error), and the series plot uses free panel
+  scales.
+
+* `plot_multilayer_alluvial()` converted actor names to layer-local
+  positions, so it could connect different actors across layers. Flows now
+  follow actors by name, use the tracked `meta_communities`, and are drawn
+  with `ggalluvial::geom_flow()` (no warning when an actor changes community).
+
+* Documentation: `objective` sets only the first-stage (per-layer) objective;
+  the second stage always maximizes modularity (multislice modularity for
+  `fit_multilayer_identity_ties()`). README corrections (package name,
+  identity-tie description, five simulator fit types).
 
 * `fit_multilayer_identity_ties()` (generalized Louvain multislice): the
   restart-selection score omitted a factor of 2 on the within-community edge

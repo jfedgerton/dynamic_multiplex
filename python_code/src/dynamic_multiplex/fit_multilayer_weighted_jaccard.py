@@ -22,8 +22,22 @@ def fit_multilayer_weighted_jaccard(
     self_loop_multiplier: float = 1.0,
     objective: str | None = None,
     seed: int | None = 123,
+    allow_unequal_nodes: bool = False,
 ):
     """Fit per-layer communities and node-strength-weighted Jaccard ties.
+
+    Parameters
+    ----------
+    objective : str | None
+        Objective for the first-stage (per-layer) detection: ``"modularity"``
+        or ``"cpm"`` (Leiden only). Defaults to ``"cpm"`` for directed layers
+        and ``"modularity"`` otherwise. It does not affect the second stage,
+        which always maximises modularity on the community graph.
+    allow_unequal_nodes : bool
+        If True, layers may hold different node sets (actors entering or
+        leaving). Layers must then be networkx graphs with node labels; nodes
+        are matched across layers by label and only nodes present in both
+        layers of a linked pair contribute to the similarity. Default False.
 
     Returns
     -------
@@ -34,7 +48,9 @@ def fit_multilayer_weighted_jaccard(
         ``extract_meta_membership``), ``meta_ids``, ``interlayer_ties``, and
         ``layer_links``.
     """
-    graph_layers = prepare_multilayer_graphs(layers, directed=directed)
+    graph_layers = prepare_multilayer_graphs(
+        layers, directed=directed, require_same_nodes=not allow_unequal_nodes
+    )
     links = make_layer_links(len(graph_layers), layer_links)
     fit = fit_layer_communities(
         graph_layers,

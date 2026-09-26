@@ -8,23 +8,31 @@ Standard multislice approaches (Mucha et al. 2010) connect all layers to all lay
 
 ## Functions
 
+> Note: with `directed=True`, Leiden keeps edge direction in the per-layer detection; Louvain collapses directed layers to undirected weighted graphs (reciprocal arcs summed). The second stage (community graph, or multislice for identity ties) is undirected.
+
 - `fit_multilayer_jaccard()`
-  - Fits Louvain or Leiden communities on each layer.
-  - Builds interlayer ties between communities using Jaccard similarity across selected layer pairs.
+  - Fits Leiden (default) or Louvain communities on each layer, links communities in the selected layer pairs by the Jaccard index of their members, and groups the linked communities into cross-layer meta-communities with a second community detection on the community graph.
 - `fit_multilayer_overlap()`
-  - Fits Louvain or Leiden communities on each layer.
-  - Builds interlayer ties between communities using overlap coefficient across selected layer pairs.
+  - Fits Leiden (default) or Louvain communities on each layer, links communities in the selected layer pairs by the overlap coefficient of their members, and groups the linked communities into cross-layer meta-communities with a second community detection on the community graph.
 - `fit_multilayer_weighted_jaccard()`
-  - Fits Louvain or Leiden communities on each layer.
-  - Builds interlayer ties using node-strength weighted Jaccard similarity across selected layer pairs.
+  - Fits Leiden (default) or Louvain communities on each layer, links communities in the selected layer pairs by a node-strength weighted Jaccard index, and groups the linked communities into cross-layer meta-communities with a second community detection on the community graph.
 - `fit_multilayer_weighted_overlap()`
-  - Fits Louvain or Leiden communities on each layer.
-  - Builds interlayer ties using node-strength weighted overlap coefficient across selected layer pairs.
+  - Fits Leiden (default) or Louvain communities on each layer, links communities in the selected layer pairs by a node-strength weighted overlap coefficient, and groups the linked communities into cross-layer meta-communities with a second community detection on the community graph.
 - `fit_multilayer_identity_ties()`
-  - Fits Louvain or Leiden communities on each layer.
-  - Builds interlayer ties only for the same node across selected adjacent layers.
+  - Multislice modularity (Mucha et al. 2010): ties each node to its own copy in the selected layer pairs (weight = layer-link weight times `omega`) and detects meta-communities jointly on the coupled layers.
+- `fit_multilayer_hungarian()`
+  - Fits communities on each layer independently, then aligns labels between consecutive layers with Hungarian matching on community overlap (a snapshot-and-match baseline).
 - `simulate_and_fit_multilayer()`
-  - Simulates multiplex layers from a planted partition process and runs one of the three fitting strategies.
+  - Simulates multiplex layers from a planted partition process and runs one of the five fit types (`jaccard`, `overlap`, `weighted_jaccard`, `weighted_overlap`, `identity`).
+- `bootstrap_multilayer()`, `partition_stability()`, `co_assignment_ci()`
+  - Parametric network bootstrap of a fit, the stability score, and co-assignment intervals.
+
+## Input handling
+
+- Layers must share one node set unless `allow_unequal_nodes=True`. With unequal node sets, pass networkx graphs with node labels; nodes are matched across layers by label and keep their labels as ids.
+- Within-layer self-loops and zero-weight edges are dropped (the same rule as the R package).
+- `objective` sets the first-stage (per-layer) objective only; the second stage always maximizes modularity.
+- `seed=123` by default; pass `seed=None` for unseeded detection. The R package defaults to `seed = NULL` (the caller's random number stream).
 
 ## Installation (development)
 

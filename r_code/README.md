@@ -1,33 +1,40 @@
-# dynamic_multiplex
+# dynamicmultiplex
 
-`dynamic_multiplex` is an R package for multiplex community modeling with customizable interlayer ties.
+`dynamicmultiplex` is an R package for multiplex community modeling with customizable interlayer ties.
 
 ## Why this package
 
-Standard multislice approaches (Mucha et al. 2010) connect all layers to all layers, meaning community structure at distant time periods influences assignments everywhere. When applied to temporal data, this creates a pooling problem: the community configuration at 2010 affects the structure detected at 1950. `dynamic_multiplex` provides explicit control over *which layers influence which layers* via a `layer_links` argument (`from`, `to`, `weight`), defaulting to adjacent-only temporal coupling.
+Standard multislice approaches (Mucha et al. 2010) connect all layers to all layers, meaning community structure at distant time periods influences assignments everywhere. When applied to temporal data, this creates a pooling problem: the community configuration at 2010 affects the structure detected at 1950. `dynamicmultiplex` provides explicit control over *which layers influence which layers* via a `layer_links` argument (`from`, `to`, `weight`), defaulting to adjacent-only temporal coupling.
 
 ## Functions
 
-> Note: Louvain in `igraph` is undirected. When `directed = TRUE` and `algorithm = "louvain"`, layers are collapsed to undirected weighted graphs before clustering.
-
+> Note: `igraph`'s Louvain and Leiden are undirected. When `directed = TRUE`, layers are collapsed to undirected weighted graphs (reciprocal arcs summed) before clustering; the Python package keeps edge direction for Leiden.
 
 - `fit_multilayer_jaccard()`
-  - Fits Louvain or Leiden communities on each layer (supports directed layers).
-  - Builds interlayer ties between communities using Jaccard similarity across selected layer pairs.
+  - Fits Leiden (default) or Louvain communities on each layer, links communities in the selected layer pairs by the Jaccard index of their members, and groups the linked communities into cross-layer meta-communities with a second community detection on the community graph.
 - `fit_multilayer_overlap()`
-  - Fits Louvain or Leiden communities on each layer (supports directed layers).
-  - Builds interlayer ties between communities using overlap coefficient across selected layer pairs.
+  - Fits Leiden (default) or Louvain communities on each layer, links communities in the selected layer pairs by the overlap coefficient of their members, and groups the linked communities into cross-layer meta-communities with a second community detection on the community graph.
 - `fit_multilayer_weighted_jaccard()`
-  - Fits Louvain or Leiden communities on each layer (supports directed layers).
-  - Builds interlayer ties using node-strength weighted Jaccard similarity across selected layer pairs.
+  - Fits Leiden (default) or Louvain communities on each layer, links communities in the selected layer pairs by a node-strength weighted Jaccard index, and groups the linked communities into cross-layer meta-communities with a second community detection on the community graph.
 - `fit_multilayer_weighted_overlap()`
-  - Fits Louvain or Leiden communities on each layer (supports directed layers).
-  - Builds interlayer ties using node-strength weighted overlap coefficient across selected layer pairs.
+  - Fits Leiden (default) or Louvain communities on each layer, links communities in the selected layer pairs by a node-strength weighted overlap coefficient, and groups the linked communities into cross-layer meta-communities with a second community detection on the community graph.
 - `fit_multilayer_identity_ties()`
-  - Fits Louvain or Leiden communities on each layer (supports directed layers).
-  - Builds interlayer ties only for the same node across selected adjacent layers.
+  - Multislice modularity (Mucha et al. 2010): ties each node to its own copy in the selected layer pairs (weight = layer-link weight times `omega`) and detects meta-communities jointly on the coupled layers.
+- `fit_multilayer_hungarian()`
+  - Fits communities on each layer independently, then aligns labels between consecutive layers with Hungarian matching on community overlap (a snapshot-and-match baseline).
 - `simulate_and_fit_multilayer()`
-  - Simulates multiplex layers from a planted partition process and runs one of the three fitting strategies.
+  - Simulates multiplex layers from a planted partition process and runs one of the five fit types (`jaccard`, `overlap`, `weighted_jaccard`, `weighted_overlap`, `identity`).
+- `bootstrap_multilayer()`, `partition_stability()`, `co_assignment_ci()`
+  - Parametric network bootstrap of a fit, the stability score, and co-assignment intervals.
+- `plot_multilayer_series()`, `animate_multilayer_gif()`, `plot_multilayer_alluvial()`
+  - Plots colored by the tracked meta-communities.
+
+## Input handling
+
+- Layers must share one node set unless `allow_unequal_nodes = TRUE`. With unequal node sets, every layer needs vertex names (igraph names or adjacency-matrix dimnames); nodes are matched across layers by name.
+- Within-layer self-loops and zero-weight edges are dropped (the same rule as the Python package).
+- `objective` sets the first-stage (per-layer) objective only; the second stage always maximizes modularity.
+- `seed = NULL` (the default) uses the caller's random number stream; pass an integer for a reproducible fit. The Python package defaults to `seed=123`.
 
 ## Installation
 

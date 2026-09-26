@@ -170,8 +170,13 @@ Tw <- reshape(Tj, idvar = c("dyad_id", "dyad", "type"), timevar = "net", directi
 Tw <- merge(D[, c("id", "y1", "y2")], Tw, by.x = "id", by.y = "dyad_id")
 Tw <- Tw[order(Tw$type, Tw$id), ]
 cell <- function(x) ifelse(is.na(x), "--", sprintf("%.2f", x))
-tex <- c("\\begin{tabular}{llcccc}", "\\toprule",
-         "Dyad & Period & ATOP & IGO & Trade & DCA \\\\", "\\midrule",
+# Rows for a longtable; the \\begin{longtable}, caption and label live in appendix.tex
+hdr <- "Dyad & Period & ATOP & IGO & Trade & DCA \\\\"
+tex <- c("\\toprule", hdr, "\\midrule", "\\endfirsthead",
+         "\\multicolumn{6}{l}{\\textit{Table~\\ref{tab:app_alignment} continued}} \\\\",
+         "\\toprule", hdr, "\\midrule", "\\endhead",
+         "\\midrule", "\\multicolumn{6}{r}{\\textit{continued on next page}} \\\\", "\\endfoot",
+         "\\bottomrule", "\\endlastfoot",
          "\\multicolumn{6}{l}{\\emph{Aligned (expect near 1)}} \\\\")
 for (ty in c("aligned", "anti")) {
   if (ty == "anti") tex <- c(tex, "\\addlinespace", "\\multicolumn{6}{l}{\\emph{Anti-aligned (expect near 0)}} \\\\")
@@ -179,7 +184,6 @@ for (ty in c("aligned", "anti")) {
     tex <- c(tex, sprintf("%s & %d--%d & %s & %s & %s & %s \\\\", Tw$dyad[i], Tw$y1[i], Tw$y2[i],
                           cell(Tw[["same.atop"]][i]), cell(Tw[["same.igo"]][i]), cell(Tw[["same.trade"]][i]), cell(Tw[["same.dca"]][i])))
 }
-tex <- c(tex, "\\bottomrule", "\\end{tabular}")
 writeLines(tex, file.path(TAB, "tab_app_alignment.tex"))
 
 # ---------------------------------------------------------------------------

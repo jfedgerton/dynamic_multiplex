@@ -161,7 +161,7 @@ for(net in NETS){
 for (t in seq_along(yrs)) {
   y <- yrs[t]; d <- dg[[t]]; A0 <- P[[meth[1]]][[t]]
   al <- names(d)[d > 0]; al <- al[al %in% names(A0)]
-  if (length(al) < 8) next
+  # no minimum layer size: every year with an active coded order (>= 3 present states) is scored
   # coded sets of the orders active in year y, at least 3 members present
   Bs <- list(); kinds <- character(0)
   for (o in ORD) {

@@ -24,17 +24,20 @@ Standard multislice approaches (Mucha et al. 2010) connect all layers to all lay
   - Fits communities on each layer independently, then aligns labels between consecutive layers with Hungarian matching on community overlap (a snapshot-and-match baseline).
 - `simulate_and_fit_multilayer()`
   - Simulates multiplex layers from a planted partition process and runs one of the five fit types (`jaccard`, `overlap`, `weighted_jaccard`, `weighted_overlap`, `identity`).
-- `bootstrap_multilayer()`, `partition_stability()`, `co_assignment_ci()`
-  - Parametric network bootstrap of a fit, the stability score, and co-assignment intervals.
+- `layers_from_membership()`
+  - Builds one weighted layer per time slice from group memberships (for example states in IGOs): shared-group counts, size-weighted, or Kumar hypergraph reweighting. No weighting is the default; each slice is built on its own.
+- `bootstrap_multilayer()`, `partition_stability()`
+  - Parametric network bootstrap of a fit and the stability score s, for comparing two fits of the same network. Since 1.4.0 no interval or accuracy-floor outputs are reported.
 - `plot_multilayer_series()`, `animate_multilayer_gif()`, `plot_multilayer_alluvial()`
   - Plots colored by the tracked meta-communities.
 
 ## Input handling
 
-- Layers must share one node set unless `allow_unequal_nodes = TRUE`. With unequal node sets, every layer needs vertex names (igraph names or adjacency-matrix dimnames); nodes are matched across layers by name.
+- Layers must share one node set unless `allow_unequal_nodes = TRUE`. Nodes may then enter and leave, with or without a change in layer size; every layer needs vertex names (igraph names or adjacency-matrix dimnames), and nodes are matched across layers by name. This holds for every fit function and for `bootstrap_multilayer()`.
 - Within-layer self-loops and zero-weight edges are dropped (the same rule as the Python package).
+- Two-stage fits: `repair_chains = TRUE` rejoins groups that stage 2 cut along time (mutual best match with similarity at least `repair_min_similarity`, default 0.2); `tracking = "filtered"` makes the meta ids of layers 1..t depend only on layers 1..t. Both are off by default.
 - `objective` sets the first-stage (per-layer) objective only; the second stage always maximizes modularity.
-- `seed = NULL` (the default) uses the caller's random number stream; pass an integer for a reproducible fit. The Python package defaults to `seed=123`.
+- `seed = 123` by default (since 1.4.0, as in the Python package); pass `seed = NULL` for unseeded detection. The caller's random number stream is restored after the fit.
 
 ## Installation
 

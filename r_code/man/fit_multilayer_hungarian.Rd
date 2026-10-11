@@ -10,7 +10,7 @@ fit_multilayer_hungarian(
   resolution_parameter = 1,
   directed = FALSE,
   objective = NULL,
-  seed = NULL,
+  seed = 123,
   allow_unequal_nodes = FALSE
 )
 }
@@ -29,7 +29,8 @@ package).}
 or \code{"cpm"} (Leiden only). Defaults to \code{"cpm"} for directed layers
 and \code{"modularity"} otherwise.}
 
-\item{seed}{Optional integer seed for reproducible community detection.
+\item{seed}{Integer seed for reproducible community detection (default 123, as in
+the Python package; pass NULL for unseeded detection).
 When supplied, the global RNG state is saved, the RNG is seeded for the
 duration of the call, and the previous state is restored on exit, so the
 caller's random number stream (e.g. bootstrap resampling) is unaffected.

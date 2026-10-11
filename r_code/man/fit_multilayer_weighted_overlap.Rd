@@ -15,8 +15,11 @@ fit_multilayer_weighted_overlap(
   add_self_loops = TRUE,
   self_loop_multiplier = 1,
   objective = NULL,
-  seed = NULL,
-  allow_unequal_nodes = FALSE
+  seed = 123,
+  allow_unequal_nodes = FALSE,
+  tracking = "smoothed",
+  repair_chains = FALSE,
+  repair_min_similarity = 0.2
 )
 }
 \arguments{
@@ -48,7 +51,8 @@ ties.}
 affect the second stage, which always maximizes modularity on the
 community graph.}
 
-\item{seed}{Optional integer seed for reproducible community detection.
+\item{seed}{Integer seed for reproducible community detection (default 123, as in
+the Python package; pass NULL for unseeded detection).
 When supplied, the global RNG state is saved, the RNG is seeded for the
 duration of the call, and the previous state is restored on exit, so the
 caller's random number stream (e.g. bootstrap resampling) is unaffected.
@@ -61,6 +65,21 @@ then carry vertex names (or row names on the adjacency matrices) so nodes
 can be matched across layers; only nodes present in both layers of a
 linked pair contribute to the interlayer similarity. Defaults to \code{FALSE}:
 layers must share the same node universe.}
+
+\item{tracking}{\code{"smoothed"} (default, the 1.3.2 behaviour): stage 2
+is fitted on all layers at once, so a layer's meta ids can depend on later
+layers. \code{"filtered"}: stage 2 runs forward in time and the meta ids of
+layers 1..t depend only on layers 1..t (no future information). Filtered
+mode assumes the layers are in time order.}
+
+\item{repair_chains}{Logical. If \code{TRUE}, rejoin meta-communities that
+stage 2 cut along time: a group that ends at layer s and one that starts at
+a linked layer t are joined when their communities are mutual best matches
+with similarity at least \code{repair_min_similarity}. Default \code{FALSE}
+(1.3.2 behaviour).}
+
+\item{repair_min_similarity}{Similarity floor for chain repair, between 0 and 1.
+Default 0.2.}
 }
 \value{
 A list of class \code{"multilayer_community_fit"} with components:

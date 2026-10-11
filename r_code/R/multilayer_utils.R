@@ -85,9 +85,10 @@ prepare_multilayer_graphs <- function(layers, directed = FALSE, require_same_nod
   } else {
     ## unequal node sets are matched by vertex NAME, so every layer must carry
     ## names; positions would silently pair unrelated nodes ----
+    ## (1.4.0) checked whatever the layer sizes: nodes can enter and leave
+    ## while the size stays the same ----
     named <- vapply(graph_layers, function(g) !is.null(igraph::V(g)$name), logical(1))
-    sizes <- vapply(graph_layers, function(g) as.numeric(igraph::vcount(g)), numeric(1))
-    if (!all(named) && length(unique(sizes)) > 1L) {
+    if (!all(named)) {
       stop(
         "allow_unequal_nodes = TRUE requires vertex names on every layer ",
         "(igraph vertex names, or dimnames on adjacency matrices) so that nodes ",
@@ -745,6 +746,310 @@ detect_interlayer_communities <- function(
 }
 
 
+# ---------------------------------------------------------------------------
+# 1.4.0: chain repair and filtered (past-only) tracking for the two-stage fits
+# (mirrors python_code/src/dynamic_multiplex/multilayer_utils.py)
+# ---------------------------------------------------------------------------
+
+.parse_key <- function(k) {
+  m <- regmatches(k, regexec("^L([0-9]+)C([0-9]+)$", k))
+  cbind(layer = as.integer(vapply(m, `[`, "", 2)), comm = as.integer(vapply(m, `[`, "", 3)))
+}
+
+# per-layer node membership (layer vertex order) from supernode meta ids
+.membership_from_meta <- function(layer_communities, meta_ids) {
+  lapply(seq_along(layer_communities), function(t) {
+    mem <- layer_communities[[t]]$membership
+    as.integer(meta_ids[paste0("L", t, "C", as.integer(mem))])
+  })
+}
+
+# relabel meta ids 1..K in order of first appearance (layer, then community id)
+.renumber_first_appearance <- function(meta_ids) {
+  pk <- .parse_key(names(meta_ids))
+  o <- order(pk[, "layer"], pk[, "comm"])
+  ids <- meta_ids[o]
+  out <- integer(length(meta_ids))
+  out[o] <- match(ids, unique(ids))
+  stats::setNames(out, names(meta_ids))
+}
+
+# best match of every supernode into every linked layer, by similarity:
+# key "layer|comm|other_layer" -> c(similarity, other_comm); ties -> lower id
+.best_matches <- function(pair_ties) {
+  best <- new.env(hash = TRUE)
+  if (is.null(pair_ties) || !nrow(pair_ties)) return(best)
+  for (i in seq_len(nrow(pair_ties))) {
+    al <- pair_ties$from_layer[i]; ac <- pair_ties$from_community[i]
+    bl <- pair_ties$to_layer[i]; bc <- pair_ties$to_community[i]
+    if (al == bl) next
+    s <- pair_ties$similarity[i]
+    for (d in 1:2) {
+      xl <- if (d == 1) al else bl; xc <- if (d == 1) ac else bc
+      yl <- if (d == 1) bl else al; yc <- if (d == 1) bc else ac
+      key <- paste(xl, xc, yl, sep = "|")
+      cur <- best[[key]]
+      if (is.null(cur) || s > cur[1] || (s == cur[1] && yc < cur[2])) assign(key, c(s, yc), envir = best)
+    }
+  }
+  best
+}
+
+.check_repair_args <- function(tracking, repair_chains, repair_min_similarity) {
+  if (!is.character(tracking) || length(tracking) != 1L || !tracking %in% c("smoothed", "filtered"))
+    stop('`tracking` must be "smoothed" or "filtered".', call. = FALSE)
+  if (!is.logical(repair_chains) || length(repair_chains) != 1L || is.na(repair_chains))
+    stop("`repair_chains` must be TRUE or FALSE.", call. = FALSE)
+  if (!is.numeric(repair_min_similarity) || length(repair_min_similarity) != 1L ||
+      is.na(repair_min_similarity) || repair_min_similarity < 0 || repair_min_similarity > 1)
+    stop("`repair_min_similarity` must be between 0 and 1.", call. = FALSE)
+  invisible(TRUE)
+}
+
+.empty_repair_log <- function() {
+  data.frame(from_layer = integer(0), from_community = integer(0), to_layer = integer(0),
+             to_community = integer(0), similarity = numeric(0))
+}
+
+#' @title Rejoin meta-communities cut along time (chain repair)
+#'
+#' @description Stage-2 modularity tends to cut a long-lived community into
+#' time segments (a resolution-limit effect on chains of communities). For
+#' each layer link (s, t) with s < t, in increasing order, and each community
+#' a in layer s (by community id), the meta-community of community b in layer
+#' t is joined to that of a when (i) a and b are each other's best match
+#' across (s, t) by the fit's own similarity (mutual best match, as in
+#' Kawadia and Sreenivasan 2012), (ii) their similarity is at least
+#' \code{min_similarity} (a matching floor, as in Greene et al. 2010), and
+#' (iii) a's meta-community has no community after s and b's none before t,
+#' so groups that coexist are never merged.
+#'
+#' @param meta_ids Named integer vector of meta ids, names "L<layer>C<community>".
+#' @param pair_ties Interlayer ties without self-loops (columns from_layer,
+#'   to_layer, from_community, to_community, similarity).
+#' @param layer_links Layer links data frame (from, to).
+#' @param min_similarity Similarity floor in [0, 1].
+#' @return A list with \code{meta_ids} (repaired, renumbered 1..K by first
+#'   appearance) and \code{log} (one row per join).
+#' @noRd
+repair_meta_chains <- function(meta_ids, pair_ties, layer_links, min_similarity = 0.2) {
+  ids <- unique(as.integer(meta_ids))
+  root <- stats::setNames(ids, as.character(ids))
+  pk <- .parse_key(names(meta_ids))
+  layers_of <- lapply(split(pk[, "layer"], as.integer(meta_ids)), unique)
+  find <- function(m) {
+    m <- as.character(m)
+    while (root[[m]] != as.integer(m)) m <- as.character(root[[m]])
+    as.integer(m)
+  }
+  best <- .best_matches(pair_ties)
+  lp <- unique(t(apply(cbind(as.integer(layer_links$from), as.integer(layer_links$to)), 1, sort)))
+  lp <- lp[lp[, 1] != lp[, 2], , drop = FALSE]
+  lp <- lp[order(lp[, 1], lp[, 2]), , drop = FALSE]
+  log <- list()
+  for (r in seq_len(nrow(lp))) {
+    s <- lp[r, 1]; t <- lp[r, 2]
+    for (ca in sort(pk[pk[, "layer"] == s, "comm"])) {
+      fwd <- best[[paste(s, ca, t, sep = "|")]]
+      if (is.null(fwd)) next
+      sim <- fwd[1]; cb <- fwd[2]
+      bwd <- best[[paste(t, cb, s, sep = "|")]]
+      if (is.null(bwd) || bwd[2] != ca || sim < min_similarity) next
+      ra <- find(meta_ids[[paste0("L", s, "C", ca)]]); rb <- find(meta_ids[[paste0("L", t, "C", cb)]])
+      if (ra == rb) next
+      if (max(layers_of[[as.character(ra)]]) == s && min(layers_of[[as.character(rb)]]) == t) {
+        root[[as.character(rb)]] <- ra
+        layers_of[[as.character(ra)]] <- union(layers_of[[as.character(ra)]], layers_of[[as.character(rb)]])
+        layers_of[[as.character(rb)]] <- NULL
+        log[[length(log) + 1L]] <- data.frame(from_layer = as.integer(s), from_community = as.integer(ca),
+                                              to_layer = as.integer(t), to_community = as.integer(cb),
+                                              similarity = sim)
+      }
+    }
+  }
+  repaired <- stats::setNames(vapply(as.integer(meta_ids), find, integer(1)), names(meta_ids))
+  list(meta_ids = .renumber_first_appearance(repaired),
+       log = if (length(log)) do.call(rbind, log) else .empty_repair_log())
+}
+
+# stage-2 solver call on a weighted graph (same igraph calls as
+# detect_interlayer_communities); nodes = character names
+.cluster_weighted <- function(nodes, edge_df, algorithm, resolution_parameter) {
+  g <- igraph::graph_from_data_frame(d = edge_df, directed = FALSE,
+                                     vertices = data.frame(name = nodes, stringsAsFactors = FALSE))
+  cl <- if (algorithm == "louvain") {
+    igraph::cluster_louvain(graph = g, weights = igraph::E(g)$weight, resolution = resolution_parameter)
+  } else {
+    igraph::cluster_leiden(graph = g, objective_function = "modularity", weights = igraph::E(g)$weight,
+                           resolution = resolution_parameter, n_iterations = 3)
+  }
+  stats::setNames(as.integer(igraph::membership(cl)), igraph::V(g)$name)
+}
+
+#' @title Past-only (filtered) second stage
+#'
+#' @description The meta id of a layer-t community depends only on layers
+#' 1..t. At each layer t the package's community graph is built on layers 1..t
+#' from the links whose ends are both at or before t; every meta-community
+#' already assigned in layers before t is contracted into one read-only anchor
+#' (contraction keeps degrees and internal weights) and the graph is clustered
+#' with the same Leiden or Louvain call as the smoothed stage 2, reseeding
+#' with \code{seed} at every layer. A layer-t community takes the id of the
+#' anchor in its cluster with the strongest direct tie to it (then the
+#' strongest tie to the cluster's other layer-t communities, then the lower
+#' id); a cluster without an anchor starts a new id. Anchors are never
+#' relabelled. With \code{repair_chains}, a layer-t community that started a
+#' new id is joined to a group that ended at a linked earlier layer s under
+#' the rule of \code{repair_meta_chains}, using layers s and t only.
+#' @noRd
+detect_interlayer_communities_filtered <- function(
+    layer_communities, pair_ties, layer_links, algorithm = c("leiden", "louvain"),
+    resolution_parameter = 1, seed = 123, add_self_loops = TRUE, self_loop_multiplier = 1,
+    min_similarity = 0, directed = FALSE, repair_chains = FALSE, repair_min_similarity = 0.2) {
+
+  algorithm <- match.arg(algorithm)
+  n_layers <- length(layer_communities)
+  comms1 <- sort(as.integer(names(layer_communities[[1]]$communities)))
+  meta <- stats::setNames(seq_along(comms1), paste0("L1C", comms1))
+  next_id <- length(meta) + 1L
+  last_layer <- stats::setNames(rep(1L, length(meta)), as.character(meta))
+  log <- list()
+  has_ties <- !is.null(pair_ties) && nrow(pair_ties) > 0
+  best <- if (repair_chains && has_ties) .best_matches(pair_ties) else new.env()
+
+  for (t in 2:n_layers) {
+    if (n_layers < 2) break
+    lk <- layer_links[layer_links$from <= t & layer_links$to <= t, , drop = FALSE]
+    pt <- if (has_ties) pair_ties[pair_ties$from_layer <= t & pair_ties$to_layer <= t, , drop = FALSE] else pair_ties
+    ties <- pt
+    if (isTRUE(add_self_loops) && nrow(lk) > 0) {
+      ties <- add_community_self_loops(edge_df = pt, fit = layer_communities[seq_len(t)], layer_links = lk,
+                                       self_loop_multiplier = self_loop_multiplier,
+                                       min_similarity = min_similarity, directed = directed)
+    }
+    cur_c <- sort(as.integer(names(layer_communities[[t]]$communities)))
+    cur <- paste0("L", t, "C", cur_c)
+    start_id <- next_id
+
+    node_of <- function(k) {
+      lay <- .parse_key(k)[, "layer"]
+      ifelse(lay < t, paste0("A", meta[k]), k)
+    }
+    anchors <- paste0("A", sort(unique(as.integer(meta))))
+    nodes <- c(anchors, cur)
+    ord <- stats::setNames(seq_along(nodes), nodes)
+    edges <- NULL
+    if (!is.null(ties) && nrow(ties) > 0) {
+      u <- node_of(paste0("L", ties$from_layer, "C", ties$from_community))
+      v <- node_of(paste0("L", ties$to_layer, "C", ties$to_community))
+      swap <- ord[u] > ord[v]
+      a <- ifelse(swap, v, u); b <- ifelse(swap, u, v)
+      agg <- stats::aggregate(w ~ a + b, data = data.frame(a = a, b = b, w = ties$weighted_similarity,
+                                                           stringsAsFactors = FALSE), FUN = sum)
+      agg <- agg[order(ord[agg$a], ord[agg$b]), , drop = FALSE]
+      edges <- data.frame(from = agg$a, to = agg$b, weight = agg$w, stringsAsFactors = FALSE)
+    }
+
+    if (is.null(edges) || nrow(edges) == 0) {
+      for (k in cur) { meta[[k]] <- next_id; next_id <- next_id + 1L }
+    } else {
+      if (!is.null(seed)) set.seed(seed)
+      mem <- .cluster_weighted(nodes, edges, algorithm, resolution_parameter)
+      wkey <- paste(edges$from, edges$to)
+      w_between <- function(x, y) {
+        k <- if (ord[[x]] <= ord[[y]]) paste(x, y) else paste(y, x)
+        i <- match(k, wkey); if (is.na(i)) 0 else edges$weight[i]
+      }
+      clusters <- split(nodes, mem[nodes])
+      groups <- list()
+      for (members in clusters) {
+        frees <- members[!startsWith(members, "A")]
+        if (!length(frees)) next
+        groups[[length(groups) + 1L]] <- list(first = min(.parse_key(frees)[, "comm"]),
+                                              anc = members[startsWith(members, "A")], frees = frees)
+      }
+      groups <- groups[order(vapply(groups, `[[`, numeric(1), "first"))]
+      for (gr in groups) {
+        if (!length(gr$anc)) {
+          for (n in gr$frees) meta[[n]] <- next_id
+          next_id <- next_id + 1L
+          next
+        }
+        for (n in gr$frees) {
+          sc <- t(vapply(gr$anc, function(a) c(w_between(a, n), sum(vapply(gr$frees, function(f) w_between(a, f), numeric(1))),
+                                               -as.numeric(sub("^A", "", a))), numeric(3)))
+          o <- order(-sc[, 1], -sc[, 2], -sc[, 3])
+          meta[[n]] <- as.integer(sub("^A", "", gr$anc[o[1]]))
+        }
+      }
+    }
+
+    if (repair_chains && nrow(lk) > 0) {
+      lp <- unique(t(apply(cbind(as.integer(lk$from), as.integer(lk$to)), 1, sort)))
+      lp <- lp[lp[, 1] != lp[, 2] & lp[, 2] == t, , drop = FALSE]
+      for (s in sort(lp[, 1])) {
+        for (k in cur) {
+          if (meta[[k]] < start_id) next                       # only groups that start at t
+          cb <- .parse_key(k)[, "comm"]
+          bwd <- best[[paste(t, cb, s, sep = "|")]]
+          if (is.null(bwd)) next
+          sim <- bwd[1]; ca <- bwd[2]
+          fwd <- best[[paste(s, ca, t, sep = "|")]]
+          if (is.null(fwd) || fwd[2] != cb || sim < repair_min_similarity) next
+          ma <- meta[[paste0("L", s, "C", ca)]]
+          # a's group must have ended at s: last seen at s and absent from t
+          if (!identical(unname(last_layer[as.character(ma)]), as.integer(s)) || any(meta[cur] == ma)) next
+          mb <- meta[[k]]
+          meta[cur][meta[cur] == mb] <- ma
+          log[[length(log) + 1L]] <- data.frame(from_layer = as.integer(s), from_community = as.integer(ca),
+                                                to_layer = as.integer(t), to_community = as.integer(cb),
+                                                similarity = sim)
+        }
+      }
+    }
+    last_layer[as.character(meta[cur])] <- as.integer(t)
+  }
+
+  meta <- .renumber_first_appearance(meta)
+  list(meta_ids = meta, membership = .membership_from_meta(layer_communities, meta),
+       chain_repairs = if (length(log)) do.call(rbind, log) else .empty_repair_log())
+}
+
+# Second stage shared by the four two-stage fitters. tracking = "smoothed" with
+# repair_chains = FALSE is the 1.3.2 code path, unchanged.
+run_two_stage <- function(fit, pair_ties, links, add_self_loops, self_loop_multiplier, min_similarity,
+                          directed, algorithm, resolution_parameter, seed, tracking, repair_chains,
+                          repair_min_similarity) {
+  .check_repair_args(tracking, repair_chains, repair_min_similarity)
+  interlayer_ties <- pair_ties
+  if (isTRUE(add_self_loops)) {
+    interlayer_ties <- add_community_self_loops(edge_df = pair_ties, fit = fit, layer_links = links,
+                                                self_loop_multiplier = self_loop_multiplier,
+                                                min_similarity = min_similarity, directed = directed)
+  }
+  if (tracking == "smoothed") {
+    meta <- detect_interlayer_communities(layer_communities = fit, interlayer_ties = interlayer_ties,
+                                          algorithm = algorithm, resolution_parameter = resolution_parameter)
+    repairs <- .empty_repair_log()
+    if (repair_chains && !is.null(meta$meta_ids)) {
+      rep <- repair_meta_chains(meta$meta_ids, pair_ties, links, repair_min_similarity)
+      meta <- list(meta_ids = rep$meta_ids, membership = .membership_from_meta(fit, rep$meta_ids))
+      repairs <- rep$log
+    }
+  } else {
+    meta <- detect_interlayer_communities_filtered(
+      fit, pair_ties, links, algorithm = algorithm, resolution_parameter = resolution_parameter,
+      seed = seed, add_self_loops = add_self_loops, self_loop_multiplier = self_loop_multiplier,
+      min_similarity = min_similarity, directed = directed, repair_chains = repair_chains,
+      repair_min_similarity = repair_min_similarity)
+    repairs <- meta$chain_repairs
+  }
+  list(meta_ids = meta$meta_ids, membership = meta$membership, interlayer_ties = interlayer_ties,
+       chain_repairs = repairs, tracking = tracking, repair_chains = isTRUE(repair_chains),
+       repair_min_similarity = as.numeric(repair_min_similarity))
+}
+
+
 #' @title Multislice (Mucha) meta-communities for node-identity coupling
 #'
 #' @description Node-level second stage for the identity specification:
@@ -1050,7 +1355,10 @@ genlouvain_local_moving <- function(ef, et, ew, Kcur, inv2m, gamma, comm_init, m
       gain <- as.numeric(wc) - gamma * as.numeric(Ktot[cand, , drop = FALSE] %*% KS[v, ])
       ib <- which.max(gain); bg <- gain[ib]; best <- cand[ib]
       icv <- match(cv, cand)
-      stay <- if (is.na(icv)) 0 else gain[icv]             # staying alone has gain 0
+      # (1.4.0) exact gain of staying in cv even when v has no tie into cv;
+      # 0 was too high whenever cv still had other members, so the mover could
+      # refuse an improving move (same fix as the directed mover in 1.3.2) ----
+      stay <- if (!is.na(icv)) gain[icv] else -gamma * sum(Ktot[cv, ] * KS[v, ])
       if (bg <= stay + 1e-12) best <- cv
       Ktot[best, ] <- Ktot[best, ] + Kcur[v, ]
       if (best != cv) { comm[v] <- best; moved <- moved + 1L }

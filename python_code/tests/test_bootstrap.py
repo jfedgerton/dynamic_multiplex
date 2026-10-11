@@ -2,9 +2,8 @@ import numpy as np
 import pytest
 
 from dynamic_multiplex import (
+    partition_stability,
     bootstrap_multilayer,
-    co_assignment_ci,
-    community_est,
     extract_meta_membership,
     fit_multilayer_identity_ties,
     fit_multilayer_jaccard,
@@ -104,109 +103,6 @@ class TestBootstrapMultilayer:
         assert result.point_estimate["layer_links"].shape[0] == 1
 
 
-class TestCommunityEst:
-    def test_basic_output_structure(self):
-        layers = _make_planted_layers(n_nodes=20, n_layers=3)
-        boot = bootstrap_multilayer(layers, fit_type="jaccard", n_boot=10, seed=10)
-        est = community_est(boot)
-
-        assert "modularity_ci" not in est
-        assert "community_count_ci" not in est
-        assert "community_count" in est
-        assert "report" in est
-        assert "mean_node_stability" in est
-        assert "node_stability" in est
-        assert "co_assignment" in est
-
-        # Check shapes
-        assert est["community_count"].shape[0] == 3
-        assert len(est["report"]) == 3
-        assert est["mean_node_stability"].shape[0] == 3
-
-    def test_columns(self):
-        layers = _make_planted_layers(n_nodes=20, n_layers=2)
-        boot = bootstrap_multilayer(layers, fit_type="jaccard", n_boot=10, seed=11)
-        est = community_est(boot)
-
-        df = est["community_count"]
-        assert set(df.columns) == {"layer", "estimate", "reproducibility"}
-
-    def test_reproducibility_range(self):
-        layers = _make_planted_layers(n_nodes=20, n_layers=2)
-        boot = bootstrap_multilayer(layers, fit_type="jaccard", n_boot=20, seed=12)
-        est = community_est(boot)
-
-        r = est["community_count"]["reproducibility"]
-        assert (r >= 0).all() and (r <= 1).all()
-
-    def test_report_reads_as_reproducibility_not_interval(self):
-        layers = _make_planted_layers(n_nodes=20, n_layers=2)
-        boot = bootstrap_multilayer(layers, fit_type="jaccard", n_boot=10, seed=13)
-        est = community_est(boot)
-
-        assert all("reproduced in" in s for s in est["report"])
-        # no bracketed interval anywhere in the report
-        assert not any("[" in s for s in est["report"])
-
-    def test_mean_stability_in_range(self):
-        layers = _make_planted_layers(n_nodes=20, n_layers=2)
-        boot = bootstrap_multilayer(layers, fit_type="jaccard", n_boot=10, seed=14)
-        est = community_est(boot)
-
-        stab = est["mean_node_stability"]
-        assert (stab["mean_stability"] >= 0).all()
-        assert (stab["mean_stability"] <= 1).all()
-
-    def test_no_completed_replicates_raises(self):
-        layers = _make_planted_layers(n_nodes=20, n_layers=2)
-        boot = bootstrap_multilayer(layers, fit_type="jaccard", n_boot=10, seed=15)
-        # Manually set n_boot to 0 to simulate failure
-        boot.n_boot = 0
-        with pytest.raises(ValueError, match="No completed"):
-            community_est(boot)
-
-
-class TestCoAssignmentCi:
-    def test_structure_and_bounds(self):
-        layers = _make_planted_layers(n_nodes=20, n_layers=2)
-        boot = bootstrap_multilayer(layers, fit_type="jaccard", n_boot=10, seed=21)
-        pci = co_assignment_ci(boot)
-
-        assert len(pci) == 2
-        for layer_ci in pci:
-            est = layer_ci["estimate"]
-            lo = layer_ci["lower"]
-            hi = layer_ci["upper"]
-            assert est.shape == (20, 20)
-            assert lo.shape == (20, 20)
-            assert hi.shape == (20, 20)
-            # bounds ordered and inside [0, 1]
-            off = ~np.eye(20, dtype=bool)
-            assert (lo[off] <= est[off] + 1e-12).all()
-            assert (est[off] <= hi[off] + 1e-12).all()
-            assert (lo >= 0).all() and (hi <= 1).all()
-            # diagonal is degenerate at 1
-            assert (np.diag(lo) == 1).all()
-            assert (np.diag(hi) == 1).all()
-
-    def test_narrower_with_smaller_alpha_inverse(self):
-        layers = _make_planted_layers(n_nodes=20, n_layers=2)
-        boot = bootstrap_multilayer(layers, fit_type="jaccard", n_boot=20, seed=22)
-        pci_95 = co_assignment_ci(boot, alpha=0.05)
-        pci_50 = co_assignment_ci(boot, alpha=0.50)
-        off = ~np.eye(20, dtype=bool)
-        w95 = (pci_95[0]["upper"] - pci_95[0]["lower"])[off]
-        w50 = (pci_50[0]["upper"] - pci_50[0]["lower"])[off]
-        assert (w50 <= w95 + 1e-12).all()
-
-    def test_zero_boot_raises(self):
-        layers = _make_planted_layers(n_nodes=15, n_layers=2)
-        boot = bootstrap_multilayer(layers, fit_type="jaccard", n_boot=5, seed=23)
-        boot.n_boot = 0
-        with pytest.raises(ValueError):
-            co_assignment_ci(boot)
-
-
 class TestEdgeResampling:
     def test_edge_bootstrap_runs(self):
         layers = _make_planted_layers(n_nodes=20, n_layers=2)
@@ -260,19 +156,16 @@ class TestMetaCommunities:
         assert len(fit["meta_communities"]) == 4
         assert all(np.all(v >= 1) for v in fit["meta_communities"])
 
-    def test_bootstrap_and_cis_run_on_meta(self):
+    def test_bootstrap_and_stability_run_on_meta(self):
+        # 1.4.0: interval outputs removed; the bootstrap feeds only the stability score s
         layers = _make_planted_layers(n_nodes=20, n_layers=3)
         boot = bootstrap_multilayer(
             layers, fit_type="jaccard", algorithm="leiden",
             n_boot=6, seed=123,
         )
         assert boot.n_boot == 6
-        est = community_est(boot)
-        pe = boot.point_estimate["meta_communities"]
-        expected = [len(np.unique(v)) for v in pe]
-        assert list(est["community_count"]["estimate"]) == expected
-        ci = co_assignment_ci(boot)
-        assert len(ci) == 3
+        ps = partition_stability(boot)
+        assert 0 <= ps["stability"] <= 1 and len(ps["stability_by_layer"]) == 3
 
     def test_identity_fit_falls_back_without_error(self):
         layers = _make_planted_layers(n_nodes=20, n_layers=3)

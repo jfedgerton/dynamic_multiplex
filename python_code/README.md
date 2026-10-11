@@ -24,15 +24,18 @@ Standard multislice approaches (Mucha et al. 2010) connect all layers to all lay
   - Fits communities on each layer independently, then aligns labels between consecutive layers with Hungarian matching on community overlap (a snapshot-and-match baseline).
 - `simulate_and_fit_multilayer()`
   - Simulates multiplex layers from a planted partition process and runs one of the five fit types (`jaccard`, `overlap`, `weighted_jaccard`, `weighted_overlap`, `identity`).
-- `bootstrap_multilayer()`, `partition_stability()`, `co_assignment_ci()`
-  - Parametric network bootstrap of a fit, the stability score, and co-assignment intervals.
+- `layers_from_membership()`
+  - Builds one weighted layer per time slice from group memberships (for example states in IGOs): shared-group counts, size-weighted, or Kumar hypergraph reweighting. No weighting is the default; each slice is built on its own.
+- `bootstrap_multilayer()`, `partition_stability()`
+  - Parametric network bootstrap of a fit and the stability score s, for comparing two fits of the same network. Since 1.4.0 no interval or accuracy-floor outputs are reported.
 
 ## Input handling
 
-- Layers must share one node set unless `allow_unequal_nodes=True`. With unequal node sets, pass networkx graphs with node labels; nodes are matched across layers by label and keep their labels as ids.
+- Layers must share one node set unless `allow_unequal_nodes=True`. Nodes may then enter and leave, with or without a change in layer size; pass networkx graphs with node labels, and nodes are matched across layers by label and keep their labels as ids. This holds for every fit function and for `bootstrap_multilayer()`.
 - Within-layer self-loops and zero-weight edges are dropped (the same rule as the R package).
+- Two-stage fits: `repair_chains=True` rejoins groups that stage 2 cut along time (mutual best match with similarity at least `repair_min_similarity`, default 0.2); `tracking="filtered"` makes the meta ids of layers 1..t depend only on layers 1..t. Both are off by default.
 - `objective` sets the first-stage (per-layer) objective only; the second stage always maximizes modularity.
-- `seed=123` by default; pass `seed=None` for unseeded detection. The R package defaults to `seed = NULL` (the caller's random number stream).
+- `seed=123` by default, as in the R package since 1.4.0; pass `seed=None` for unseeded detection.
 
 ## Installation (development)
 

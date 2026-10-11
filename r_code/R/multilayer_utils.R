@@ -768,13 +768,26 @@ detect_interlayer_communities <- function(
 #'
 #' @param seed Optional integer; the node visiting order is randomised.
 #'
+#' @param directed Logical. If \code{TRUE}, every layer must be a directed
+#'   graph and each slice keeps its arc directions: the slice term uses Leicht
+#'   and Newman's directed null model \eqn{k^{out}_{is} k^{in}_{js} / m_s}, so a
+#'   directed network in which every arc is reciprocated gives the same fit as
+#'   its undirected twin at the same \code{omega}. The interlayer identity
+#'   ties stay undirected (the coupling enters only through
+#'   \eqn{C_{jsr} + C_{jrs}}). If \code{FALSE} (default), directed layers are
+#'   symmetrised (\eqn{A + A^T}, a reciprocated pair counts twice) with a
+#'   warning, as before 1.3.2.
+#'
 #' @param max_levels,max_passes Safety caps on aggregation levels and local
 #'   moving passes per level.
 #'
 #' @return List with one integer vector per layer giving each node's
 #'   meta-community assignment (node order).
 #'
-#' @references Mucha, P. J., Richardson, T., Macon, K., Porter, M. A., and
+#' @references Leicht, E. A., and Newman, M. E. J. (2008). Community structure
+#'   in directed networks. \emph{Physical Review Letters} 100: 118703.
+#'
+#'   Mucha, P. J., Richardson, T., Macon, K., Porter, M. A., and
 #'   Onnela, J.-P. (2010). Community structure in time-dependent, multiscale,
 #'   and multiplex networks. \emph{Science} 328(5980): 876-878.
 #'
@@ -787,12 +800,27 @@ detect_multislice_communities <- function(
     resolution_parameter = 1,
     seed = NULL,
     max_levels = 20L,
-    max_passes = 50L
+    max_passes = 50L,
+    directed = FALSE
   ) {
 
   algorithm <- match.arg(algorithm)
   vkey <- function(l, node) paste0("L", l, "N", node)
   n_layers <- length(graph_layers)
+
+  # directedness: all slices directed (directed null model) or none ----
+  is_dir <- vapply(graph_layers, igraph::is_directed, logical(1))
+  if (isTRUE(directed) && !all(is_dir)) {
+    stop("directed = TRUE requires every layer to be a directed graph; layers ",
+         paste(which(!is_dir), collapse = ", "), " are undirected. Pass directed ",
+         "graphs or adjacency matrices with directed = TRUE, or use directed = FALSE.",
+         call. = FALSE)
+  }
+  if (!isTRUE(directed) && any(is_dir)) {
+    warning("Directed layers were passed with directed = FALSE: the multislice fit ",
+            "symmetrised them (A + A^T, a reciprocated pair counts twice). Use ",
+            "directed = TRUE for the directed null model.", call. = FALSE)
+  }
 
   layer_nodes <- lapply(graph_layers, function(g) {
     nm <- igraph::V(g)$name
@@ -826,6 +854,24 @@ detect_multislice_communities <- function(
   twom <- as.numeric(tapply(k, factor(slice, levels = seq_len(n_layers)), sum))
   twom[is.na(twom)] <- 0
 
+  # directed slices: out- and in-degree per slice and m_s = total arc weight.
+  # The optimiser works on half the ordered-pair objective, where an arc
+  # counts once and an undirected tie (interlayer identity tie) twice, so each
+  # arc enters the edge list with weight w / 2 ----
+  if (isTRUE(directed)) {
+    k_out <- numeric(N); k_in <- numeric(N)
+    if (!is.null(intra) && nrow(intra) > 0) {
+      kf <- tapply(intra$w, intra$from, sum); kt <- tapply(intra$w, intra$to, sum)
+      k_out[as.integer(names(kf))] <- kf
+      k_in[as.integer(names(kt))] <- kt
+      intra$w <- intra$w / 2
+    }
+    m_dir <- as.numeric(tapply(k_out, factor(slice, levels = seq_len(n_layers)), sum))
+    m_dir[is.na(m_dir)] <- 0
+    stopifnot(isTRUE(all.equal(sum(k_out), sum(k_in))), all(m_dir >= 0),
+              isTRUE(all.equal(sum(m_dir), sum(k_out))))
+  }
+
   # interlayer identity ties: weight = layer weight * omega, no null term ----
   inter <- NULL
   if (!is.null(interlayer_ties) && nrow(interlayer_ties) > 0 && omega > 0) {
@@ -845,8 +891,16 @@ detect_multislice_communities <- function(
   K <- matrix(0, N, n_layers); K[cbind(seq_len(N), slice)] <- k
 
   if (!is.null(seed)) { rng <- save_rng_state(); on.exit(restore_rng_state(rng), add = TRUE); set.seed(seed) }
-  membership <- genlouvain_multislice(edges, K, twom, gamma = resolution_parameter,
-                                      max_levels = max_levels, max_passes = max_passes)
+  if (isTRUE(directed)) {
+    K_out <- matrix(0, N, n_layers); K_out[cbind(seq_len(N), slice)] <- k_out
+    K_in <- matrix(0, N, n_layers); K_in[cbind(seq_len(N), slice)] <- k_in
+    membership <- genlouvain_multislice(edges, K_out, m_dir, gamma = resolution_parameter,
+                                        max_levels = max_levels, max_passes = max_passes,
+                                        K_in = K_in)
+  } else {
+    membership <- genlouvain_multislice(edges, K, twom, gamma = resolution_parameter,
+                                        max_levels = max_levels, max_passes = max_passes)
+  }
   names(membership) <- verts
 
   # map back to per-layer node order ----
@@ -875,10 +929,34 @@ detect_multislice_communities <- function(
 #'   in 1.3.0): with 3 restarts the joint NMI of a fit on small networks
 #'   (n <= 100) at an abrupt change-point varied by up to 0.2 across runs.
 #'
+#' @param K_in Optional in-degree matrix (vertices x slices). If supplied the
+#'   slices are directed: \code{K} holds out-degrees, \code{twom} holds the
+#'   per-slice total arc weight \eqn{m_s}, the null term is
+#'   \eqn{\gamma \sum_s K^{out}_{is} K^{in}_{js} / m_s}, and each arc enters
+#'   \code{edges} with half its weight.
+#'
 #' @return Integer membership vector for the original vertices (1..C).
 #'
 #' @noRd
-genlouvain_multislice <- function(edges, K, twom, gamma = 1, max_levels = 20L, max_passes = 50L, n_starts = 10L) {
+genlouvain_multislice <- function(edges, K, twom, gamma = 1, max_levels = 20L, max_passes = 50L, n_starts = 10L,
+                                  K_in = NULL) {
+  if (!is.null(K_in)) {
+    stopifnot(identical(dim(K_in), dim(K)), all(is.finite(K_in)), all(is.finite(K)))
+    inv_m <- ifelse(twom > 0, 1 / twom, 0)
+    # objective (unnormalised directed multislice modularity, ordered pairs):
+    # stored edge weights are half the ordered-pair weight, so double them ----
+    quality_dir <- function(memb) {
+      within <- sum(edges$w[memb[edges$from] == memb[edges$to]])
+      2 * within - gamma * sum(sweep(rowsum(K, memb) * rowsum(K_in, memb), 2, inv_m, "*"))
+    }
+    best <- NULL; best_q <- -Inf
+    for (start in seq_len(n_starts)) {
+      memb <- genlouvain_multislice_once(edges, K, twom, gamma, max_levels, max_passes, K_in = K_in)
+      q <- quality_dir(memb)
+      if (q > best_q) { best_q <- q; best <- memb }
+    }
+    return(best)
+  }
   inv2m <- ifelse(twom > 0, 1 / twom, 0)
   # objective (unnormalised multislice modularity, 2 mu Q): every undirected
   # edge is stored once but counts twice in sum_ij A_ij, so the within-community
@@ -899,7 +977,8 @@ genlouvain_multislice <- function(edges, K, twom, gamma = 1, max_levels = 20L, m
   best
 }
 
-genlouvain_multislice_once <- function(edges, K, twom, gamma, max_levels, max_passes) {
+genlouvain_multislice_once <- function(edges, K, twom, gamma, max_levels, max_passes, K_in = NULL) {
+  if (!is.null(K_in)) return(genlouvain_multislice_once_directed(edges, K, K_in, twom, gamma, max_levels, max_passes))
   inv2m <- ifelse(twom > 0, 1 / twom, 0)
   N0 <- nrow(K)
   ef0 <- as.integer(edges$from); et0 <- as.integer(edges$to); ew0 <- as.numeric(edges$w)
@@ -963,6 +1042,90 @@ genlouvain_local_moving <- function(ef, et, ew, Kcur, inv2m, gamma, comm_init, m
       stay <- if (is.na(icv)) 0 else gain[icv]             # staying alone has gain 0
       if (bg <= stay + 1e-12) best <- cv
       Ktot[best, ] <- Ktot[best, ] + Kcur[v, ]
+      if (best != cv) { comm[v] <- best; moved <- moved + 1L }
+    }
+    if (moved == 0L) break
+  }
+  comm
+}
+
+# Directed-slice variants of the two functions above. K_out / K_in are
+# vertices x slices, inv_m = 1 / m_s (total arc weight per slice). Edge
+# weights are half the ordered-pair weight (arcs w / 2, identity ties w), so
+# the gain of joining community c is the half-scale change in
+# sum_ij [A_ijs - gamma k_out_is k_in_js / m_s] + coupling:
+#   w_vc - (gamma / 2) sum_s (k_out_vs Kin_cs + k_in_vs Kout_cs) / m_s.
+# With every arc reciprocated (k_out = k_in = k, m_s = 2m_s) this equals the
+# undirected gain exactly.
+genlouvain_multislice_once_directed <- function(edges, K_out, K_in, m_s, gamma, max_levels, max_passes) {
+  inv_m <- ifelse(m_s > 0, 1 / m_s, 0)
+  N0 <- nrow(K_out)
+  ef0 <- as.integer(edges$from); et0 <- as.integer(edges$to); ew0 <- as.numeric(edges$w)
+  relabel <- function(x) match(x, sort(unique(x)))
+  aggregate_edges <- function(ef, et, ew, comm) {
+    cf <- comm[ef]; ct <- comm[et]; keep <- cf != ct
+    if (!any(keep)) return(list(ef = integer(0), et = integer(0), ew = numeric(0)))
+    a <- pmin(cf[keep], ct[keep]); b <- pmax(cf[keep], ct[keep])
+    key <- a * (max(comm) + 1) + b
+    agg <- rowsum(ew[keep], key, reorder = TRUE); k <- as.numeric(rownames(agg))
+    list(ef = as.integer(k %/% (max(comm) + 1)), et = as.integer(k %% (max(comm) + 1)), ew = as.numeric(agg))
+  }
+  comm <- seq_len(N0)
+  for (outer in seq_len(max_levels)) {
+    comm <- relabel(genlouvain_local_moving_directed(ef0, et0, ew0, K_out, K_in, inv_m, gamma, comm, max_passes))
+    assign <- comm
+    Ko <- rowsum(K_out, comm, reorder = TRUE); Ki <- rowsum(K_in, comm, reorder = TRUE)
+    E <- aggregate_edges(ef0, et0, ew0, comm)
+    for (level in seq_len(max_levels)) {
+      if (!length(E$ef)) break
+      c2 <- relabel(genlouvain_local_moving_directed(E$ef, E$et, E$ew, Ko, Ki, inv_m, gamma, seq_len(nrow(Ko)), max_passes))
+      if (max(c2) == nrow(Ko)) break
+      assign <- c2[assign]
+      Ko <- rowsum(Ko, c2, reorder = TRUE); Ki <- rowsum(Ki, c2, reorder = TRUE)
+      E <- aggregate_edges(E$ef, E$et, E$ew, c2)
+    }
+    if (identical(assign, comm)) break
+    comm <- assign
+  }
+  as.integer(comm)
+}
+
+genlouvain_local_moving_directed <- function(ef, et, ew, Kout, Kin, inv_m, gamma, comm_init, max_passes) {
+  N <- nrow(Kout)
+  if (!length(ef)) return(comm_init)
+  nb_from <- c(ef, et); nb_to <- c(et, ef); nb_w <- c(ew, ew)
+  ord <- order(nb_from); nb_from <- nb_from[ord]; nb_to <- nb_to[ord]; nb_w <- nb_w[ord]
+  starts <- c(1L, cumsum(tabulate(nb_from, N)) + 1L)
+  comm <- as.integer(comm_init)
+  tot <- function(K) {
+    Kt <- rowsum(K, comm, reorder = TRUE); Kt <- Kt[as.character(seq_len(max(comm))), , drop = FALSE]
+    Kt[is.na(Kt)] <- 0
+    Kt
+  }
+  Ktot_out <- tot(Kout); Ktot_in <- tot(Kin)
+  KSo <- Kout * matrix(inv_m, N, ncol(Kout), byrow = TRUE)   # k_out_vs / m_s
+  KSi <- Kin * matrix(inv_m, N, ncol(Kin), byrow = TRUE)     # k_in_vs / m_s
+  for (pass in seq_len(max_passes)) {
+    moved <- 0L
+    for (v in sample.int(N)) {
+      a <- starts[v]; b <- starts[v + 1L] - 1L
+      if (b < a) next
+      nbr <- nb_to[a:b]; wv <- nb_w[a:b]
+      cv <- comm[v]
+      Ktot_out[cv, ] <- Ktot_out[cv, ] - Kout[v, ]
+      Ktot_in[cv, ] <- Ktot_in[cv, ] - Kin[v, ]
+      nc <- comm[nbr]
+      wc <- rowsum(wv, nc, reorder = FALSE)
+      cand <- as.integer(rownames(wc))
+      null <- as.numeric(Ktot_in[cand, , drop = FALSE] %*% KSo[v, ]) +
+              as.numeric(Ktot_out[cand, , drop = FALSE] %*% KSi[v, ])
+      gain <- as.numeric(wc) - (gamma / 2) * null
+      ib <- which.max(gain); bg <- gain[ib]; best <- cand[ib]
+      icv <- match(cv, cand)
+      stay <- if (is.na(icv)) 0 else gain[icv]
+      if (bg <= stay + 1e-12) best <- cv
+      Ktot_out[best, ] <- Ktot_out[best, ] + Kout[v, ]
+      Ktot_in[best, ] <- Ktot_in[best, ] + Kin[v, ]
       if (best != cv) { comm[v] <- best; moved <- moved + 1L }
     }
     if (moved == 0L) break

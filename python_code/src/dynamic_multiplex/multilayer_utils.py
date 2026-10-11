@@ -602,6 +602,7 @@ def detect_multislice_communities(
     omega: float = 1.0,
     resolution_parameter: float = 1.0,
     seed: int | None = 123,
+    directed: bool = False,
 ) -> list[np.ndarray]:
     """Multislice (Mucha) meta-communities for node-identity coupling.
 
@@ -632,6 +633,15 @@ def detect_multislice_communities(
     resolution_parameter : float
         Resolution for the supra-graph detection (Mucha's modularity
         resolution). Larger values yield more, smaller meta-communities.
+    directed : bool
+        If ``True``, every layer must be a ``networkx.DiGraph`` and each slice
+        keeps its arc directions: the slice term uses Leicht and Newman's
+        directed null model ``k_out_i * k_in_j / m_s``. A directed network in
+        which every arc is reciprocated then gives the same fit as its
+        undirected twin at the same ``omega``. The interlayer identity ties
+        stay undirected (Mucha's coupling depends only on ``C_isr + C_irs``).
+        If ``False`` (default), directed layers are symmetrised (``A + A^T``,
+        so a reciprocated pair counts twice) with a warning, as in 1.3.1.
 
     Returns
     -------
@@ -641,6 +651,25 @@ def detect_multislice_communities(
     """
     algorithm = algorithm.lower()
     n_layers = len(graph_layers)
+
+    is_dir = [g.is_directed() for g in graph_layers]
+    if directed and not all(is_dir):
+        raise ValueError(
+            "directed=True requires every layer to be a directed graph "
+            f"(networkx.DiGraph); layers {[i + 1 for i, d in enumerate(is_dir) if not d]} "
+            "are undirected. Pass directed adjacency matrices or DiGraphs, or "
+            "use directed=False."
+        )
+    if not directed and any(is_dir):
+        import warnings
+
+        warnings.warn(
+            "Directed layers were passed with directed=False: the multislice "
+            "fit symmetrised them (A + A^T, a reciprocated pair counts twice). "
+            "Use directed=True for the directed null model.",
+            UserWarning,
+            stacklevel=2,
+        )
 
     def vkey(layer: int, node) -> str:
         return f"L{layer}N{node}"
@@ -741,8 +770,10 @@ def detect_multislice_communities(
         partitions = []
         for t in range(n_layers):
             keep = [i for i, (u, v) in enumerate(intra_edges) if supra_slice[u] == t]
+            # directed slices keep arc direction, so RBConfiguration uses
+            # the k_out k_in / m_s null model (Leicht & Newman 2008) ----
             g_t = ig.Graph(
-                n=n_supra, edges=[intra_edges[i] for i in keep], directed=False
+                n=n_supra, edges=[intra_edges[i] for i in keep], directed=directed
             )
             g_t.es["weight"] = [intra_w[i] for i in keep]
             partitions.append(
@@ -750,7 +781,9 @@ def detect_multislice_communities(
                     g_t, weights="weight", resolution_parameter=resolution_parameter
                 )
             )
+        # identity ties stay undirected for directed and undirected slices ----
         g_inter = ig.Graph(n=n_supra, edges=inter_edges, directed=False)
+        assert not g_inter.is_directed()
         g_inter.es["weight"] = inter_w
         partitions.append(
             leidenalg.CPMVertexPartition(

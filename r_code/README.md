@@ -8,7 +8,7 @@ Standard multislice approaches (Mucha et al. 2010) connect all layers to all lay
 
 ## Functions
 
-> Note: `igraph`'s Louvain and Leiden are undirected. When `directed = TRUE`, layers are collapsed to undirected weighted graphs (reciprocal arcs summed) before clustering; the Python package keeps edge direction for Leiden.
+> Note: `igraph`'s Louvain and Leiden are undirected. When `directed = TRUE`, layers are collapsed to undirected weighted graphs (reciprocal arcs summed) before per-layer clustering; the Python package keeps edge direction for Leiden. The multislice fit (`fit_multilayer_identity_ties()`) keeps edge direction in each slice when `directed = TRUE`.
 
 - `fit_multilayer_jaccard()`
   - Fits Leiden (default) or Louvain communities on each layer, links communities in the selected layer pairs by the Jaccard index of their members, and groups the linked communities into cross-layer meta-communities with a second community detection on the community graph.

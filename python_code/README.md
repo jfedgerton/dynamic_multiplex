@@ -8,7 +8,7 @@ Standard multislice approaches (Mucha et al. 2010) connect all layers to all lay
 
 ## Functions
 
-> Note: with `directed=True`, Leiden keeps edge direction in the per-layer detection; Louvain collapses directed layers to undirected weighted graphs (reciprocal arcs summed). The second stage (community graph, or multislice for identity ties) is undirected.
+> Note: with `directed=True`, Leiden keeps edge direction in the per-layer detection; Louvain collapses directed layers to undirected weighted graphs (reciprocal arcs summed). The community-graph second stage is undirected; the multislice stage for identity ties keeps edge direction in each slice (directed null model), with undirected identity ties.
 
 - `fit_multilayer_jaccard()`
   - Fits Leiden (default) or Louvain communities on each layer, links communities in the selected layer pairs by the Jaccard index of their members, and groups the linked communities into cross-layer meta-communities with a second community detection on the community graph.

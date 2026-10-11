@@ -39,9 +39,13 @@
 #' omega-sensitivity / resolution-limit behavior of multislice modularity.
 #'
 #' @param directed Logical; if `TRUE`, build directed graphs from adjacency
-#' matrices. Directed layers are collapsed to undirected weighted graphs before
-#' community detection (igraph supports Leiden on undirected graphs only;
-#' a warning is issued for `algorithm = "leiden"`).
+#' matrices, and every layer must be directed. The first-stage per-layer
+#' detection collapses directed layers to undirected weighted graphs (igraph
+#' supports Leiden on undirected graphs only; a warning is issued for
+#' `algorithm = "leiden"`). The multislice stage (`meta_communities`) keeps arc
+#' direction: each slice uses the directed null model
+#' \eqn{k^{out}_i k^{in}_j / m_s}, and the interlayer identity ties stay
+#' undirected.
 #'
 #' @param objective Objective for the first-stage (per-layer) detection
 #' stored in `layer_communities`: `"modularity"` or `"cpm"` (CPM requires
@@ -79,11 +83,14 @@
 #'   }
 #'
 #' @section Directed networks:
-#' Directed layers are stored as directed graphs and the interlayer self-loop
-#' weighting is directed-aware, but community \emph{detection} collapses
-#' directed layers to weighted undirected graphs on both Louvain and Leiden
-#' (igraph's detectors are undirected-only). For detection that respects edge
-#' direction, use the Python package with \code{algorithm = "leiden"}.
+#' With \code{directed = TRUE} the multislice stage that produces
+#' \code{meta_communities} respects edge direction (Leicht and Newman's
+#' directed null model in each slice). A directed network in which every arc
+#' is reciprocated gives the same \code{meta_communities} as its undirected
+#' twin at the same \code{omega}; before version 1.3.2 such a network was fitted
+#' as if \code{omega} were halved. The first-stage \code{layer_communities}
+#' still collapse directed layers to weighted undirected graphs (igraph's
+#' detectors are undirected-only).
 #'
 #' @examples
 #' set.seed(123)
@@ -180,7 +187,8 @@ fit_multilayer_identity_ties <- function(
     interlayer_ties = ties,
     algorithm = algorithm,
     omega = omega,
-    resolution_parameter = resolution_parameter
+    resolution_parameter = resolution_parameter,
+    directed = directed
   )
 
   multilayer_identity_ties <- structure(

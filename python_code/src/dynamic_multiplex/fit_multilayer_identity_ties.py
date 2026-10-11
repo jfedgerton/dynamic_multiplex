@@ -38,7 +38,15 @@ def fit_multilayer_identity_ties(
         ``layer_communities``: ``"modularity"`` or ``"cpm"`` (Leiden only).
         Defaults to ``"cpm"`` for directed layers and ``"modularity"``
         otherwise. It does not affect ``meta_communities``, which always
-        optimise undirected multislice modularity.
+        optimise multislice modularity.
+    directed : bool
+        If True, layers are directed graphs. The multislice stage keeps arc
+        direction in every slice (directed null model ``k_out * k_in / m_s``;
+        a fully reciprocated network gives the same ``meta_communities`` as
+        its undirected twin at the same ``omega``); the interlayer identity
+        ties stay undirected. Every layer must then be a directed graph or an
+        adjacency matrix. Directed layers fitted with ``directed=False`` are
+        symmetrised (``A + A^T``) with a warning.
     allow_unequal_nodes : bool
         If True, layers may hold different node sets; they must then be
         networkx graphs with node labels, matched across layers by label.
@@ -104,6 +112,7 @@ def fit_multilayer_identity_ties(
         omega=omega,
         resolution_parameter=resolution_parameter,
         seed=seed,
+        directed=directed,
     )
 
     return {

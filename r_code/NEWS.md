@@ -1,4 +1,4 @@
-# dynamicmultiplex (development version)
+# dynamicmultiplex 1.3.2
 
 ## Changes in defaults
 
@@ -14,6 +14,18 @@
   error.
 
 ## Bug fixes
+
+* `fit_multilayer_identity_ties()` with `directed = TRUE`: the multislice stage
+  built every slice as undirected, so each arc became an undirected edge and a
+  reciprocated pair counted twice. A fully reciprocated directed network was
+  therefore fitted as if `omega` were halved relative to its undirected twin,
+  and one-way arcs were symmetrised. Each slice now keeps arc direction, with
+  Leicht and Newman's directed null model k_out k_in / m_s; the interlayer
+  identity ties stay undirected. With `directed = TRUE` every layer must be
+  directed (error otherwise). Directed layers reaching the multislice stage
+  with `directed = FALSE` are symmetrised as before, now with a warning.
+  Results for undirected networks are unchanged (regression-tested). Same fix
+  in the Python package.
 
 * `fit_multilayer_hungarian()` matched nodes by position, so two layers with
   the same named vertices stored in different orders produced spurious label

@@ -29,7 +29,8 @@ simulate_and_fit_multilayer(
 
 \item{p_out}{Probability of an out-community edge.}
 
-\item{fit_type}{One of \code{"jaccard"}, \code{"overlap"}, or \code{"identity"}.}
+\item{fit_type}{One of \code{"jaccard"}, \code{"overlap"}, \code{"weighted_jaccard"},
+\code{"weighted_overlap"}, or \code{"identity"}.}
 
 \item{algorithm}{Community algorithm for fitting: \code{"leiden"} (default) or \code{"louvain"}.}
 

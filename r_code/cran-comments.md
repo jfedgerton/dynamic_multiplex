@@ -1,20 +1,21 @@
-# dynamicmultiplex 1.3.1
+# dynamicmultiplex 1.3.2
 
-Update of the CRAN release 1.1.0 (2026-08-07). No changes were requested
-by CRAN; this is a maintainer release. NEWS.md lists every change since
-1.1.0 (the intermediate 1.2.1 and 1.3.0 were internal and never submitted).
+Update of the CRAN release 1.3.1 (2026-09-24). No changes were requested by
+CRAN; this is a maintainer release with bug fixes. NEWS.md lists every change.
 
 Summary of changes:
 
-* New exported function `partition_stability()` (stability score and a
-  calibrated accuracy floor for a tracked partition), with its calibration
-  table shipped in `inst/extdata/` (31 rows, 2 KB).
-* `bootstrap_multilayer()` returns two additional list elements consumed by
-  `partition_stability()`; existing elements are unchanged.
-* New `allow_unequal_nodes` argument (default `FALSE`, previous behaviour)
-  on the `fit_multilayer_*()` functions.
-* Bug fixes to `fit_multilayer_identity_ties()` (multislice null model) and
-  to the two weighted similarity helpers; regression tests added.
+* Default community algorithm is now `"leiden"` (was `"louvain"`) in all fit
+  functions, `bootstrap_multilayer()` and `simulate_and_fit_multilayer()`,
+  matching the Python package. `algorithm = "louvain"` reproduces the old
+  default.
+* Shared input policy: self-loops and zero-weight edges are dropped for both
+  matrix and igraph input; layers with no vertices stop with an error.
+* `fit_multilayer_hungarian()` matches nodes by vertex name and gains
+  `allow_unequal_nodes`.
+* Plotting fixes for graphs with named vertices.
+* `fit_multilayer_identity_ties(directed = TRUE)` now keeps arc direction in
+  the multislice stage (directed null model); undirected results unchanged.
 * No new dependencies. Imports remain clue, igraph (>= 2.0.0), rlang.
 
 ## Test environments

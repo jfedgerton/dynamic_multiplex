@@ -170,6 +170,33 @@ test_that("directed = TRUE with undirected layers fails loudly", {
   )
 })
 
+test_that("public fit symmetrises directed layers when directed = FALSE, with warnings", {
+  # before 1.3.2 the per-layer igraph detection stopped with an error here
+  w <- character(0)
+  fit <- withCallingHandlers(
+    fit_multilayer_identity_ties(directed4(), omega = directed_omega, directed = FALSE, seed = seed_dm),
+    warning = function(cond) { w <<- c(w, conditionMessage(cond)); invokeRestart("muffleWarning") }
+  )
+  expect_true(any(grepl("collapsing them to weighted undirected", w)))
+  expect_true(any(grepl("symmetrised", w)))
+  expect_identical(canon(fit$meta_communities), rep(1L, 8))
+})
+
+test_that("directed local moving leaves a community it has no ties to", {
+  # arcs 1->2 and 3->4; start with 1 and 4 together and 2 and 3 together.
+  # Moving vertex 1 to {2, 3} raises Q from -3 to -2 (gamma = 3); before the
+  # fix the mover scored staying as 0 and kept the start partition.
+  lm_dir <- dynamicmultiplex:::genlouvain_local_moving_directed
+  ef <- c(1L, 3L); et <- c(2L, 4L); ew <- c(0.5, 0.5)
+  k_out <- matrix(c(1, 0, 1, 0), 4, 1); k_in <- matrix(c(0, 1, 0, 1), 4, 1)
+  q <- function(memb) {
+    2 * sum(ew[memb[ef] == memb[et]]) - 3 * sum(rowsum(k_out, memb) * rowsum(k_in, memb)) / 2
+  }
+  set.seed(seed_dm)
+  res <- lm_dir(ef, et, ew, k_out, k_in, 1 / 2, 3, c(1L, 2L, 2L, 1L), 50L)
+  expect_gt(q(res), q(c(1L, 2L, 2L, 1L)))
+})
+
 test_that("a directed slice without arcs runs and returns finite memberships", {
   layers <- directed4()
   g3 <- igraph::make_empty_graph(n = 4, directed = TRUE); igraph::V(g3)$name <- as.character(1:4)
@@ -188,7 +215,7 @@ test_that("directed multislice fit is seed reproducible and keeps the fit fields
   expect_true(a$directed)
 })
 
-test_that("undirected and symmetrised paths reproduce the pre-change memberships", {
+test_that("undirected inputs reproduce the pre-change memberships", {
   expected <- readRDS(testthat::test_path("fixtures", "multislice_regression_r.rds"))
   cases <- regression_cases()
   expect_setequal(names(expected), names(cases))

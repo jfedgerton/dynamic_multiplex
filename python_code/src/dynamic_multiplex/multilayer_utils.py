@@ -567,13 +567,11 @@ def detect_interlayer_communities(
             weights = [w for _, _, w in edges]
             ig_graph = ig.Graph(n=len(supernodes), edges=ig_edges, directed=False)
             ig_graph.es["weight"] = weights
-            # three Leiden iterations, as in the R package's second stage
             partition = leidenalg.find_partition(
                 ig_graph,
                 leidenalg.RBConfigurationVertexPartition,
                 weights=weights,
                 resolution_parameter=resolution_parameter,
-                n_iterations=3,
                 seed=seed,
             )
             meta_ids = {
@@ -671,8 +669,10 @@ def detect_multislice_communities(
             stacklevel=2,
         )
 
-    def vkey(layer: int, node) -> str:
-        return f"L{layer}N{node}"
+    def vkey(layer: int, node) -> tuple:
+        # tuple, not a formatted string: labels 1 and "1" must stay distinct
+        # (networkx itself treats them as different nodes)
+        return (layer, node)
 
     # Per-layer canonical node ids: match the ids used in the per-layer
     # membership dict (see ``_id_offset``). The identity ties' `node` values are built the same way in
@@ -684,7 +684,7 @@ def detect_multislice_communities(
         layer_nodes.append([(n, n + off if off else n) for n in nodes_sorted])
 
     # Supra vertices: one per (layer, node), layers 1-indexed.
-    supra: list[str] = []
+    supra: list[tuple] = []
     seen = set()
     for t in range(n_layers):
         for _, cid in layer_nodes[t]:

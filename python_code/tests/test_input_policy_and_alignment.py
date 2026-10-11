@@ -17,6 +17,14 @@ from dynamic_multiplex.multilayer_utils import (
     prepare_multilayer_graphs,
 )
 
+import importlib.util
+
+# tests that run the default (Leiden) solver need the optional igraph/leidenalg
+needs_leiden = pytest.mark.skipif(
+    importlib.util.find_spec("leidenalg") is None or importlib.util.find_spec("igraph") is None,
+    reason="optional dependencies python-igraph and leidenalg not installed",
+)
+
 COMMUNITY_FITTERS = [
     fit_multilayer_jaccard,
     fit_multilayer_overlap,
@@ -59,6 +67,7 @@ def test_directed_louvain_collapse_sums_reciprocal_weights():
     assert u[0][1]["weight"] == pytest.approx(1.0)
 
 
+@needs_leiden
 def test_identity_ties_unequal_integer_labels_consistent():
     # node 1 is the only shared actor; it must keep one id in both layers
     out = fit_multilayer_identity_ties(
@@ -71,6 +80,7 @@ def test_identity_ties_unequal_integer_labels_consistent():
     assert m1[1] == m2[0]  # node 1: position 1 in layer 1, position 0 in layer 2
 
 
+@needs_leiden
 def test_identity_ties_unequal_negative_labels():
     out = fit_multilayer_identity_ties(
         [nx.empty_graph([0, 1]), nx.empty_graph([-1, 0])], allow_unequal_nodes=True
@@ -80,6 +90,7 @@ def test_identity_ties_unequal_negative_labels():
     assert m1[0] == m2[1]  # node 0: position 0 in layer 1, position 1 in layer 2
 
 
+@needs_leiden
 @pytest.mark.parametrize("fitter", COMMUNITY_FITTERS)
 def test_community_fitters_accept_unequal_labelled_graphs(fitter):
     g1 = nx.Graph([("a", "b"), ("b", "c"), ("a", "c")])
@@ -96,6 +107,7 @@ def test_unequal_matrices_rejected(fitter):
         fitter([np.zeros((2, 2)), np.zeros((3, 3))], allow_unequal_nodes=True)
 
 
+@needs_leiden
 def test_hungarian_matches_by_label_with_unequal_nodes():
     g1 = nx.disjoint_union(nx.complete_graph(4), nx.complete_graph(4))
     g1 = nx.relabel_nodes(g1, dict(enumerate("abcdefgh")))
@@ -111,6 +123,7 @@ def test_hungarian_matches_by_label_with_unequal_nodes():
     assert lab2["z"] == lab2["e"]
 
 
+@needs_leiden
 def test_default_algorithm_is_leiden():
     A = np.array([[0, 1], [1, 0]])
     assert fit_multilayer_jaccard([A, A])["algorithm"] == "leiden"

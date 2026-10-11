@@ -27,6 +27,14 @@
   Results for undirected networks are unchanged (regression-tested). Same fix
   in the Python package.
 
+* `fit_*()` with directed `igraph` layers and `directed = FALSE` stopped with
+  an igraph error in per-layer detection. Such layers are now collapsed to
+  weighted undirected graphs (reciprocal arc weights summed), with a warning.
+
+* Python package: the multislice fit could merge two different node labels
+  that print the same (for example `1` and `"1"`) when layers have unequal
+  node sets; supra-vertices are now keyed by (layer, node).
+
 * `fit_multilayer_hungarian()` matched nodes by position, so two layers with
   the same named vertices stored in different orders produced spurious label
   changes. Matching now uses vertex names (positions only for unnamed

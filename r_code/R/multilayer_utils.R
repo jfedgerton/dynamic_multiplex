@@ -226,6 +226,17 @@ fit_layer_communities <- function(
     }
   }
 
+  # directed layers with directed = FALSE: collapsed per layer below (before
+  # 1.3.2 igraph stopped with an error here) ----
+  if (!directed && any(vapply(graph_layers, igraph::is_directed, logical(1)))) {
+    warning(
+      "Directed layers were passed with directed = FALSE; collapsing them to ",
+      "weighted undirected graphs (reciprocal arc weights summed) for ",
+      "per-layer detection.",
+      call. = FALSE
+    )
+  }
+
   # warn once for directed leiden (collapsed per layer below) ----
   if (algorithm == "leiden" && directed &&
       any(vapply(graph_layers, igraph::is_directed, logical(1)))) {
@@ -245,7 +256,7 @@ fit_layer_communities <- function(
     if (algorithm == "louvain") {
 
       ### convert to undirected graph ----
-      if (directed && igraph::is_directed(g_input)) {
+      if (igraph::is_directed(g_input)) {
         g <- igraph::as_undirected(
           graph = g_input,
           mode = "collapse",
@@ -265,7 +276,7 @@ fit_layer_communities <- function(
       ### (igraph's cluster_leiden supports undirected graphs only; see
       ### community/leiden.c. Mirror the louvain path: collapse directed
       ### layers to weighted undirected graphs; warned once above.)
-      if (directed && igraph::is_directed(g_input)) {
+      if (igraph::is_directed(g_input)) {
         g <- igraph::as_undirected(
           graph = g_input,
           mode = "collapse",
@@ -1122,7 +1133,10 @@ genlouvain_local_moving_directed <- function(ef, et, ew, Kout, Kin, inv_m, gamma
       gain <- as.numeric(wc) - (gamma / 2) * null
       ib <- which.max(gain); bg <- gain[ib]; best <- cand[ib]
       icv <- match(cv, cand)
-      stay <- if (is.na(icv)) 0 else gain[icv]
+      # staying: v's weight to its own community (0 if no edge) minus the null
+      # term against the rest of that community; zero only if v is alone ----
+      stay <- if (!is.na(icv)) gain[icv] else
+        -(gamma / 2) * (sum(Ktot_in[cv, ] * KSo[v, ]) + sum(Ktot_out[cv, ] * KSi[v, ]))
       if (bg <= stay + 1e-12) best <- cv
       Ktot_out[best, ] <- Ktot_out[best, ] + Kout[v, ]
       Ktot_in[best, ] <- Ktot_in[best, ] + Kin[v, ]

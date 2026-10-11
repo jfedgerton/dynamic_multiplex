@@ -26,6 +26,8 @@ Standard multislice approaches (Mucha et al. 2010) connect all layers to all lay
   - Simulates multiplex layers from a planted partition process and runs one of the five fit types (`jaccard`, `overlap`, `weighted_jaccard`, `weighted_overlap`, `identity`).
 - `layers_from_membership()`
   - Builds one weighted layer per time slice from group memberships (for example states in IGOs): shared-group counts, size-weighted, or Kumar hypergraph reweighting. No weighting is the default; each slice is built on its own.
+- `partition_membership_bipartite()`, `partition_membership_strict()`, `fit_multilayer_from_partitions()` (Python only)
+  - Per-slice partitions of membership data without projection: Barber's bipartite modularity (Leiden) and strict (all-or-nothing) hypergraph modularity (hypernetx; `pip install dynamic-multiplex[hypergraph]`, which needs pandas < 3). `fit_multilayer_from_partitions()` tracks any per-slice partitions over time with the DynMux second stage or Hungarian matching. These are comparison specifications; in pilot simulations both did worse than the projections. The R package deliberately has no counterpart.
 - `bootstrap_multilayer()`, `partition_stability()`
   - Parametric network bootstrap of a fit and the stability score s, for comparing two fits of the same network. Since 1.4.0 no interval or accuracy-floor outputs are reported.
 

@@ -56,6 +56,19 @@ separately. The same changes are in the Python package `dynamic-multiplex`
   `repair_min_similarity` to the refits. Layers with different named node
   sets now stop with an error unless `allow_unequal_nodes = TRUE`.
 
+## Python only (by design)
+
+* The two packages deliberately diverge here, because the libraries these
+  rely on exist in Python and not in R. `partition_membership_bipartite()`
+  partitions membership slices by Barber's bipartite modularity (leidenalg's
+  bipartite construction, Leiden only); `partition_membership_strict()` by
+  strict (all-or-nothing) hypergraph modularity (hypernetx reference
+  pipeline, optional extra `[hypergraph]`, which needs pandas < 3);
+  `fit_multilayer_from_partitions()` tracks supplied per-slice partitions
+  with the DynMux second stage or Hungarian matching. They are comparison
+  specifications; in pilot simulations both did worse than the projections
+  in `layers_from_membership()`.
+
 ## Bug fixes
 
 * `fit_multilayer_identity_ties()` (undirected): the multislice local mover

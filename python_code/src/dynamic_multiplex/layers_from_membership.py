@@ -54,6 +54,34 @@ def _as_wide(entry, t: int) -> pd.DataFrame:
     return entry
 
 
+def _prepare_slice(entry, t: int, min_group_size: int):
+    """Validated slice: node labels, kept groups, 0/1 matrix B, group sizes, groups dropped.
+
+    Groups below ``min_group_size`` are dropped with a warning; a node left
+    with no group is an error.
+    """
+    wide = _as_wide(entry, t)
+    labels = list(wide.index)
+    B_all = wide.to_numpy(dtype=float)
+    size_all = B_all.sum(axis=0)
+    keep = size_all >= min_group_size
+    n_drop = int((~keep).sum())
+    if n_drop:
+        warnings.warn(f"In slice {t}, dropped {n_drop} group(s) with fewer than {min_group_size} members.",
+                      UserWarning, stacklevel=3)
+    B = B_all[:, keep]
+    size = size_all[keep]
+    groups = [g for g, k in zip(wide.columns, keep) if k]
+    orphan = B.sum(axis=1) == 0
+    if orphan.any():
+        bad = [labels[i] for i in np.flatnonzero(orphan)[:10]]
+        raise ValueError(
+            f"In slice {t}, {int(orphan.sum())} node(s) belong to no group of at least {min_group_size} "
+            f"members, for example {bad}. Drop absent nodes from the slice before building layers."
+        )
+    return labels, groups, B, size, n_drop
+
+
 def _kumar_targets(B: np.ndarray, labels: np.ndarray) -> np.ndarray:
     """Kumar reweighting targets r_j for a fixed node partition.
 
@@ -207,25 +235,7 @@ def layers_from_membership(
 
     out = []
     for t, entry in enumerate(memberships, start=1):
-        wide = _as_wide(entry, t)
-        labels = list(wide.index)
-        B_all = wide.to_numpy(dtype=float)
-        size_all = B_all.sum(axis=0)
-        keep = size_all >= min_group_size
-        n_drop = int((~keep).sum())
-        if n_drop:
-            warnings.warn(f"In slice {t}, dropped {n_drop} group(s) with fewer than {min_group_size} members.",
-                          UserWarning, stacklevel=2)
-        B = B_all[:, keep]
-        size = size_all[keep]
-        groups = [g for g, k in zip(wide.columns, keep) if k]
-        orphan = B.sum(axis=1) == 0
-        if orphan.any():
-            bad = [labels[i] for i in np.flatnonzero(orphan)[:10]]
-            raise ValueError(
-                f"In slice {t}, {int(orphan.sum())} node(s) belong to no group of at least {min_group_size} "
-                f"members, for example {bad}. Drop absent nodes from the slice before building layers."
-            )
+        labels, groups, B, size, n_drop = _prepare_slice(entry, t, min_group_size)
 
         w = np.ones(B.shape[1])
         iterations, final_diff, partition = 0, None, None

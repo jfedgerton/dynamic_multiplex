@@ -652,9 +652,13 @@ def _best_matches(pair_ties: pd.DataFrame):
     return best
 
 
-def _check_repair_args(tracking: str, repair_chains, repair_min_similarity) -> None:
+def _check_repair_args(tracking: str, repair_chains, repair_min_similarity, seed=123) -> None:
     if tracking not in ("smoothed", "filtered"):
         raise ValueError('`tracking` must be "smoothed" or "filtered".')
+    if tracking == "filtered" and seed is None:
+        # Unseeded stage 1 on later layers advances the RNG that filtered
+        # stage 2 draws from, which would break append-invariance.
+        raise ValueError('`tracking = "filtered"` needs a seed; `seed=None` is not supported.')
     if not isinstance(repair_chains, (bool, np.bool_)):
         raise ValueError("`repair_chains` must be True or False.")
     if not (0.0 <= float(repair_min_similarity) <= 1.0):
@@ -900,7 +904,7 @@ def run_two_stage(
     ``tracking="smoothed"`` with ``repair_chains=False`` is the 1.3.2 code path,
     unchanged.
     """
-    _check_repair_args(tracking, repair_chains, repair_min_similarity)
+    _check_repair_args(tracking, repair_chains, repair_min_similarity, seed)
     interlayer_ties = pair_ties
     if add_self_loops:
         interlayer_ties = add_community_self_loops(

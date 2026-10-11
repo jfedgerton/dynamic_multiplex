@@ -52,7 +52,8 @@
 #'   is fitted on all layers at once, so a layer's meta ids can depend on later
 #'   layers. \code{"filtered"}: stage 2 runs forward in time and the meta ids of
 #'   layers 1..t depend only on layers 1..t (no future information). Filtered
-#'   mode assumes the layers are in time order.
+#'   mode assumes the layers are in time order and needs a non-NULL
+#'   \code{seed}.
 #' @param repair_chains Logical. If \code{TRUE}, rejoin meta-communities that
 #'   stage 2 cut along time: a group that ends at layer s and one that starts at
 #'   a linked layer t are joined when their communities are mutual best matches
@@ -115,7 +116,7 @@ fit_multilayer_weighted_overlap <- function(
 
   # Check arguments ----
   algorithm <- match.arg(algorithm)
-  .check_repair_args(tracking, repair_chains, repair_min_similarity)
+  .check_repair_args(tracking, repair_chains, repair_min_similarity, seed)
 
   # Scoped seed for reproducible detection (restores caller RNG state) ----
   if (!is.null(seed)) {

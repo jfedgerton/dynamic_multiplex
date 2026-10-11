@@ -17,7 +17,7 @@ import numpy as np
 import pandas as pd
 
 from .fit_multilayer_identity_ties import fit_multilayer_identity_ties
-from .multilayer_utils import _sort_key
+from .multilayer_utils import _check_repair_args, _sort_key
 from .fit_multilayer_jaccard import fit_multilayer_jaccard
 from .fit_multilayer_overlap import fit_multilayer_overlap
 from .fit_multilayer_weighted_jaccard import fit_multilayer_weighted_jaccard
@@ -152,6 +152,7 @@ def bootstrap_multilayer(
         samples, per-layer community-count reproducibility, and the point
         estimate.
     """
+    _check_repair_args(tracking, repair_chains, repair_min_similarity, seed)
     if fit_type not in _FIT_FNS:
         raise ValueError(
             f"`fit_type` must be one of {set(_FIT_FNS.keys())}."
@@ -212,13 +213,9 @@ def bootstrap_multilayer(
     if fit_type != "identity":
         fit_kwargs["min_similarity"] = min_similarity
         fit_kwargs["resolution_parameter"] = resolution_parameter
-        # 1.4.0 options are passed only when set, so the default refits are
-        # the 1.3.2 calls exactly.
-        if tracking != "smoothed":
-            fit_kwargs["tracking"] = tracking
-        if repair_chains:
-            fit_kwargs["repair_chains"] = repair_chains
-            fit_kwargs["repair_min_similarity"] = repair_min_similarity
+        fit_kwargs["tracking"] = tracking
+        fit_kwargs["repair_chains"] = repair_chains
+        fit_kwargs["repair_min_similarity"] = repair_min_similarity
     elif tracking != "smoothed" or repair_chains:
         raise ValueError("`tracking` and `repair_chains` apply to the two-stage fit types, not 'identity'.")
     if node_lists is not None:

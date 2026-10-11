@@ -795,9 +795,13 @@ detect_interlayer_communities <- function(
   best
 }
 
-.check_repair_args <- function(tracking, repair_chains, repair_min_similarity) {
+.check_repair_args <- function(tracking, repair_chains, repair_min_similarity, seed = 123) {
   if (!is.character(tracking) || length(tracking) != 1L || !tracking %in% c("smoothed", "filtered"))
     stop('`tracking` must be "smoothed" or "filtered".', call. = FALSE)
+  # Unseeded stage 1 on later layers advances the RNG that filtered stage 2
+  # draws from, which would break append-invariance.
+  if (identical(tracking, "filtered") && is.null(seed))
+    stop('`tracking = "filtered"` needs a seed; `seed = NULL` is not supported.', call. = FALSE)
   if (!is.logical(repair_chains) || length(repair_chains) != 1L || is.na(repair_chains))
     stop("`repair_chains` must be TRUE or FALSE.", call. = FALSE)
   if (!is.numeric(repair_min_similarity) || length(repair_min_similarity) != 1L ||
@@ -1020,7 +1024,7 @@ detect_interlayer_communities_filtered <- function(
 run_two_stage <- function(fit, pair_ties, links, add_self_loops, self_loop_multiplier, min_similarity,
                           directed, algorithm, resolution_parameter, seed, tracking, repair_chains,
                           repair_min_similarity) {
-  .check_repair_args(tracking, repair_chains, repair_min_similarity)
+  .check_repair_args(tracking, repair_chains, repair_min_similarity, seed)
   interlayer_ties <- pair_ties
   if (isTRUE(add_self_loops)) {
     interlayer_ties <- add_community_self_loops(edge_df = pair_ties, fit = fit, layer_links = links,

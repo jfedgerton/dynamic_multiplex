@@ -194,20 +194,26 @@ def partition_membership_strict(
     _check_common(memberships, 1.0, min_group_size)
     if isinstance(delta, bool) or not isinstance(delta, (int, float)) or not delta > 0:
         raise ValueError("`delta` must be a number > 0.")
+    # The caller's RNG states are saved before the lazy import, because some
+    # environments draw from them while importing hypernetx's dependencies.
+    py_state, np_state = random.getstate(), np.random.get_state()
     try:
-        import hypernetx as hnx
-        from hypernetx.algorithms.clustering import hypergraph_modularity as hmod
-    except ImportError as exc:
-        raise ImportError(
-            "partition_membership_strict needs hypernetx: pip install 'dynamic-multiplex[hypergraph]' "
-            "(hypernetx requires pandas < 3)."
-        ) from exc
+        try:
+            import hypernetx as hnx
+            from hypernetx.algorithms.clustering import hypergraph_modularity as hmod
+        except ImportError as exc:
+            raise ImportError(
+                "partition_membership_strict needs hypernetx: pip install 'dynamic-multiplex[hypergraph]' "
+                "(hypernetx requires pandas < 3)."
+            ) from exc
+    finally:
+        random.setstate(py_state)
+        np.random.set_state(np_state)
 
     out = []
     for t, entry in enumerate(memberships, start=1):
         labels, groups, B, _, n_drop = _prepare_slice(entry, t, min_group_size)
         edges = {g: [labels[i] for i in np.flatnonzero(B[:, j])] for j, g in enumerate(groups)}
-        py_state, np_state = random.getstate(), np.random.get_state()
         try:
             if seed is not None:
                 random.seed(seed)
@@ -296,7 +302,7 @@ def fit_multilayer_from_partitions(
                 "tracking": "smoothed", "repair_chains": False, "repair_min_similarity": None,
                 "chain_repairs": None}
 
-    _check_repair_args(tracking, repair_chains, repair_min_similarity)
+    _check_repair_args(tracking, repair_chains, repair_min_similarity, seed)
     algorithm = algorithm.lower()
     if algorithm not in ("leiden", "louvain"):
         raise ValueError("`algorithm` must be one of {'louvain', 'leiden'}.")

@@ -9,7 +9,7 @@ import networkx as nx
 import numpy as np
 import pandas as pd
 import pytest
-from sklearn.metrics import normalized_mutual_info_score as nmi
+from _helpers_140 import nmi
 
 from _helpers_140 import chain_layers
 from test_140_twomode import hand_wide, planted_long, truth
@@ -169,3 +169,24 @@ def test_tracking_validates_input():
         fit_multilayer_from_partitions([{1: 1}])
     with pytest.raises(ValueError, match="partition"):
         fit_multilayer_from_partitions([{1: 1}, [1, 2]])
+
+
+@needs_hnx
+def test_strict_restores_rng_even_when_the_import_draws(monkeypatch):
+    # Some environments draw from Python's `random` while importing hypernetx's
+    # dependencies (Codex review). Simulate that with an import hook.
+    import builtins
+    import random
+    real = builtins.__import__
+
+    def drawing_import(name, *a, **k):
+        if name.startswith("hypernetx"):
+            random.random(); np.random.random()
+        return real(name, *a, **k)
+    monkeypatch.setattr(builtins, "__import__", drawing_import)
+    random.seed(987); np.random.seed(987)
+    py, npst = random.getstate(), np.random.get_state()
+    partition_membership_strict([hand_wide()])
+    after = np.random.get_state()
+    assert random.getstate() == py
+    assert npst[0] == after[0] and np.array_equal(npst[1], after[1]) and npst[2:] == after[2:]

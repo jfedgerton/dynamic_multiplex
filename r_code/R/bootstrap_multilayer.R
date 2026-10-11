@@ -131,6 +131,7 @@ bootstrap_multilayer <- function(
   # check arguments ----
   fit_type <- match.arg(fit_type)
   algorithm <- match.arg(algorithm)
+  .check_repair_args(tracking, repair_chains, repair_min_similarity, seed)
 
   # assign seed unless a seed is provided ----
   if (!is.null(seed)) set.seed(seed)
@@ -187,14 +188,10 @@ bootstrap_multilayer <- function(
   if (fit_type != "identity") {
     fit_args$min_similarity <- min_similarity
     fit_args$resolution_parameter <- resolution_parameter
-    # 1.4.0 options are passed only when set, so the default refits are the
-    # 1.3.2 calls ----
-    if (!identical(tracking, "smoothed")) fit_args$tracking <- tracking
-    if (isTRUE(repair_chains)) {
-      fit_args$repair_chains <- TRUE
-      fit_args$repair_min_similarity <- repair_min_similarity
-    }
-  } else if (!identical(tracking, "smoothed") || isTRUE(repair_chains)) {
+    fit_args$tracking <- tracking
+    fit_args$repair_chains <- repair_chains
+    fit_args$repair_min_similarity <- repair_min_similarity
+  } else if (!identical(tracking, "smoothed") || repair_chains) {
     stop("`tracking` and `repair_chains` apply to the two-stage fit types, not 'identity'.", call. = FALSE)
   }
   if (unequal) fit_args$allow_unequal_nodes <- TRUE

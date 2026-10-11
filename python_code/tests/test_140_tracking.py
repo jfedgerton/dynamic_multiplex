@@ -228,3 +228,33 @@ def test_identity_and_hungarian_match_132():
         assert [m.tolist() for m in got] == rec["cases"][f"chain|hungarian|{alg}"], alg
     got = fit_multilayer_identity_ties(L, omega=1.0, seed=123)["meta_communities"]
     assert [np.asarray(m).tolist() for m in got] == rec["cases"]["chain|identity|leiden"]
+
+
+# 12. Codex review fixes ------------------------------------------------------------
+def test_filtered_requires_a_seed():
+    # Unseeded stage 1 on future layers advances the RNG that filtered stage 2
+    # draws from, so append-invariance needs a seed.
+    from dynamic_multiplex import bootstrap_multilayer, fit_multilayer_from_partitions
+    L = chain_layers()
+    with pytest.raises(ValueError, match="seed"):
+        fit_multilayer_jaccard(L, seed=None, tracking="filtered")
+    parts = [dict(f.membership) for f in fit_multilayer_jaccard(L, seed=123)["layer_communities"]]
+    with pytest.raises(ValueError, match="seed"):
+        fit_multilayer_from_partitions(parts, seed=None, tracking="filtered")
+    with pytest.raises(ValueError, match="seed"):
+        bootstrap_multilayer(L, n_boot=2, seed=None, tracking="filtered")
+    fit_multilayer_jaccard(L, seed=None)                     # smoothed unseeded still allowed
+
+
+def test_bootstrap_forwards_and_validates_repair_args():
+    from dynamic_multiplex import bootstrap_multilayer
+    L = sbm_layers()
+    res = bootstrap_multilayer(L, n_boot=2, seed=123, repair_min_similarity=0.8)
+    assert res.point_estimate["repair_min_similarity"] == 0.8
+    assert res.point_estimate["repair_chains"] is False
+    with pytest.raises(ValueError, match="repair_min_similarity"):
+        bootstrap_multilayer(L, n_boot=2, seed=123, repair_min_similarity=1.5)
+    with pytest.raises(ValueError, match="repair_chains"):
+        bootstrap_multilayer(L, n_boot=2, seed=123, repair_chains=1)
+    with pytest.raises(ValueError, match="tracking"):
+        bootstrap_multilayer(L, n_boot=2, seed=123, tracking="smooth")

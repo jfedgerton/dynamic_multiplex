@@ -179,3 +179,23 @@ test_that("undirected multislice local mover leaves a community it has no ties t
   res <- lm(ef, et, ew, K, 1 / 4, 3, c(1L, 2L, 2L, 1L), 50L)
   expect_gt(q(res), q(c(1L, 2L, 2L, 1L)))
 })
+
+test_that("filtered tracking requires a seed (Codex review)", {
+  # Unseeded stage 1 on later layers advances the RNG that filtered stage 2
+  # draws from, so append-invariance needs a seed.
+  L <- chain140_layers()
+  expect_error(fit_multilayer_jaccard(L, seed = NULL, tracking = "filtered"), "seed")
+  expect_error(bootstrap_multilayer(lapply(L, igraph::as_adjacency_matrix, attr = "weight", sparse = FALSE),
+                                    n_boot = 2, seed = NULL, tracking = "filtered"), "seed")
+  expect_no_error(fit_multilayer_jaccard(L, seed = NULL))
+})
+
+test_that("bootstrap forwards and validates the repair arguments (Codex review)", {
+  L <- lapply(sbm140_layers(), igraph::as_adjacency_matrix, attr = "weight", sparse = FALSE)
+  res <- bootstrap_multilayer(L, n_boot = 2, seed = 123, repair_min_similarity = 0.8)
+  expect_identical(res$point_estimate$repair_min_similarity, 0.8)
+  expect_false(res$point_estimate$repair_chains)
+  expect_error(bootstrap_multilayer(L, n_boot = 2, seed = 123, repair_min_similarity = 1.5), "repair_min_similarity")
+  expect_error(bootstrap_multilayer(L, n_boot = 2, seed = 123, repair_chains = 1), "repair_chains")
+  expect_error(bootstrap_multilayer(L, n_boot = 2, seed = 123, tracking = "smooth"), "tracking")
+})

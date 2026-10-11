@@ -46,7 +46,7 @@ def fit_multilayer_overlap(
         ``"filtered"``: stage 2 runs forward in time and the meta ids of layers
         1..t depend only on layers 1..t (no future information; see
         ``detect_interlayer_communities_filtered``). Filtered mode assumes the
-        layers are in time order.
+        layers are in time order and needs a seed (not None).
     repair_chains : bool
         If True, rejoin meta-communities that stage 2 cut along time: a group
         that ends at layer s and one that starts at a linked layer t are joined

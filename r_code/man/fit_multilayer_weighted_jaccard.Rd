@@ -70,7 +70,8 @@ layers must share the same node universe.}
 is fitted on all layers at once, so a layer's meta ids can depend on later
 layers. \code{"filtered"}: stage 2 runs forward in time and the meta ids of
 layers 1..t depend only on layers 1..t (no future information). Filtered
-mode assumes the layers are in time order.}
+mode assumes the layers are in time order and needs a non-NULL
+\code{seed}.}
 
 \item{repair_chains}{Logical. If \code{TRUE}, rejoin meta-communities that
 stage 2 cut along time: a group that ends at layer s and one that starts at

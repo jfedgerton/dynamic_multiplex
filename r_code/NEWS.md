@@ -43,6 +43,8 @@ separately. The same changes are in the Python package `dynamic-multiplex`
   previous behaviour). Stage 2 runs forward in time: the meta ids of layers
   1..t depend only on layers 1..t, so fitted labels carry no information from
   later layers. Works with Leiden and Louvain and with `repair_chains`.
+  Needs a seed (`seed = NULL` is an error), because unseeded stage-1 fits of
+  later layers would shift the random stream that stage 2 uses.
 
 * `layers_from_membership()` builds one weighted layer per time slice from
   group memberships (wide 0/1 matrices or long node-group tables), with

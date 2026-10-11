@@ -13,7 +13,7 @@ import networkx as nx
 import numpy as np
 import pandas as pd
 import pytest
-from sklearn.metrics import normalized_mutual_info_score as nmi
+from _helpers_140 import nmi
 
 from dynamic_multiplex import fit_multilayer_jaccard, layers_from_membership
 from dynamic_multiplex.layers_from_membership import _kumar_targets

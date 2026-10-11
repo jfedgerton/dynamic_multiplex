@@ -1,12 +1,12 @@
 Package: dynamicmultiplex
-Title: Community Detection for Evolving Multiplex Networks
+Title: Tracking Communities in Changing Temporal Networks
 Version: 1.4.0
 Authors@R: 
     person(given = "Jared",
            family = "Edgerton",
            role = c("aut", "cre"),
            email = "jared.edgerton@gmail.com")
-Description: Multiplex temporal community detection with customizable interlayer coupling. Runs Louvain or Leiden community detection on each network layer and constructs interlayer ties using Jaccard similarity, overlap coefficient, node-strength weighted variants, or direct node identity links, and also provides a two-stage snapshot-and-match tracker that aligns independently detected per-layer communities across time with the Hungarian assignment algorithm. Supports user-specified layer connectivity via the layer_links argument, enabling adjacent-only temporal coupling that avoids the long-range pooling problem in standard multislice approaches.
+Description: Tools for temporal networks that change over time, where nodes enter and leave, groups form, split, merge and dissolve, and periods differ in size. Every function tracks nodes and communities across periods. A community keeps one identifier while it persists, and a newly formed group receives a new one. Two-stage fitters run Louvain or Leiden community detection in each period and link communities in linked periods by Jaccard similarity, the overlap coefficient or node-strength weighted variants. The 'layer_links' argument sets which periods are linked, adjacent periods only by default, so distant periods are not pooled. Multislice modularity (Mucha et al. 2010) <doi:10.1126/science.1184819> and Hungarian matching are included as comparison methods, and a bootstrap stability score helps choose between the two-stage and multislice approaches.
 License: MIT + file LICENSE
 Encoding: UTF-8
 Depends:

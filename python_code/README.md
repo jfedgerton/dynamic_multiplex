@@ -1,6 +1,6 @@
 # dynamic_multiplex (Python)
 
-`dynamic_multiplex` is a Python package for multiplex community modeling with customizable interlayer ties.
+`dynamic_multiplex` is the Python implementation of DynMux. DynMux is a suite of tools for temporal networks that change over time. Nodes enter and leave, groups form, split, merge and dissolve, and periods can differ in size. Every function tracks nodes and communities across periods. A community keeps one id for as long as it persists, and a newly formed group gets a new id. The two-stage fitters detect communities in each period and link them to communities in the linked periods. `layer_links` sets which periods are linked, and by default that is adjacent periods only, so distant periods are not pooled. Multislice modularity (Mucha et al. 2010) and Hungarian matching are included as comparison methods. The bootstrap stability score helps choose between DynMux and multislice.
 
 ## Why this package
 

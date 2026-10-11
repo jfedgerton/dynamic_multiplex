@@ -1,7 +1,8 @@
 # dynamic_multiplex
 
-DynMux: temporal community detection for multiplex networks with customizable
-interlayer coupling, plus the replication materials for the accompanying paper.
+DynMux tracks communities in changing temporal networks, where nodes enter and
+leave and groups form, split, merge and dissolve. This repository holds the R and
+Python packages and the replication materials for the accompanying paper.
 
 ## Layout: packages vs. paper
 

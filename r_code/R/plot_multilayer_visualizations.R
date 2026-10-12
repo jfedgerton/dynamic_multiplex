@@ -5,8 +5,9 @@
 #'
 #' @param layers List of `igraph` objects or square adjacency matrices.
 #'
-#' @param fit Optional fit object from `fit_multilayer_jaccard()`,
-#' `fit_multilayer_overlap()`, or `fit_multilayer_identity_ties()`.
+#' @param fit Optional fit object from any `fit_multilayer_*()` function.
+#' Nodes are colored by the tracked `meta_communities`, so a color marks the
+#' same community in every layer.
 #'
 #' @param community_memberships Optional list of membership vectors
 #' (one per layer). Ignored when `fit` is provided.
@@ -88,8 +89,10 @@ plot_multilayer_series <- function(
       ),
       size = 2.7
     ) +
-    ggplot2::facet_wrap(facets = ~layer, ncol = ncol) +
-    ggplot2::scale_color_manual(values = .brewer_community_palette(palette = palette)) +
+    ggplot2::facet_wrap(facets = ~layer, ncol = ncol, scales = "free") +
+    ggplot2::scale_color_manual(values = .brewer_community_palette(
+      palette = palette, n = length(unique(node_df$community))
+    )) +
     ggplot2::theme_void() +
     ggplot2::theme(legend.position = "bottom") +
     ggplot2::labs(color = "Community")
@@ -105,8 +108,9 @@ plot_multilayer_series <- function(
 #'
 #' @param layers List of `igraph` objects or square adjacency matrices.
 #'
-#' @param fit Optional fit object from `fit_multilayer_jaccard()`,
-#' `fit_multilayer_overlap()`, or `fit_multilayer_identity_ties()`.
+#' @param fit Optional fit object from any `fit_multilayer_*()` function.
+#' Nodes are colored by the tracked `meta_communities`, so a color marks the
+#' same community in every layer.
 #'
 #' @param community_memberships Optional list of membership vectors
 #' (one per layer). Ignored when `fit` is provided.
@@ -221,7 +225,9 @@ animate_multilayer_gif <- function(
       ),
       size = 3
     ) +
-    ggplot2::scale_color_manual(values = .brewer_community_palette(palette = palette)) +
+    ggplot2::scale_color_manual(values = .brewer_community_palette(
+      palette = palette, n = length(unique(node_df$community))
+    )) +
     ggplot2::theme_void() +
     ggplot2::theme(legend.position = "bottom") +
     ggplot2::labs(title = "{closest_state}", color = "Community") +
@@ -245,8 +251,9 @@ animate_multilayer_gif <- function(
 
 #' @title Plot an alluvial view of community transitions over time
 #'
-#' @param fit Fit object from `fit_multilayer_jaccard()`,
-#' `fit_multilayer_overlap()`, or `fit_multilayer_identity_ties()`.
+#' @param fit Fit object from any `fit_multilayer_*()` function. Flows follow
+#' each actor (by vertex name when the layers are named) across the tracked
+#' `meta_communities`.
 #'
 #' @param max_nodes Optional cap on number of nodes to include for readability.
 #'
@@ -286,26 +293,35 @@ plot_multilayer_alluvial <- function(fit, max_nodes = NULL, palette = "Dark2") {
   }
 
   # assign layers and check layer length ----
+  # color by the tracked (meta) communities when the fit has them, so a
+  # label means the same community in every layer; per-layer labels are
+  # layer-local and are used only when no tracked partition exists ----
   layers <- fit$layer_communities
   if (length(layers) < 2) {
     stop("At least two layers are required for alluvial plotting.", call. = FALSE)
   }
+  tracked <- fit$meta_communities
 
   # bind formatted rows ----
+  # actors are identified by name when the membership vectors are named, so
+  # the same actor is followed across layers whatever its position; positions
+  # are used only for unnamed memberships ----
   rows <- do.call(
     what = rbind,
     args = lapply(seq_along(layers), function(i) {
       mem <- layers[[i]]$membership
-      node_ids <- suppressWarnings(as.integer(names(mem)))
-      if (all(is.na(node_ids))) node_ids <- seq_along(mem)
+      nm <- names(mem)
+      node_ids <- if (is.null(nm)) as.character(seq_along(mem)) else as.character(nm)
+      comm <- if (!is.null(tracked)) tracked[[i]] else mem
       data.frame(
         node = node_ids,
         layer = paste0("Layer ", i),
-        community = as.factor(mem),
+        community = as.integer(comm),
         stringsAsFactors = FALSE
       )
     })
   )
+  rows$community <- factor(rows$community, levels = sort(unique(rows$community)))
 
   # filter to maximum node count if specified ----
   if (!is.null(max_nodes)) {
@@ -324,9 +340,11 @@ plot_multilayer_alluvial <- function(fit, max_nodes = NULL, palette = "Dark2") {
         fill = .data[["community"]]
       )
     ) +
-    ggalluvial::geom_alluvium(alpha = 0.5) +
+    ggalluvial::geom_flow(alpha = 0.5) +
     ggalluvial::geom_stratum(alpha = 0.9) +
-    ggplot2::scale_fill_manual(values = .brewer_community_palette(palette = palette)) +
+    ggplot2::scale_fill_manual(values = .brewer_community_palette(
+      palette = palette, n = length(unique(rows$community))
+    )) +
     ggplot2::theme_minimal() +
     ggplot2::labs(x = "Temporal layer", y = "Nodes", fill = "Community")
 
@@ -335,8 +353,11 @@ plot_multilayer_alluvial <- function(fit, max_nodes = NULL, palette = "Dark2") {
 }
 
 .resolve_memberships <- function(graph_layers, fit = NULL, community_memberships = NULL) {
+  if (!is.null(fit) && !is.null(fit$meta_communities)) {
+    return(lapply(fit$meta_communities, as.integer))
+  }
   if (!is.null(fit) && !is.null(fit$layer_communities)) {
-    return(lapply(fit$layer_communities, function(x) x$membership))
+    return(lapply(fit$layer_communities, function(x) as.integer(x$membership)))
   }
 
   if (!is.null(community_memberships)) {
@@ -346,12 +367,16 @@ plot_multilayer_alluvial <- function(fit, max_nodes = NULL, palette = "Dark2") {
   return(lapply(graph_layers, function(g) seq_len(igraph::vcount(g))))
 }
 
-.brewer_community_palette <- function(palette = "Dark2") {
+.brewer_community_palette <- function(palette = "Dark2", n = 8L) {
   if (!requireNamespace("RColorBrewer", quietly = TRUE)) {
     stop("Package 'RColorBrewer' is required for palette support.", call. = FALSE)
   }
   palette <- match.arg(palette, c("Set2", "Dark2"))
-  return(RColorBrewer::brewer.pal(8, palette))
+  base <- RColorBrewer::brewer.pal(8, palette)
+  # the qualitative palettes have 8 colors; interpolate when there are more
+  # communities so the manual scale never runs short ----
+  if (n <= 8L) return(base)
+  return(grDevices::colorRampPalette(base)(n))
 }
 
 .build_layer_plot_data <- function(g, membership, layer_idx, layout) {
@@ -370,8 +395,11 @@ plot_multilayer_alluvial <- function(fit, max_nodes = NULL, palette = "Dark2") {
   if (nrow(edge_df) == 0) {
     edge_plot <- data.frame(x = numeric(0), y = numeric(0), xend = numeric(0), yend = numeric(0), layer = character(0))
   } else {
-    from_idx <- edge_df$from
-    to_idx <- edge_df$to
+    # endpoints as vertex indices (as_data_frame returns names for named
+    # graphs, which cannot index the coordinate vectors) ----
+    ends <- igraph::ends(g, igraph::E(g), names = FALSE)
+    from_idx <- ends[, 1]
+    to_idx <- ends[, 2]
     edge_plot <- data.frame(
       x = nodes$x[from_idx],
       y = nodes$y[from_idx],

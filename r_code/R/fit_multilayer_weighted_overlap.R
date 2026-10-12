@@ -7,7 +7,7 @@
 #'
 #' @param layers List of `igraph` objects or square adjacency matrices.
 #'
-#' @param algorithm Community algorithm: `"louvain"` or `"leiden"`.
+#' @param algorithm Community algorithm: `"leiden"` (default) or `"louvain"`.
 #'
 #' @param layer_links Optional data.frame defining which layers to connect,
 #' with columns `from`, `to`, and optional `weight`. If `NULL`, adjacent layers
@@ -27,9 +27,14 @@
 #' @param self_loop_multiplier Numeric multiplier applied to self-loop weighted
 #' ties.
 #'
-#' @param objective One of "cpm" or "modularity" for directed networks only
+#' @param objective Objective for the first-stage (per-layer) detection:
+#' `"modularity"` or `"cpm"` (CPM requires `algorithm = "leiden"`). Defaults to
+#' `"cpm"` for directed layers and `"modularity"` otherwise. It does not
+#' affect the second stage, which always maximizes modularity on the
+#' community graph.
 #'
-#' @param seed Optional integer seed for reproducible community detection.
+#' @param seed Integer seed for reproducible community detection (default 123, as in
+#'   the Python package; pass NULL for unseeded detection).
 #' When supplied, the global RNG state is saved, the RNG is seeded for the
 #' duration of the call, and the previous state is restored on exit, so the
 #' caller's random number stream (e.g. bootstrap resampling) is unaffected.
@@ -43,6 +48,19 @@
 #' linked pair contribute to the interlayer similarity. Defaults to `FALSE`:
 #' layers must share the same node universe.
 #'
+#' @param tracking \code{"smoothed"} (default, the 1.3.2 behaviour): stage 2
+#'   is fitted on all layers at once, so a layer's meta ids can depend on later
+#'   layers. \code{"filtered"}: stage 2 runs forward in time and the meta ids of
+#'   layers 1..t depend only on layers 1..t (no future information). Filtered
+#'   mode assumes the layers are in time order and needs a non-NULL
+#'   \code{seed}.
+#' @param repair_chains Logical. If \code{TRUE}, rejoin meta-communities that
+#'   stage 2 cut along time: a group that ends at layer s and one that starts at
+#'   a linked layer t are joined when their communities are mutual best matches
+#'   with similarity at least \code{repair_min_similarity}. Default \code{FALSE}
+#'   (1.3.2 behaviour).
+#' @param repair_min_similarity Similarity floor for chain repair, between 0 and 1.
+#'   Default 0.2.
 #' @return A list of class \code{"multilayer_community_fit"} with components:
 #'   \describe{
 #'     \item{layer_communities}{Per-layer community detection (each with
@@ -81,7 +99,7 @@
 
 fit_multilayer_weighted_overlap <- function(
     layers,
-    algorithm = c("louvain", "leiden"),
+    algorithm = c("leiden", "louvain"),
     layer_links = NULL,
     min_similarity = 0,
     resolution_parameter = 1,
@@ -89,12 +107,16 @@ fit_multilayer_weighted_overlap <- function(
     add_self_loops = TRUE,
     self_loop_multiplier = 1,
     objective = NULL,
-    seed = NULL,
-    allow_unequal_nodes = FALSE
+    seed = 123,
+    allow_unequal_nodes = FALSE,
+    tracking = "smoothed",
+    repair_chains = FALSE,
+    repair_min_similarity = 0.2
   ) {
 
   # Check arguments ----
   algorithm <- match.arg(algorithm)
+  .check_repair_args(tracking, repair_chains, repair_min_similarity, seed)
 
   # Scoped seed for reproducible detection (restores caller RNG state) ----
   if (!is.null(seed)) {
@@ -124,7 +146,7 @@ fit_multilayer_weighted_overlap <- function(
   node_weights <- layer_node_strengths(graph_layers, directed = directed)
 
   # Calculate interlayer ties ----
-  interlayer_ties <- community_overlap_edges(
+  pair_ties <- community_overlap_edges(
     fit = fit,
     layer_links = links,
     graph_layers = graph_layers,
@@ -133,27 +155,23 @@ fit_multilayer_weighted_overlap <- function(
     node_weights_by_layer = node_weights
   )
 
-  # Add community self loops ----
-  if (isTRUE(add_self_loops)) {
-    interlayer_ties <- add_community_self_loops(
-      edge_df = interlayer_ties,
-      fit = fit,
-      layer_links = links,
-      self_loop_multiplier = self_loop_multiplier,
-      min_similarity = min_similarity,
-      directed = directed
-    )
-  }
-
   # Compile multilayer community fit object ----
   # second-stage detection: group per-layer communities into cross-layer
   # meta-communities from the interlayer ties (the tracked partition) ----
-  meta <- detect_interlayer_communities(
-    layer_communities = fit,
-    interlayer_ties = interlayer_ties,
+  meta <- run_two_stage(
+    fit, pair_ties, links,
+    add_self_loops = add_self_loops,
+    self_loop_multiplier = self_loop_multiplier,
+    min_similarity = min_similarity,
+    directed = directed,
     algorithm = algorithm,
-    resolution_parameter = resolution_parameter
+    resolution_parameter = resolution_parameter,
+    seed = seed,
+    tracking = tracking,
+    repair_chains = repair_chains,
+    repair_min_similarity = repair_min_similarity
   )
+  interlayer_ties <- meta$interlayer_ties
 
   multilayer_weighted_overlap <- structure(
     list(
@@ -164,7 +182,11 @@ fit_multilayer_weighted_overlap <- function(
       layer_links = links,
       interlayer_ties = interlayer_ties,
       directed = directed,
-      weighting = "node_strength"
+      weighting = "node_strength",
+      tracking = meta$tracking,
+      repair_chains = meta$repair_chains,
+      repair_min_similarity = meta$repair_min_similarity,
+      chain_repairs = meta$chain_repairs
     ),
     class = "multilayer_community_fit"
   )

@@ -42,6 +42,22 @@ prepare_multilayer_graphs <- function(layers, directed = FALSE, require_same_nod
       )
     }
 
+    # reject layers without vertices ----
+    if (igraph::vcount(layer_graph) == 0) {
+      stop(sprintf("Layer %d has no vertices. Drop empty layers before fitting.", i), call. = FALSE)
+    }
+
+    # input policy (same in R and Python): within-layer self-loops and
+    # zero-weight edges are dropped, so an igraph input and the equivalent
+    # adjacency matrix give the same graph ----
+    loops <- which(igraph::which_loop(layer_graph))
+    if (length(loops)) layer_graph <- igraph::delete_edges(layer_graph, loops)
+    w <- igraph::E(layer_graph)$weight
+    if (!is.null(w)) {
+      zero <- which(!is.na(w) & w == 0)
+      if (length(zero)) layer_graph <- igraph::delete_edges(layer_graph, zero)
+    }
+
     # return layer graph ----
     return(layer_graph)
   })
@@ -69,9 +85,10 @@ prepare_multilayer_graphs <- function(layers, directed = FALSE, require_same_nod
   } else {
     ## unequal node sets are matched by vertex NAME, so every layer must carry
     ## names; positions would silently pair unrelated nodes ----
+    ## (1.4.0) checked whatever the layer sizes: nodes can enter and leave
+    ## while the size stays the same ----
     named <- vapply(graph_layers, function(g) !is.null(igraph::V(g)$name), logical(1))
-    sizes <- vapply(graph_layers, function(g) as.numeric(igraph::vcount(g)), numeric(1))
-    if (!all(named) && length(unique(sizes)) > 1L) {
+    if (!all(named)) {
       stop(
         "allow_unequal_nodes = TRUE requires vertex names on every layer ",
         "(igraph vertex names, or dimnames on adjacency matrices) so that nodes ",
@@ -166,7 +183,7 @@ make_layer_links <- function(n_layers, layer_links = NULL) {
 
 fit_layer_communities <- function(
     graph_layers,
-    algorithm = c("louvain", "leiden"),
+    algorithm = c("leiden", "louvain"),
     resolution_parameter = 1,
     directed = FALSE,
     objective = NULL
@@ -210,6 +227,17 @@ fit_layer_communities <- function(
     }
   }
 
+  # directed layers with directed = FALSE: collapsed per layer below (before
+  # 1.3.2 igraph stopped with an error here) ----
+  if (!directed && any(vapply(graph_layers, igraph::is_directed, logical(1)))) {
+    warning(
+      "Directed layers were passed with directed = FALSE; collapsing them to ",
+      "weighted undirected graphs (reciprocal arc weights summed) for ",
+      "per-layer detection.",
+      call. = FALSE
+    )
+  }
+
   # warn once for directed leiden (collapsed per layer below) ----
   if (algorithm == "leiden" && directed &&
       any(vapply(graph_layers, igraph::is_directed, logical(1)))) {
@@ -229,7 +257,7 @@ fit_layer_communities <- function(
     if (algorithm == "louvain") {
 
       ### convert to undirected graph ----
-      if (directed && igraph::is_directed(g_input)) {
+      if (igraph::is_directed(g_input)) {
         g <- igraph::as_undirected(
           graph = g_input,
           mode = "collapse",
@@ -249,7 +277,7 @@ fit_layer_communities <- function(
       ### (igraph's cluster_leiden supports undirected graphs only; see
       ### community/leiden.c. Mirror the louvain path: collapse directed
       ### layers to weighted undirected graphs; warned once above.)
-      if (directed && igraph::is_directed(g_input)) {
+      if (igraph::is_directed(g_input)) {
         g <- igraph::as_undirected(
           graph = g_input,
           mode = "collapse",
@@ -637,7 +665,7 @@ add_community_self_loops <- function(
 detect_interlayer_communities <- function(
     layer_communities,
     interlayer_ties,
-    algorithm = c("louvain", "leiden"),
+    algorithm = c("leiden", "louvain"),
     resolution_parameter = 1
   ) {
 
@@ -718,6 +746,314 @@ detect_interlayer_communities <- function(
 }
 
 
+# ---------------------------------------------------------------------------
+# 1.4.0: chain repair and filtered (past-only) tracking for the two-stage fits
+# (mirrors python_code/src/dynamic_multiplex/multilayer_utils.py)
+# ---------------------------------------------------------------------------
+
+.parse_key <- function(k) {
+  m <- regmatches(k, regexec("^L([0-9]+)C([0-9]+)$", k))
+  cbind(layer = as.integer(vapply(m, `[`, "", 2)), comm = as.integer(vapply(m, `[`, "", 3)))
+}
+
+# per-layer node membership (layer vertex order) from supernode meta ids
+.membership_from_meta <- function(layer_communities, meta_ids) {
+  lapply(seq_along(layer_communities), function(t) {
+    mem <- layer_communities[[t]]$membership
+    as.integer(meta_ids[paste0("L", t, "C", as.integer(mem))])
+  })
+}
+
+# relabel meta ids 1..K in order of first appearance (layer, then community id)
+.renumber_first_appearance <- function(meta_ids) {
+  pk <- .parse_key(names(meta_ids))
+  o <- order(pk[, "layer"], pk[, "comm"])
+  ids <- meta_ids[o]
+  out <- integer(length(meta_ids))
+  out[o] <- match(ids, unique(ids))
+  stats::setNames(out, names(meta_ids))
+}
+
+# best match of every supernode into every linked layer, by similarity:
+# key "layer|comm|other_layer" -> c(similarity, other_comm); ties -> lower id
+.best_matches <- function(pair_ties) {
+  best <- new.env(hash = TRUE)
+  if (is.null(pair_ties) || !nrow(pair_ties)) return(best)
+  for (i in seq_len(nrow(pair_ties))) {
+    al <- pair_ties$from_layer[i]; ac <- pair_ties$from_community[i]
+    bl <- pair_ties$to_layer[i]; bc <- pair_ties$to_community[i]
+    if (al == bl) next
+    s <- pair_ties$similarity[i]
+    for (d in 1:2) {
+      xl <- if (d == 1) al else bl; xc <- if (d == 1) ac else bc
+      yl <- if (d == 1) bl else al; yc <- if (d == 1) bc else ac
+      key <- paste(xl, xc, yl, sep = "|")
+      cur <- best[[key]]
+      if (is.null(cur) || s > cur[1] || (s == cur[1] && yc < cur[2])) assign(key, c(s, yc), envir = best)
+    }
+  }
+  best
+}
+
+.check_repair_args <- function(tracking, repair_chains, repair_min_similarity, seed = 123) {
+  if (!is.character(tracking) || length(tracking) != 1L || !tracking %in% c("smoothed", "filtered"))
+    stop('`tracking` must be "smoothed" or "filtered".', call. = FALSE)
+  # Unseeded stage 1 on later layers advances the RNG that filtered stage 2
+  # draws from, which would break append-invariance.
+  if (identical(tracking, "filtered") && is.null(seed))
+    stop('`tracking = "filtered"` needs a seed; `seed = NULL` is not supported.', call. = FALSE)
+  if (!is.logical(repair_chains) || length(repair_chains) != 1L || is.na(repair_chains))
+    stop("`repair_chains` must be TRUE or FALSE.", call. = FALSE)
+  if (!is.numeric(repair_min_similarity) || length(repair_min_similarity) != 1L ||
+      is.na(repair_min_similarity) || repair_min_similarity < 0 || repair_min_similarity > 1)
+    stop("`repair_min_similarity` must be between 0 and 1.", call. = FALSE)
+  invisible(TRUE)
+}
+
+.empty_repair_log <- function() {
+  data.frame(from_layer = integer(0), from_community = integer(0), to_layer = integer(0),
+             to_community = integer(0), similarity = numeric(0))
+}
+
+#' @title Rejoin meta-communities cut along time (chain repair)
+#'
+#' @description Stage-2 modularity tends to cut a long-lived community into
+#' time segments (a resolution-limit effect on chains of communities). For
+#' each layer link (s, t) with s < t, in increasing order, and each community
+#' a in layer s (by community id), the meta-community of community b in layer
+#' t is joined to that of a when (i) a and b are each other's best match
+#' across (s, t) by the fit's own similarity (mutual best match, as in
+#' Kawadia and Sreenivasan 2012), (ii) their similarity is at least
+#' \code{min_similarity} (a matching floor, as in Greene et al. 2010), and
+#' (iii) a's meta-community has no community after s and b's none before t,
+#' so groups that coexist are never merged.
+#'
+#' @param meta_ids Named integer vector of meta ids, names "L<layer>C<community>".
+#' @param pair_ties Interlayer ties without self-loops (columns from_layer,
+#'   to_layer, from_community, to_community, similarity).
+#' @param layer_links Layer links data frame (from, to).
+#' @param min_similarity Similarity floor in [0, 1].
+#' @return A list with \code{meta_ids} (repaired, renumbered 1..K by first
+#'   appearance) and \code{log} (one row per join).
+#' @noRd
+repair_meta_chains <- function(meta_ids, pair_ties, layer_links, min_similarity = 0.2) {
+  ids <- unique(as.integer(meta_ids))
+  root <- stats::setNames(ids, as.character(ids))
+  pk <- .parse_key(names(meta_ids))
+  layers_of <- lapply(split(pk[, "layer"], as.integer(meta_ids)), unique)
+  find <- function(m) {
+    m <- as.character(m)
+    while (root[[m]] != as.integer(m)) m <- as.character(root[[m]])
+    as.integer(m)
+  }
+  best <- .best_matches(pair_ties)
+  lp <- unique(t(apply(cbind(as.integer(layer_links$from), as.integer(layer_links$to)), 1, sort)))
+  lp <- lp[lp[, 1] != lp[, 2], , drop = FALSE]
+  lp <- lp[order(lp[, 1], lp[, 2]), , drop = FALSE]
+  log <- list()
+  for (r in seq_len(nrow(lp))) {
+    s <- lp[r, 1]; t <- lp[r, 2]
+    for (ca in sort(pk[pk[, "layer"] == s, "comm"])) {
+      fwd <- best[[paste(s, ca, t, sep = "|")]]
+      if (is.null(fwd)) next
+      sim <- fwd[1]; cb <- fwd[2]
+      bwd <- best[[paste(t, cb, s, sep = "|")]]
+      if (is.null(bwd) || bwd[2] != ca || sim < min_similarity) next
+      ra <- find(meta_ids[[paste0("L", s, "C", ca)]]); rb <- find(meta_ids[[paste0("L", t, "C", cb)]])
+      if (ra == rb) next
+      if (max(layers_of[[as.character(ra)]]) == s && min(layers_of[[as.character(rb)]]) == t) {
+        root[[as.character(rb)]] <- ra
+        layers_of[[as.character(ra)]] <- union(layers_of[[as.character(ra)]], layers_of[[as.character(rb)]])
+        layers_of[[as.character(rb)]] <- NULL
+        log[[length(log) + 1L]] <- data.frame(from_layer = as.integer(s), from_community = as.integer(ca),
+                                              to_layer = as.integer(t), to_community = as.integer(cb),
+                                              similarity = sim)
+      }
+    }
+  }
+  repaired <- stats::setNames(vapply(as.integer(meta_ids), find, integer(1)), names(meta_ids))
+  list(meta_ids = .renumber_first_appearance(repaired),
+       log = if (length(log)) do.call(rbind, log) else .empty_repair_log())
+}
+
+# stage-2 solver call on a weighted graph (same igraph calls as
+# detect_interlayer_communities); nodes = character names
+.cluster_weighted <- function(nodes, edge_df, algorithm, resolution_parameter) {
+  g <- igraph::graph_from_data_frame(d = edge_df, directed = FALSE,
+                                     vertices = data.frame(name = nodes, stringsAsFactors = FALSE))
+  cl <- if (algorithm == "louvain") {
+    igraph::cluster_louvain(graph = g, weights = igraph::E(g)$weight, resolution = resolution_parameter)
+  } else {
+    igraph::cluster_leiden(graph = g, objective_function = "modularity", weights = igraph::E(g)$weight,
+                           resolution = resolution_parameter, n_iterations = 3)
+  }
+  stats::setNames(as.integer(igraph::membership(cl)), igraph::V(g)$name)
+}
+
+#' @title Past-only (filtered) second stage
+#'
+#' @description The meta id of a layer-t community depends only on layers
+#' 1..t. At each layer t the package's community graph is built on layers 1..t
+#' from the links whose ends are both at or before t; every meta-community
+#' already assigned in layers before t is contracted into one read-only anchor
+#' (contraction keeps degrees and internal weights) and the graph is clustered
+#' with the same Leiden or Louvain call as the smoothed stage 2, reseeding
+#' with \code{seed} at every layer. A layer-t community takes the id of the
+#' anchor in its cluster with the strongest direct tie to it (then the
+#' strongest tie to the cluster's other layer-t communities, then the lower
+#' id); a cluster without an anchor starts a new id. Anchors are never
+#' relabelled. With \code{repair_chains}, a layer-t community that started a
+#' new id is joined to a group that ended at a linked earlier layer s under
+#' the rule of \code{repair_meta_chains}, using layers s and t only.
+#' @noRd
+detect_interlayer_communities_filtered <- function(
+    layer_communities, pair_ties, layer_links, algorithm = c("leiden", "louvain"),
+    resolution_parameter = 1, seed = 123, add_self_loops = TRUE, self_loop_multiplier = 1,
+    min_similarity = 0, directed = FALSE, repair_chains = FALSE, repair_min_similarity = 0.2) {
+
+  algorithm <- match.arg(algorithm)
+  n_layers <- length(layer_communities)
+  comms1 <- sort(as.integer(names(layer_communities[[1]]$communities)))
+  meta <- stats::setNames(seq_along(comms1), paste0("L1C", comms1))
+  next_id <- length(meta) + 1L
+  last_layer <- stats::setNames(rep(1L, length(meta)), as.character(meta))
+  log <- list()
+  has_ties <- !is.null(pair_ties) && nrow(pair_ties) > 0
+  best <- if (repair_chains && has_ties) .best_matches(pair_ties) else new.env()
+
+  for (t in 2:n_layers) {
+    if (n_layers < 2) break
+    lk <- layer_links[layer_links$from <= t & layer_links$to <= t, , drop = FALSE]
+    pt <- if (has_ties) pair_ties[pair_ties$from_layer <= t & pair_ties$to_layer <= t, , drop = FALSE] else pair_ties
+    ties <- pt
+    if (isTRUE(add_self_loops) && nrow(lk) > 0) {
+      ties <- add_community_self_loops(edge_df = pt, fit = layer_communities[seq_len(t)], layer_links = lk,
+                                       self_loop_multiplier = self_loop_multiplier,
+                                       min_similarity = min_similarity, directed = directed)
+    }
+    cur_c <- sort(as.integer(names(layer_communities[[t]]$communities)))
+    cur <- paste0("L", t, "C", cur_c)
+    start_id <- next_id
+
+    node_of <- function(k) {
+      lay <- .parse_key(k)[, "layer"]
+      ifelse(lay < t, paste0("A", meta[k]), k)
+    }
+    anchors <- paste0("A", sort(unique(as.integer(meta))))
+    nodes <- c(anchors, cur)
+    ord <- stats::setNames(seq_along(nodes), nodes)
+    edges <- NULL
+    if (!is.null(ties) && nrow(ties) > 0) {
+      u <- node_of(paste0("L", ties$from_layer, "C", ties$from_community))
+      v <- node_of(paste0("L", ties$to_layer, "C", ties$to_community))
+      swap <- ord[u] > ord[v]
+      a <- ifelse(swap, v, u); b <- ifelse(swap, u, v)
+      agg <- stats::aggregate(w ~ a + b, data = data.frame(a = a, b = b, w = ties$weighted_similarity,
+                                                           stringsAsFactors = FALSE), FUN = sum)
+      agg <- agg[order(ord[agg$a], ord[agg$b]), , drop = FALSE]
+      edges <- data.frame(from = agg$a, to = agg$b, weight = agg$w, stringsAsFactors = FALSE)
+    }
+
+    if (is.null(edges) || nrow(edges) == 0) {
+      for (k in cur) { meta[[k]] <- next_id; next_id <- next_id + 1L }
+    } else {
+      if (!is.null(seed)) set.seed(seed)
+      mem <- .cluster_weighted(nodes, edges, algorithm, resolution_parameter)
+      wkey <- paste(edges$from, edges$to)
+      w_between <- function(x, y) {
+        k <- if (ord[[x]] <= ord[[y]]) paste(x, y) else paste(y, x)
+        i <- match(k, wkey); if (is.na(i)) 0 else edges$weight[i]
+      }
+      clusters <- split(nodes, mem[nodes])
+      groups <- list()
+      for (members in clusters) {
+        frees <- members[!startsWith(members, "A")]
+        if (!length(frees)) next
+        groups[[length(groups) + 1L]] <- list(first = min(.parse_key(frees)[, "comm"]),
+                                              anc = members[startsWith(members, "A")], frees = frees)
+      }
+      groups <- groups[order(vapply(groups, `[[`, numeric(1), "first"))]
+      for (gr in groups) {
+        if (!length(gr$anc)) {
+          for (n in gr$frees) meta[[n]] <- next_id
+          next_id <- next_id + 1L
+          next
+        }
+        for (n in gr$frees) {
+          sc <- t(vapply(gr$anc, function(a) c(w_between(a, n), sum(vapply(gr$frees, function(f) w_between(a, f), numeric(1))),
+                                               -as.numeric(sub("^A", "", a))), numeric(3)))
+          o <- order(-sc[, 1], -sc[, 2], -sc[, 3])
+          meta[[n]] <- as.integer(sub("^A", "", gr$anc[o[1]]))
+        }
+      }
+    }
+
+    if (repair_chains && nrow(lk) > 0) {
+      lp <- unique(t(apply(cbind(as.integer(lk$from), as.integer(lk$to)), 1, sort)))
+      lp <- lp[lp[, 1] != lp[, 2] & lp[, 2] == t, , drop = FALSE]
+      for (s in sort(lp[, 1])) {
+        for (k in cur) {
+          if (meta[[k]] < start_id) next                       # only groups that start at t
+          cb <- .parse_key(k)[, "comm"]
+          bwd <- best[[paste(t, cb, s, sep = "|")]]
+          if (is.null(bwd)) next
+          sim <- bwd[1]; ca <- bwd[2]
+          fwd <- best[[paste(s, ca, t, sep = "|")]]
+          if (is.null(fwd) || fwd[2] != cb || sim < repair_min_similarity) next
+          ma <- meta[[paste0("L", s, "C", ca)]]
+          # a's group must have ended at s: last seen at s and absent from t
+          if (!identical(unname(last_layer[as.character(ma)]), as.integer(s)) || any(meta[cur] == ma)) next
+          mb <- meta[[k]]
+          meta[cur][meta[cur] == mb] <- ma
+          log[[length(log) + 1L]] <- data.frame(from_layer = as.integer(s), from_community = as.integer(ca),
+                                                to_layer = as.integer(t), to_community = as.integer(cb),
+                                                similarity = sim)
+        }
+      }
+    }
+    last_layer[as.character(meta[cur])] <- as.integer(t)
+  }
+
+  meta <- .renumber_first_appearance(meta)
+  list(meta_ids = meta, membership = .membership_from_meta(layer_communities, meta),
+       chain_repairs = if (length(log)) do.call(rbind, log) else .empty_repair_log())
+}
+
+# Second stage shared by the four two-stage fitters. tracking = "smoothed" with
+# repair_chains = FALSE is the 1.3.2 code path, unchanged.
+run_two_stage <- function(fit, pair_ties, links, add_self_loops, self_loop_multiplier, min_similarity,
+                          directed, algorithm, resolution_parameter, seed, tracking, repair_chains,
+                          repair_min_similarity) {
+  .check_repair_args(tracking, repair_chains, repair_min_similarity, seed)
+  interlayer_ties <- pair_ties
+  if (isTRUE(add_self_loops)) {
+    interlayer_ties <- add_community_self_loops(edge_df = pair_ties, fit = fit, layer_links = links,
+                                                self_loop_multiplier = self_loop_multiplier,
+                                                min_similarity = min_similarity, directed = directed)
+  }
+  if (tracking == "smoothed") {
+    meta <- detect_interlayer_communities(layer_communities = fit, interlayer_ties = interlayer_ties,
+                                          algorithm = algorithm, resolution_parameter = resolution_parameter)
+    repairs <- .empty_repair_log()
+    if (repair_chains && !is.null(meta$meta_ids)) {
+      rep <- repair_meta_chains(meta$meta_ids, pair_ties, links, repair_min_similarity)
+      meta <- list(meta_ids = rep$meta_ids, membership = .membership_from_meta(fit, rep$meta_ids))
+      repairs <- rep$log
+    }
+  } else {
+    meta <- detect_interlayer_communities_filtered(
+      fit, pair_ties, links, algorithm = algorithm, resolution_parameter = resolution_parameter,
+      seed = seed, add_self_loops = add_self_loops, self_loop_multiplier = self_loop_multiplier,
+      min_similarity = min_similarity, directed = directed, repair_chains = repair_chains,
+      repair_min_similarity = repair_min_similarity)
+    repairs <- meta$chain_repairs
+  }
+  list(meta_ids = meta$meta_ids, membership = meta$membership, interlayer_ties = interlayer_ties,
+       chain_repairs = repairs, tracking = tracking, repair_chains = isTRUE(repair_chains),
+       repair_min_similarity = as.numeric(repair_min_similarity))
+}
+
+
 #' @title Multislice (Mucha) meta-communities for node-identity coupling
 #'
 #' @description Node-level second stage for the identity specification:
@@ -752,13 +1088,26 @@ detect_interlayer_communities <- function(
 #'
 #' @param seed Optional integer; the node visiting order is randomised.
 #'
+#' @param directed Logical. If \code{TRUE}, every layer must be a directed
+#'   graph and each slice keeps its arc directions: the slice term uses Leicht
+#'   and Newman's directed null model \eqn{k^{out}_{is} k^{in}_{js} / m_s}, so a
+#'   directed network in which every arc is reciprocated gives the same fit as
+#'   its undirected twin at the same \code{omega}. The interlayer identity
+#'   ties stay undirected (the coupling enters only through
+#'   \eqn{C_{jsr} + C_{jrs}}). If \code{FALSE} (default), directed layers are
+#'   symmetrised (\eqn{A + A^T}, a reciprocated pair counts twice) with a
+#'   warning, as before 1.3.2.
+#'
 #' @param max_levels,max_passes Safety caps on aggregation levels and local
 #'   moving passes per level.
 #'
 #' @return List with one integer vector per layer giving each node's
 #'   meta-community assignment (node order).
 #'
-#' @references Mucha, P. J., Richardson, T., Macon, K., Porter, M. A., and
+#' @references Leicht, E. A., and Newman, M. E. J. (2008). Community structure
+#'   in directed networks. \emph{Physical Review Letters} 100: 118703.
+#'
+#'   Mucha, P. J., Richardson, T., Macon, K., Porter, M. A., and
 #'   Onnela, J.-P. (2010). Community structure in time-dependent, multiscale,
 #'   and multiplex networks. \emph{Science} 328(5980): 876-878.
 #'
@@ -766,17 +1115,32 @@ detect_interlayer_communities <- function(
 detect_multislice_communities <- function(
     graph_layers,
     interlayer_ties,
-    algorithm = c("louvain", "leiden"),
+    algorithm = c("leiden", "louvain"),
     omega = 1,
     resolution_parameter = 1,
     seed = NULL,
     max_levels = 20L,
-    max_passes = 50L
+    max_passes = 50L,
+    directed = FALSE
   ) {
 
   algorithm <- match.arg(algorithm)
   vkey <- function(l, node) paste0("L", l, "N", node)
   n_layers <- length(graph_layers)
+
+  # directedness: all slices directed (directed null model) or none ----
+  is_dir <- vapply(graph_layers, igraph::is_directed, logical(1))
+  if (isTRUE(directed) && !all(is_dir)) {
+    stop("directed = TRUE requires every layer to be a directed graph; layers ",
+         paste(which(!is_dir), collapse = ", "), " are undirected. Pass directed ",
+         "graphs or adjacency matrices with directed = TRUE, or use directed = FALSE.",
+         call. = FALSE)
+  }
+  if (!isTRUE(directed) && any(is_dir)) {
+    warning("Directed layers were passed with directed = FALSE: the multislice fit ",
+            "symmetrised them (A + A^T, a reciprocated pair counts twice). Use ",
+            "directed = TRUE for the directed null model.", call. = FALSE)
+  }
 
   layer_nodes <- lapply(graph_layers, function(g) {
     nm <- igraph::V(g)$name
@@ -810,6 +1174,24 @@ detect_multislice_communities <- function(
   twom <- as.numeric(tapply(k, factor(slice, levels = seq_len(n_layers)), sum))
   twom[is.na(twom)] <- 0
 
+  # directed slices: out- and in-degree per slice and m_s = total arc weight.
+  # The optimiser works on half the ordered-pair objective, where an arc
+  # counts once and an undirected tie (interlayer identity tie) twice, so each
+  # arc enters the edge list with weight w / 2 ----
+  if (isTRUE(directed)) {
+    k_out <- numeric(N); k_in <- numeric(N)
+    if (!is.null(intra) && nrow(intra) > 0) {
+      kf <- tapply(intra$w, intra$from, sum); kt <- tapply(intra$w, intra$to, sum)
+      k_out[as.integer(names(kf))] <- kf
+      k_in[as.integer(names(kt))] <- kt
+      intra$w <- intra$w / 2
+    }
+    m_dir <- as.numeric(tapply(k_out, factor(slice, levels = seq_len(n_layers)), sum))
+    m_dir[is.na(m_dir)] <- 0
+    stopifnot(isTRUE(all.equal(sum(k_out), sum(k_in))), all(m_dir >= 0),
+              isTRUE(all.equal(sum(m_dir), sum(k_out))))
+  }
+
   # interlayer identity ties: weight = layer weight * omega, no null term ----
   inter <- NULL
   if (!is.null(interlayer_ties) && nrow(interlayer_ties) > 0 && omega > 0) {
@@ -829,8 +1211,16 @@ detect_multislice_communities <- function(
   K <- matrix(0, N, n_layers); K[cbind(seq_len(N), slice)] <- k
 
   if (!is.null(seed)) { rng <- save_rng_state(); on.exit(restore_rng_state(rng), add = TRUE); set.seed(seed) }
-  membership <- genlouvain_multislice(edges, K, twom, gamma = resolution_parameter,
-                                      max_levels = max_levels, max_passes = max_passes)
+  if (isTRUE(directed)) {
+    K_out <- matrix(0, N, n_layers); K_out[cbind(seq_len(N), slice)] <- k_out
+    K_in <- matrix(0, N, n_layers); K_in[cbind(seq_len(N), slice)] <- k_in
+    membership <- genlouvain_multislice(edges, K_out, m_dir, gamma = resolution_parameter,
+                                        max_levels = max_levels, max_passes = max_passes,
+                                        K_in = K_in)
+  } else {
+    membership <- genlouvain_multislice(edges, K, twom, gamma = resolution_parameter,
+                                        max_levels = max_levels, max_passes = max_passes)
+  }
   names(membership) <- verts
 
   # map back to per-layer node order ----
@@ -859,10 +1249,34 @@ detect_multislice_communities <- function(
 #'   in 1.3.0): with 3 restarts the joint NMI of a fit on small networks
 #'   (n <= 100) at an abrupt change-point varied by up to 0.2 across runs.
 #'
+#' @param K_in Optional in-degree matrix (vertices x slices). If supplied the
+#'   slices are directed: \code{K} holds out-degrees, \code{twom} holds the
+#'   per-slice total arc weight \eqn{m_s}, the null term is
+#'   \eqn{\gamma \sum_s K^{out}_{is} K^{in}_{js} / m_s}, and each arc enters
+#'   \code{edges} with half its weight.
+#'
 #' @return Integer membership vector for the original vertices (1..C).
 #'
 #' @noRd
-genlouvain_multislice <- function(edges, K, twom, gamma = 1, max_levels = 20L, max_passes = 50L, n_starts = 10L) {
+genlouvain_multislice <- function(edges, K, twom, gamma = 1, max_levels = 20L, max_passes = 50L, n_starts = 10L,
+                                  K_in = NULL) {
+  if (!is.null(K_in)) {
+    stopifnot(identical(dim(K_in), dim(K)), all(is.finite(K_in)), all(is.finite(K)))
+    inv_m <- ifelse(twom > 0, 1 / twom, 0)
+    # objective (unnormalised directed multislice modularity, ordered pairs):
+    # stored edge weights are half the ordered-pair weight, so double them ----
+    quality_dir <- function(memb) {
+      within <- sum(edges$w[memb[edges$from] == memb[edges$to]])
+      2 * within - gamma * sum(sweep(rowsum(K, memb) * rowsum(K_in, memb), 2, inv_m, "*"))
+    }
+    best <- NULL; best_q <- -Inf
+    for (start in seq_len(n_starts)) {
+      memb <- genlouvain_multislice_once(edges, K, twom, gamma, max_levels, max_passes, K_in = K_in)
+      q <- quality_dir(memb)
+      if (q > best_q) { best_q <- q; best <- memb }
+    }
+    return(best)
+  }
   inv2m <- ifelse(twom > 0, 1 / twom, 0)
   # objective (unnormalised multislice modularity, 2 mu Q): every undirected
   # edge is stored once but counts twice in sum_ij A_ij, so the within-community
@@ -883,7 +1297,8 @@ genlouvain_multislice <- function(edges, K, twom, gamma = 1, max_levels = 20L, m
   best
 }
 
-genlouvain_multislice_once <- function(edges, K, twom, gamma, max_levels, max_passes) {
+genlouvain_multislice_once <- function(edges, K, twom, gamma, max_levels, max_passes, K_in = NULL) {
+  if (!is.null(K_in)) return(genlouvain_multislice_once_directed(edges, K, K_in, twom, gamma, max_levels, max_passes))
   inv2m <- ifelse(twom > 0, 1 / twom, 0)
   N0 <- nrow(K)
   ef0 <- as.integer(edges$from); et0 <- as.integer(edges$to); ew0 <- as.numeric(edges$w)
@@ -944,9 +1359,99 @@ genlouvain_local_moving <- function(ef, et, ew, Kcur, inv2m, gamma, comm_init, m
       gain <- as.numeric(wc) - gamma * as.numeric(Ktot[cand, , drop = FALSE] %*% KS[v, ])
       ib <- which.max(gain); bg <- gain[ib]; best <- cand[ib]
       icv <- match(cv, cand)
-      stay <- if (is.na(icv)) 0 else gain[icv]             # staying alone has gain 0
+      # (1.4.0) exact gain of staying in cv even when v has no tie into cv;
+      # 0 was too high whenever cv still had other members, so the mover could
+      # refuse an improving move (same fix as the directed mover in 1.3.2) ----
+      stay <- if (!is.na(icv)) gain[icv] else -gamma * sum(Ktot[cv, ] * KS[v, ])
       if (bg <= stay + 1e-12) best <- cv
       Ktot[best, ] <- Ktot[best, ] + Kcur[v, ]
+      if (best != cv) { comm[v] <- best; moved <- moved + 1L }
+    }
+    if (moved == 0L) break
+  }
+  comm
+}
+
+# Directed-slice variants of the two functions above. K_out / K_in are
+# vertices x slices, inv_m = 1 / m_s (total arc weight per slice). Edge
+# weights are half the ordered-pair weight (arcs w / 2, identity ties w), so
+# the gain of joining community c is the half-scale change in
+# sum_ij [A_ijs - gamma k_out_is k_in_js / m_s] + coupling:
+#   w_vc - (gamma / 2) sum_s (k_out_vs Kin_cs + k_in_vs Kout_cs) / m_s.
+# With every arc reciprocated (k_out = k_in = k, m_s = 2m_s) this equals the
+# undirected gain exactly.
+genlouvain_multislice_once_directed <- function(edges, K_out, K_in, m_s, gamma, max_levels, max_passes) {
+  inv_m <- ifelse(m_s > 0, 1 / m_s, 0)
+  N0 <- nrow(K_out)
+  ef0 <- as.integer(edges$from); et0 <- as.integer(edges$to); ew0 <- as.numeric(edges$w)
+  relabel <- function(x) match(x, sort(unique(x)))
+  aggregate_edges <- function(ef, et, ew, comm) {
+    cf <- comm[ef]; ct <- comm[et]; keep <- cf != ct
+    if (!any(keep)) return(list(ef = integer(0), et = integer(0), ew = numeric(0)))
+    a <- pmin(cf[keep], ct[keep]); b <- pmax(cf[keep], ct[keep])
+    key <- a * (max(comm) + 1) + b
+    agg <- rowsum(ew[keep], key, reorder = TRUE); k <- as.numeric(rownames(agg))
+    list(ef = as.integer(k %/% (max(comm) + 1)), et = as.integer(k %% (max(comm) + 1)), ew = as.numeric(agg))
+  }
+  comm <- seq_len(N0)
+  for (outer in seq_len(max_levels)) {
+    comm <- relabel(genlouvain_local_moving_directed(ef0, et0, ew0, K_out, K_in, inv_m, gamma, comm, max_passes))
+    assign <- comm
+    Ko <- rowsum(K_out, comm, reorder = TRUE); Ki <- rowsum(K_in, comm, reorder = TRUE)
+    E <- aggregate_edges(ef0, et0, ew0, comm)
+    for (level in seq_len(max_levels)) {
+      if (!length(E$ef)) break
+      c2 <- relabel(genlouvain_local_moving_directed(E$ef, E$et, E$ew, Ko, Ki, inv_m, gamma, seq_len(nrow(Ko)), max_passes))
+      if (max(c2) == nrow(Ko)) break
+      assign <- c2[assign]
+      Ko <- rowsum(Ko, c2, reorder = TRUE); Ki <- rowsum(Ki, c2, reorder = TRUE)
+      E <- aggregate_edges(E$ef, E$et, E$ew, c2)
+    }
+    if (identical(assign, comm)) break
+    comm <- assign
+  }
+  as.integer(comm)
+}
+
+genlouvain_local_moving_directed <- function(ef, et, ew, Kout, Kin, inv_m, gamma, comm_init, max_passes) {
+  N <- nrow(Kout)
+  if (!length(ef)) return(comm_init)
+  nb_from <- c(ef, et); nb_to <- c(et, ef); nb_w <- c(ew, ew)
+  ord <- order(nb_from); nb_from <- nb_from[ord]; nb_to <- nb_to[ord]; nb_w <- nb_w[ord]
+  starts <- c(1L, cumsum(tabulate(nb_from, N)) + 1L)
+  comm <- as.integer(comm_init)
+  tot <- function(K) {
+    Kt <- rowsum(K, comm, reorder = TRUE); Kt <- Kt[as.character(seq_len(max(comm))), , drop = FALSE]
+    Kt[is.na(Kt)] <- 0
+    Kt
+  }
+  Ktot_out <- tot(Kout); Ktot_in <- tot(Kin)
+  KSo <- Kout * matrix(inv_m, N, ncol(Kout), byrow = TRUE)   # k_out_vs / m_s
+  KSi <- Kin * matrix(inv_m, N, ncol(Kin), byrow = TRUE)     # k_in_vs / m_s
+  for (pass in seq_len(max_passes)) {
+    moved <- 0L
+    for (v in sample.int(N)) {
+      a <- starts[v]; b <- starts[v + 1L] - 1L
+      if (b < a) next
+      nbr <- nb_to[a:b]; wv <- nb_w[a:b]
+      cv <- comm[v]
+      Ktot_out[cv, ] <- Ktot_out[cv, ] - Kout[v, ]
+      Ktot_in[cv, ] <- Ktot_in[cv, ] - Kin[v, ]
+      nc <- comm[nbr]
+      wc <- rowsum(wv, nc, reorder = FALSE)
+      cand <- as.integer(rownames(wc))
+      null <- as.numeric(Ktot_in[cand, , drop = FALSE] %*% KSo[v, ]) +
+              as.numeric(Ktot_out[cand, , drop = FALSE] %*% KSi[v, ])
+      gain <- as.numeric(wc) - (gamma / 2) * null
+      ib <- which.max(gain); bg <- gain[ib]; best <- cand[ib]
+      icv <- match(cv, cand)
+      # staying: v's weight to its own community (0 if no edge) minus the null
+      # term against the rest of that community; zero only if v is alone ----
+      stay <- if (!is.na(icv)) gain[icv] else
+        -(gamma / 2) * (sum(Ktot_in[cv, ] * KSo[v, ]) + sum(Ktot_out[cv, ] * KSi[v, ]))
+      if (bg <= stay + 1e-12) best <- cv
+      Ktot_out[best, ] <- Ktot_out[best, ] + Kout[v, ]
+      Ktot_in[best, ] <- Ktot_in[best, ] + Kin[v, ]
       if (best != cv) { comm[v] <- best; moved <- moved + 1L }
     }
     if (moved == 0L) break

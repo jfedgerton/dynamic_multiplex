@@ -1,21 +1,12 @@
-"""Bootstrap confidence intervals for multilayer community detection.
+"""Parametric network bootstrap for multilayer community detection.
 
-Provides parametric network-bootstrap uncertainty quantification by
-redrawing the full edge set B times, re-running community detection, and
-computing co-assignment probabilities, node-pair co-assignment intervals,
-community-count reproducibility, and node-level stability measures.
-
-.. warning::
-   The percentile community-count confidence interval was replaced in
-   version 1.1.0 with a descriptive reproducibility summary: a large
-   simulation study found its coverage collapsed under community-size skew
-   (~0.62) with no observable diagnostic to flag the failure. A modularity
-   CI was removed in the same release because its empirical coverage is
-   never close to nominal at any network size (community detection maximizes
-   modularity, so the bootstrap interval concentrates around an upwardly
-   biased value). The validated interval in this module is the node-pair
-   co-assignment interval (``co_assignment_ci``). Raw ``modularity_samples``
-   remain available for descriptive use.
+Redraws the full edge set B times from the fitted partition, refits the same
+method and records how well each replicate's tracked partition agrees with the
+original. Since 1.4.0 the package uses the bootstrap only for the stability
+score s (``partition_stability``), which compares fits of the same network.
+The interval and accuracy-floor outputs of earlier versions
+(``co_assignment_ci``, ``community_est``, the calibrated floor) were removed:
+their coverage was not reliable.
 """
 
 from __future__ import annotations
@@ -26,6 +17,7 @@ import numpy as np
 import pandas as pd
 
 from .fit_multilayer_identity_ties import fit_multilayer_identity_ties
+from .multilayer_utils import _check_repair_args, _sort_key
 from .fit_multilayer_jaccard import fit_multilayer_jaccard
 from .fit_multilayer_overlap import fit_multilayer_overlap
 from .fit_multilayer_weighted_jaccard import fit_multilayer_weighted_jaccard
@@ -95,6 +87,10 @@ def bootstrap_multilayer(
     directed: bool = False,
     seed: int | None = None,
     objective: str | None = None,
+    tracking: str = "smoothed",
+    repair_chains: bool = False,
+    repair_min_similarity: float = 0.2,
+    allow_unequal_nodes: bool = False,
 ) -> BootstrapResult:
     """Bootstrap confidence intervals for multilayer community detection.
 
@@ -138,6 +134,16 @@ def bootstrap_multilayer(
         Whether networks are directed.
     seed : int or None
         Random seed for reproducibility.
+    tracking, repair_chains, repair_min_similarity
+        Passed to the two-stage fitters (see ``fit_multilayer_jaccard``) so
+        that every refit uses the same settings as the point estimate. Not
+        available for ``fit_type="identity"``.
+    allow_unequal_nodes : bool
+        If True, layers may hold different node sets (nodes entering and
+        leaving, with or without a change in layer size). Layers must then be
+        networkx graphs with node labels; each layer is redrawn on its own
+        nodes and every refit matches nodes across layers by label. Default
+        False: all layers must share one node set.
 
     Returns
     -------
@@ -146,6 +152,7 @@ def bootstrap_multilayer(
         samples, per-layer community-count reproducibility, and the point
         estimate.
     """
+    _check_repair_args(tracking, repair_chains, repair_min_similarity, seed)
     if fit_type not in _FIT_FNS:
         raise ValueError(
             f"`fit_type` must be one of {set(_FIT_FNS.keys())}."
@@ -153,18 +160,48 @@ def bootstrap_multilayer(
 
     fit_fn = _FIT_FNS[fit_type]
 
+    import networkx as nx
+
+    is_graph = [hasattr(layer, "nodes") for layer in layers]
+    graph_sets = [set(layer.nodes()) for layer, g in zip(layers, is_graph) if g]
+    same_graph_nodes = all(ns == graph_sets[0] for ns in graph_sets[1:]) if graph_sets else True
+    node_lists = None            # per-layer node labels (unequal mode only)
+    if allow_unequal_nodes:
+        if not all(is_graph):
+            raise ValueError(
+                "allow_unequal_nodes=True requires networkx graphs with node labels on every layer."
+            )
+        if not same_graph_nodes:
+            node_lists = [sorted(layer.nodes(), key=_sort_key) for layer in layers]
+    elif not same_graph_nodes:
+        # Positions would silently pair different nodes (e.g. same-size layers
+        # whose members changed), so fail loudly.
+        raise ValueError(
+            "Layers have different node sets; pass allow_unequal_nodes=True "
+            "(with labelled networkx graphs) to match nodes by label."
+        )
+
     # Convert layers to numpy arrays for resampling
     np_layers = []
-    for layer in layers:
-        if hasattr(layer, "nodes"):  # NetworkX graph
-            import networkx as nx
-
+    for i, layer in enumerate(layers):
+        if node_lists is not None:
+            np_layers.append(nx.to_numpy_array(layer, nodelist=node_lists[i], weight="weight"))
+        elif is_graph[i]:
             np_layers.append(nx.to_numpy_array(layer, weight="weight"))
         else:
             np_layers.append(np.asarray(layer, dtype=float))
 
     n_layers = len(np_layers)
-    n_nodes = np_layers[0].shape[0]
+    sizes = [m.shape[0] for m in np_layers]
+
+    def as_fit_input(mats):
+        if node_lists is None:
+            return mats
+        out = []
+        for i, m in enumerate(mats):
+            g = nx.from_numpy_array(m, create_using=nx.DiGraph if directed else nx.Graph)
+            out.append(nx.relabel_nodes(g, dict(enumerate(node_lists[i]))))
+        return out
 
     # Build common kwargs
     fit_kwargs = {
@@ -176,17 +213,28 @@ def bootstrap_multilayer(
     if fit_type != "identity":
         fit_kwargs["min_similarity"] = min_similarity
         fit_kwargs["resolution_parameter"] = resolution_parameter
+        fit_kwargs["tracking"] = tracking
+        fit_kwargs["repair_chains"] = repair_chains
+        fit_kwargs["repair_min_similarity"] = repair_min_similarity
+    elif tracking != "smoothed" or repair_chains:
+        raise ValueError("`tracking` and `repair_chains` apply to the two-stage fit types, not 'identity'.")
+    if node_lists is not None:
+        fit_kwargs["allow_unequal_nodes"] = True
 
     # Point estimate on original data
-    point_estimate = fit_fn(np_layers, **fit_kwargs)
+    point_estimate = fit_fn(as_fit_input(np_layers), **fit_kwargs)
 
     # Precompute per-layer edge models for the parametric network bootstrap
     # (estimated once from the observed network + point-estimate partition)
     edge_models = []
     for layer_idx in range(n_layers):
         A = np_layers[layer_idx]
+        n_nodes = sizes[layer_idx]
         memd = point_estimate["layer_communities"][layer_idx].membership
-        mem_vec = np.array([memd[i + 1] for i in range(n_nodes)])
+        if node_lists is None:
+            mem_vec = np.array([memd[i + 1] for i in range(n_nodes)])
+        else:
+            mem_vec = np.array([memd[v] for v in node_lists[layer_idx]])
         same = mem_vec[:, None] == mem_vec[None, :]
         if directed:
             sel = ~np.eye(n_nodes, dtype=bool)
@@ -213,8 +261,8 @@ def bootstrap_multilayer(
         )
 
     # Accumulators
-    co_assign_accum = [np.zeros((n_nodes, n_nodes)) for _ in range(n_layers)]
-    membership_records = [[[] for _ in range(n_nodes)] for _ in range(n_layers)]
+    co_assign_accum = [np.zeros((n, n)) for n in sizes]
+    membership_records = [[[] for _ in range(n)] for n in sizes]
     mod_samples = [[] for _ in range(n_layers)]
     count_samples = [[] for _ in range(n_layers)]
 
@@ -223,14 +271,15 @@ def bootstrap_multilayer(
     point_meta = [np.asarray(m) for m in point_estimate["meta_communities"]]
     nmi_rows: list[list[float]] = []
     ari_rows: list[list[float]] = []
-    node_jaccard_accum = [np.zeros(n_nodes) for _ in range(n_layers)]
+    node_jaccard_accum = [np.zeros(n) for n in sizes]
 
     rng = np.random.default_rng(seed)
 
     for _b in range(n_boot):
         perturbed = []
         # Parametric network bootstrap: redraw the full edge set
-        for em in edge_models:
+        for layer_idx, em in enumerate(edge_models):
+            n_nodes = sizes[layer_idx]
             probs = np.where(em["same"], em["p_in"], em["p_out"])
             draw = (rng.random((n_nodes, n_nodes)) < probs) & em["sel"]
             mat_new = np.zeros((n_nodes, n_nodes))
@@ -253,7 +302,7 @@ def bootstrap_multilayer(
             perturbed.append(mat_new)
 
         try:
-            boot_fit = fit_fn(perturbed, **fit_kwargs)
+            boot_fit = fit_fn(as_fit_input(perturbed), **fit_kwargs)
         except Exception:
             continue
 
@@ -311,6 +360,7 @@ def bootstrap_multilayer(
     # Node stability: fraction of times in modal community
     node_stability = []
     for layer_idx in range(n_layers):
+        n_nodes = sizes[layer_idx]
         stab = np.zeros(n_nodes)
         for node_idx in range(n_nodes):
             records = membership_records[layer_idx][node_idx]
@@ -346,172 +396,6 @@ def bootstrap_multilayer(
         ],
     )
 
-
-def community_est(
-    boot_result: BootstrapResult,
-) -> dict:
-    """Summarize bootstrap community-count reproducibility (meta-communities).
-
-    Reports, for each layer, the meta-community count from the observed
-    network together with its *bootstrap reproducibility*: the proportion of
-    bootstrap replicates in which the fitted number of communities equals
-    the observed-network count. Also returns mean node stability, per-node
-    stability, and the co-assignment matrices.
-
-    .. note::
-       **Why this is not a confidence interval.** Earlier versions returned
-       a percentile ``community_count_ci``. It was replaced in 1.1.0 with a
-       reproducibility summary because the interval's coverage is not robust
-       to model misspecification. In a large simulation study the nominal
-       95% community-count interval covered the truth at or above nominal on
-       well-specified planted-partition networks (~0.99 for n >= 100 nodes),
-       but coverage collapsed to ~0.62 when community sizes were strongly
-       skewed, and no observable diagnostic reliably separated the
-       trustworthy cases from the rest. Rather than ship an interval that
-       silently undercovers, the function now reports how often the
-       community count reproduces under resampling. This is a descriptive
-       stability measure, not a calibrated interval: it makes no claim about
-       the probability that any range contains the true community count. For
-       a validated interval, use :func:`co_assignment_ci`, whose node-pair
-       coverage held across the same misspecification stress tests. The raw
-       per-replicate community counts are intentionally not exposed anywhere
-       in the package output; only this reproducibility summary is returned.
-
-    Parameters
-    ----------
-    boot_result : BootstrapResult
-        Output from ``bootstrap_multilayer``.
-
-    Returns
-    -------
-    dict
-        Dictionary with keys:
-        - ``community_count``: DataFrame with layer, estimate (observed-network
-          community count), reproducibility (share of bootstrap replicates
-          whose community count equals estimate, in [0, 1])
-        - ``report``: list of one plain-language sentence per layer
-        - ``mean_node_stability``: DataFrame with layer, mean_stability
-        - ``node_stability``: list of per-layer stability arrays
-        - ``co_assignment``: list of per-layer co-assignment matrices
-
-    See Also
-    --------
-    co_assignment_ci : Wilson intervals for node-pair co-assignment.
-    """
-    if boot_result.n_boot == 0:
-        raise ValueError("No completed bootstrap replicates.")
-
-    n_layers = len(boot_result.modularity_samples)
-    point = boot_result.point_estimate
-
-    # Per-layer community count and bootstrap reproducibility. Reproducibility
-    # is precomputed in bootstrap_multilayer from the raw per-replicate counts,
-    # which are deliberately not exposed.
-    count_rows = []
-    for i in range(n_layers):
-        est = len(np.unique(point["meta_communities"][i]))
-        reproducibility = float(boot_result.community_count_reproducibility[i])
-        count_rows.append(
-            {"layer": i + 1, "estimate": est, "reproducibility": reproducibility}
-        )
-
-    # One plain-language sentence per layer.
-    report = [
-        f"Layer {r['layer']}: community count (K = {r['estimate']}) "
-        f"reproduced in {round(100 * r['reproducibility'])}% of bootstrap resamples."
-        for r in count_rows
-    ]
-
-    # Mean node stability per layer.
-    stab_rows = []
-    for i in range(n_layers):
-        stab_rows.append(
-            {
-                "layer": i + 1,
-                "mean_stability": float(np.mean(boot_result.node_stability[i])),
-            }
-        )
-
-    return {
-        "community_count": pd.DataFrame(count_rows),
-        "report": report,
-        "mean_node_stability": pd.DataFrame(stab_rows),
-        "node_stability": boot_result.node_stability,
-        "co_assignment": boot_result.co_assignment,
-    }
-
-
-def co_assignment_ci(
-    boot_result: BootstrapResult,
-    alpha: float = 0.05,
-    method: str = "wilson",
-    calibration_table=None,
-) -> list[dict]:
-    """Descriptive Monte Carlo interval for node-pair co-assignment.
-
-    For every pair of nodes in every layer, returns the bootstrap
-    co-assignment share (fraction of replicates in which the pair landed in
-    the same meta-community) with a Wilson score interval that treats the
-    replicates as binomial draws.
-
-    .. warning::
-       Read this as a diagnostic, not a calibrated confidence interval. In the
-       package's simulation study its coverage of the fresh-data co-assignment
-       propensity was near nominal only for pairs whose share is close to 0 or
-       1 and fell to 0.03-0.15 for ambiguous pairs; no conditioning or
-       alternative bootstrap repaired this, so ``method="calibrated"`` was
-       removed in 1.3.0. The validated reliability product is
-       :func:`partition_stability`.
-
-    Parameters
-    ----------
-    boot_result : BootstrapResult
-    alpha : float
-        Significance level (0.05 gives 95 percent Wilson intervals).
-    method : str
-        ``"wilson"``. ``"calibrated"`` raises an informative error.
-    calibration_table
-        Ignored; retained for backward compatibility.
-
-    Returns
-    -------
-    list[dict]
-        One dict per layer with ``estimate``, ``lower``, ``upper`` (n x n
-        arrays; diagonals are 1) and ``method``.
-    """
-    if method == "calibrated":
-        raise ValueError(
-            'method="calibrated" was removed in dynamic_multiplex 1.3.0: pair-level '
-            "intervals could not be calibrated for ambiguous pairs. Use "
-            "partition_stability() for the calibrated reliability score and the "
-            'decided / undetermined pair flags, or method="wilson".'
-        )
-    if method != "wilson":
-        raise ValueError('method must be "wilson"')
-    if boot_result.n_boot == 0:
-        raise ValueError("No completed bootstrap replicates.")
-
-    from statistics import NormalDist  # stdlib; avoids a scipy dependency
-
-    b = boot_result.n_boot
-    z = NormalDist().inv_cdf(1 - alpha / 2)
-    z2 = z**2
-    layer_cis: list[dict] = []
-    for phat in boot_result.co_assignment:
-        denom = 1 + z2 / b
-        center = (phat + z2 / (2 * b)) / denom
-        half = z * np.sqrt(phat * (1 - phat) / b + z2 / (4 * b**2)) / denom
-        lower = np.clip(center - half, 0.0, 1.0)
-        upper = np.clip(center + half, 0.0, 1.0)
-        np.fill_diagonal(lower, 1.0)
-        np.fill_diagonal(upper, 1.0)
-        layer_cis.append({"estimate": phat, "lower": lower, "upper": upper, "method": "wilson"})
-    return layer_cis
-
-
-# ---------------------------------------------------------------------------
-# partition stability: score, calibrated accuracy floor, node floors, pairs
-# ---------------------------------------------------------------------------
 
 def _contingency(a: np.ndarray, b: np.ndarray) -> np.ndarray:
     _, ia = np.unique(a, return_inverse=True)
@@ -552,73 +436,20 @@ def _node_jaccard(mem_a: np.ndarray, mem_b: np.ndarray) -> np.ndarray:
     return (same_a & same_b).sum(1) / (same_a | same_b).sum(1)
 
 
-def _load_stability_table(calibration_table=None) -> pd.DataFrame:
-    """Bundled default: ``dynamic_multiplex/data/stability_calibration_table.csv``,
-    written by ``replication/post/12_stability.R``."""
-    if calibration_table is None:
-        from importlib.resources import files
-
-        res = files("dynamic_multiplex").joinpath("data", "stability_calibration_table.csv")
-        if not res.is_file():
-            raise FileNotFoundError(
-                "The bundled stability calibration table is missing; pass calibration_table."
-            )
-        tab = pd.read_csv(res)
-    elif isinstance(calibration_table, (str, bytes)):
-        tab = pd.read_csv(calibration_table)
-    else:
-        tab = pd.DataFrame(calibration_table)
-    need = ["level", "stab_lo", "stab_hi", "n_calib", "acc_median", "acc_q05"]
-    missing = [c for c in need if c not in tab.columns]
-    if missing:
-        raise ValueError(f"calibration table is missing columns: {missing}")
-    return tab
-
-
-def _floor_lookup(s: float, rows: pd.DataFrame) -> dict:
-    if rows.empty:
-        return {"floor": float("nan"), "median": float("nan"), "bin": None}
-    rows = rows.sort_values("stab_lo").reset_index(drop=True)
-    edges = np.append(rows["stab_lo"].to_numpy(), 1.0)
-    idx = int(np.clip(np.searchsorted(edges, s, side="right") - 1, 0, len(rows) - 1))
-    while idx > 0 and (pd.isna(rows.loc[idx, "acc_q05"]) or rows.loc[idx, "n_calib"] == 0):
-        idx -= 1
-    return {
-        "floor": float(rows.loc[idx, "acc_q05"]),
-        "median": float(rows.loc[idx, "acc_median"]),
-        "bin": f"[{rows.loc[idx, 'stab_lo']:.1f}, {rows.loc[idx, 'stab_hi']:.1f})",
-    }
-
-
 def partition_stability(
     boot_result: BootstrapResult,
     metric: str = "nmi",
-    decided: tuple[float, float] = (0.1, 0.9),
-    calibration_table=None,
 ) -> dict:
-    """Stability score and calibrated accuracy floor for the tracked partition.
+    """Bootstrap stability score s of the tracked partition.
 
-    Summarises a ``bootstrap_multilayer`` result into one reliability report:
-
-    * ``stability``: mean agreement (NMI by default, or ARI) between each
-      bootstrap replicate's meta-partition and the point-estimate partition,
-      averaged over layers.
-    * ``floor``: calibrated 5th-percentile accuracy for the stability bin.
-      In the package's simulation study, fits were binned by stability and
-      the 5th percentile of accuracy against the planted partition recorded
-      per bin on a calibration half of the configurations; on the held-out
-      half, accuracy exceeded the floor in 95 percent of fits in every bin.
-      Read as "with this stability, partition accuracy was at least ``floor``
-      95 percent of the time in calibration".
-    * ``node``: per-layer DataFrames of node-level Jaccard stability with a
-      floor reported only above 0.9 (uninformative below).
-    * ``pairs``: per-layer integer arrays, 1 = decidedly together
-      (co-assignment share >= ``decided[1]``), -1 = decidedly apart
-      (<= ``decided[0]``), 0 = undetermined. No interval is attached to pairs.
-
-    The calibration is within the simulated planted-partition family; on
-    networks that model does not describe, a stable but wrong partition could
-    receive a floor it does not deserve.
+    ``stability`` is the mean agreement (NMI by default, or ARI) between each
+    bootstrap replicate's meta-partition and the point-estimate partition,
+    averaged over layers and replicates. It is a point estimate with Monte
+    Carlo standard error ``stability_mc_se``. s has no validated mapping to
+    accuracy: use it only to compare two fits of the same network (for
+    example DynMux against multislice), never as an estimate of how accurate
+    either fit is. Since 1.4.0 the package reports no interval or accuracy
+    floor.
 
     Parameters
     ----------
@@ -626,17 +457,12 @@ def partition_stability(
         From ``bootstrap_multilayer`` (1.3.0 or later).
     metric : str
         ``"nmi"`` (default) or ``"ari"``.
-    decided : tuple[float, float]
-        Thresholds for decidedly apart / together.
-    calibration_table
-        Optional path or DataFrame overriding the bundled table.
 
     Returns
     -------
     dict
         Keys ``stability``, ``stability_by_layer``, ``stability_mc_se``,
-        ``metric``, ``floor``, ``floor_median``, ``bin``, ``node``, ``pairs``,
-        ``pair_summary``, ``report``.
+        ``metric``, ``report``.
     """
     if metric not in ("nmi", "ari"):
         raise ValueError('metric must be "nmi" or "ari"')
@@ -650,42 +476,10 @@ def partition_stability(
     per_rep = S.mean(1)
     s = float(per_rep.mean())
     mc_se = float(per_rep.std(ddof=1) / np.sqrt(len(per_rep)))
-
-    tab = _load_stability_table(calibration_table)
-    level = "partition_nmi" if metric == "nmi" else "partition_ari"
-    fl = _floor_lookup(s, tab[tab["level"] == level])
-    node_tab = tab[tab["level"] == "node_jaccard"]
-    node = []
-    for t in range(n_layers):
-        st = np.asarray(boot_result.node_jaccard_stability[t])
-        fr = np.array([_floor_lookup(v, node_tab)["floor"] if v >= 0.9 else np.nan for v in st])
-        node.append(pd.DataFrame({"node": np.arange(1, len(st) + 1), "stability": st, "floor": fr}))
-
-    pairs = []
-    for P in boot_result.co_assignment:
-        M = np.zeros(P.shape, dtype=int)
-        M[P >= decided[1]] = 1
-        M[P <= decided[0]] = -1
-        np.fill_diagonal(M, 1)
-        pairs.append(M)
-    iu = np.triu_indices(pairs[0].shape[0], k=1)
-    allp = np.concatenate([M[iu] for M in pairs])
-    pair_summary = {
-        "together": float((allp == 1).mean()),
-        "apart": float((allp == -1).mean()),
-        "undetermined": float((allp == 0).mean()),
-    }
     report = (
         f"Partition stability {s:.2f} ({metric.upper()} over {boot_result.n_boot} bootstrap "
-        f"replicates and {n_layers} layers; MC s.e. {mc_se:.3f}). In calibration, fits with "
-        f"stability in {fl['bin']} had accuracy of at least {fl['floor']:.2f} in 95% of cases "
-        f"(median {fl['median']:.2f}). {100 * (1 - pair_summary['undetermined']):.0f}% of node "
-        f"pairs are decided ({100 * pair_summary['together']:.0f}% together, "
-        f"{100 * pair_summary['apart']:.0f}% apart); {100 * pair_summary['undetermined']:.0f}% "
-        "are undetermined."
+        f"replicates and {n_layers} layers; MC s.e. {mc_se:.3f}). Use it only to compare fits "
+        "of the same network."
     )
-    return {
-        "stability": s, "stability_by_layer": by_layer, "stability_mc_se": mc_se, "metric": metric,
-        "floor": fl["floor"], "floor_median": fl["median"], "bin": fl["bin"],
-        "node": node, "pairs": pairs, "pair_summary": pair_summary, "report": report,
-    }
+    return {"stability": s, "stability_by_layer": by_layer, "stability_mc_se": mc_se,
+            "metric": metric, "report": report}

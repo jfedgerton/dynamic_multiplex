@@ -20,7 +20,7 @@
 #' @param layers List of `igraph` objects or square adjacency matrices.
 #'
 #' @param algorithm Community algorithm for the per-layer (first-stage)
-#' partitions: `"louvain"` or `"leiden"`. The multislice meta-communities
+#' partitions: `"leiden"` (default) or `"louvain"`. The multislice meta-communities
 #' always use the generalized Louvain optimiser.
 #'
 #' @param layer_links Optional data.frame defining which layers to connect,
@@ -39,13 +39,22 @@
 #' omega-sensitivity / resolution-limit behavior of multislice modularity.
 #'
 #' @param directed Logical; if `TRUE`, build directed graphs from adjacency
-#' matrices. Directed layers are collapsed to undirected weighted graphs before
-#' community detection (igraph supports Leiden on undirected graphs only;
-#' a warning is issued for `algorithm = "leiden"`).
+#' matrices, and every layer must be directed. The first-stage per-layer
+#' detection collapses directed layers to undirected weighted graphs (igraph
+#' supports Leiden on undirected graphs only; a warning is issued for
+#' `algorithm = "leiden"`). The multislice stage (`meta_communities`) keeps arc
+#' direction: each slice uses the directed null model
+#' \eqn{k^{out}_i k^{in}_j / m_s}, and the interlayer identity ties stay
+#' undirected.
 #'
-#' @param objective One of "cpm" or "modularity" for directed networks only
+#' @param objective Objective for the first-stage (per-layer) detection
+#' stored in `layer_communities`: `"modularity"` or `"cpm"` (CPM requires
+#' `algorithm = "leiden"`). Defaults to `"cpm"` for directed layers and
+#' `"modularity"` otherwise. It does not affect `meta_communities`, which
+#' always optimize multislice modularity.
 #'
-#' @param seed Optional integer seed for reproducible community detection.
+#' @param seed Integer seed for reproducible community detection (default 123, as in
+#'   the Python package; pass NULL for unseeded detection).
 #' When supplied, the global RNG state is saved, the RNG is seeded for the
 #' duration of the call, and the previous state is restored on exit, so the
 #' caller's random number stream (e.g. bootstrap resampling) is unaffected.
@@ -75,11 +84,14 @@
 #'   }
 #'
 #' @section Directed networks:
-#' Directed layers are stored as directed graphs and the interlayer self-loop
-#' weighting is directed-aware, but community \emph{detection} collapses
-#' directed layers to weighted undirected graphs on both Louvain and Leiden
-#' (igraph's detectors are undirected-only). For detection that respects edge
-#' direction, use the Python package with \code{algorithm = "leiden"}.
+#' With \code{directed = TRUE} the multislice stage that produces
+#' \code{meta_communities} respects edge direction (Leicht and Newman's
+#' directed null model in each slice). A directed network in which every arc
+#' is reciprocated gives the same \code{meta_communities} as its undirected
+#' twin at the same \code{omega}; before version 1.3.2 such a network was fitted
+#' as if \code{omega} were halved. The first-stage \code{layer_communities}
+#' still collapse directed layers to weighted undirected graphs (igraph's
+#' detectors are undirected-only).
 #'
 #' @examples
 #' set.seed(123)
@@ -96,13 +108,13 @@
 
 fit_multilayer_identity_ties <- function(
     layers,
-    algorithm = c("louvain", "leiden"),
+    algorithm = c("leiden", "louvain"),
     layer_links = NULL,
     resolution_parameter = 1,
     omega = 1,
     directed = FALSE,
     objective = NULL,
-    seed = NULL,
+    seed = 123,
     allow_unequal_nodes = FALSE
   ) {
 
@@ -176,7 +188,8 @@ fit_multilayer_identity_ties <- function(
     interlayer_ties = ties,
     algorithm = algorithm,
     omega = omega,
-    resolution_parameter = resolution_parameter
+    resolution_parameter = resolution_parameter,
+    directed = directed
   )
 
   multilayer_identity_ties <- structure(

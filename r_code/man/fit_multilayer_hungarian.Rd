@@ -6,17 +6,18 @@
 \usage{
 fit_multilayer_hungarian(
   layers,
-  algorithm = c("louvain", "leiden"),
+  algorithm = c("leiden", "louvain"),
   resolution_parameter = 1,
   directed = FALSE,
   objective = NULL,
-  seed = NULL
+  seed = 123,
+  allow_unequal_nodes = FALSE
 )
 }
 \arguments{
 \item{layers}{List of \code{igraph} objects or square adjacency matrices.}
 
-\item{algorithm}{Community algorithm: \code{"louvain"} or \code{"leiden"}.}
+\item{algorithm}{Community algorithm: \code{"leiden"} (default) or \code{"louvain"}.}
 
 \item{resolution_parameter}{Leiden resolution parameter.}
 
@@ -24,15 +25,22 @@ fit_multilayer_hungarian(
 matrices (collapsed to undirected for detection, as elsewhere in the
 package).}
 
-\item{objective}{One of \code{"cpm"} or \code{"modularity"} (directed
-networks only).}
+\item{objective}{Objective for the per-layer detection: \code{"modularity"}
+or \code{"cpm"} (Leiden only). Defaults to \code{"cpm"} for directed layers
+and \code{"modularity"} otherwise.}
 
-\item{seed}{Optional integer seed for reproducible community detection.
+\item{seed}{Integer seed for reproducible community detection (default 123, as in
+the Python package; pass NULL for unseeded detection).
 When supplied, the global RNG state is saved, the RNG is seeded for the
 duration of the call, and the previous state is restored on exit, so the
 caller's random number stream (e.g. bootstrap resampling) is unaffected.
 Defaults to \code{NULL} (detection inherits the caller's RNG stream, matching
 previous behavior; call \code{set.seed()} beforehand for reproducibility).}
+
+\item{allow_unequal_nodes}{Logical; if \code{TRUE}, layers may contain
+different node sets. Layers must then carry vertex names (or row names on
+the adjacency matrices); community overlap is counted on the nodes present
+in both layers of each consecutive pair. Defaults to \code{FALSE}.}
 }
 \value{
 A list of class \code{"multilayer_community_fit"} with components:
@@ -65,7 +73,9 @@ first-class method with the same interface as the other fits.
 }
 \details{
 Matching is sequential: layer \eqn{t} is aligned to layer
-\eqn{t-1}. For each adjacent pair the community overlap matrix is completed
+\eqn{t-1}. Nodes are matched across layers by vertex name when names are
+present (by position otherwise), so the order in which vertices are stored
+does not affect the result. For each adjacent pair the community overlap matrix is completed
 to a square cost matrix and \code{\link[clue]{solve_LSAP}} maximises total
 overlap; unmatched current communities receive fresh labels. The result is a
 consistently-labelled sequence suitable for \code{\link{extract_meta_membership}},

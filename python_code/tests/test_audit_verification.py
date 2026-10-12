@@ -173,9 +173,11 @@ def test_identity_ties_dimensions():
     assert out["interlayer_ties"].shape[0] == expected_rows
 
 
-def test_community_overlap_edges_all_pairs_enumerated():
-    """community_overlap_edges should create rows for all community pairs."""
-    # Two layers, each with 2 communities, 1 link => 2*2 = 4 potential edges
+def test_community_overlap_edges_only_cooccurring_pairs():
+    """community_overlap_edges stores only community pairs that share a node
+    (disjoint pairs have zero similarity and are omitted, as in R)."""
+    # Two layers, each with 2 communities, 1 link => 2*2 = 4 potential pairs,
+    # of which only the 2 matching pairs share nodes
     fit = [
         LayerCommunityFit(
             membership={1: 1, 2: 1, 3: 2, 4: 2},
@@ -191,8 +193,9 @@ def test_community_overlap_edges_all_pairs_enumerated():
     import pandas as pd
     links = pd.DataFrame({"from": [1], "to": [2], "weight": [1.0]})
     edges = community_overlap_edges(fit, links, metric="jaccard", min_similarity=0.0)
-    # 2 from_communities x 2 to_communities = 4
-    assert len(edges) == 4
+    assert len(edges) == 2
+    assert set(zip(edges["from_community"], edges["to_community"])) == {(1, 1), (2, 2)}
+    assert (edges["weighted_similarity"] > 0).all()
 
 
 def test_self_loops_directed_vs_undirected():

@@ -11,7 +11,7 @@ simulate_and_fit_multilayer(
   p_in = 0.2,
   p_out = 0.05,
   fit_type = c("jaccard", "overlap", "weighted_jaccard", "weighted_overlap", "identity"),
-  algorithm = c("louvain", "leiden"),
+  algorithm = c("leiden", "louvain"),
   layer_links = NULL,
   min_similarity = 0,
   seed = NULL,
@@ -29,9 +29,10 @@ simulate_and_fit_multilayer(
 
 \item{p_out}{Probability of an out-community edge.}
 
-\item{fit_type}{One of \code{"jaccard"}, \code{"overlap"}, or \code{"identity"}.}
+\item{fit_type}{One of \code{"jaccard"}, \code{"overlap"}, \code{"weighted_jaccard"},
+\code{"weighted_overlap"}, or \code{"identity"}.}
 
-\item{algorithm}{Community algorithm for fitting: \code{"louvain"} or \code{"leiden"}.}
+\item{algorithm}{Community algorithm for fitting: \code{"leiden"} (default) or \code{"louvain"}.}
 
 \item{layer_links}{Optional layer connectivity specification.}
 

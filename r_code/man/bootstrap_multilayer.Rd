@@ -2,19 +2,23 @@
 % Please edit documentation in R/bootstrap_multilayer.R
 \name{bootstrap_multilayer}
 \alias{bootstrap_multilayer}
-\title{Bootstrap confidence intervals for multilayer community detection}
+\title{Parametric network bootstrap for the stability score}
 \usage{
 bootstrap_multilayer(
   layers,
   fit_type = c("jaccard", "overlap", "weighted_jaccard", "weighted_overlap", "identity"),
-  algorithm = c("louvain", "leiden"),
+  algorithm = c("leiden", "louvain"),
   n_boot = 100,
   layer_links = NULL,
   min_similarity = 0,
   resolution_parameter = 1,
   directed = FALSE,
   seed = NULL,
-  objective = NULL
+  objective = NULL,
+  tracking = "smoothed",
+  repair_chains = FALSE,
+  repair_min_similarity = 0.2,
+  allow_unequal_nodes = FALSE
 )
 }
 \arguments{
@@ -23,8 +27,8 @@ bootstrap_multilayer(
 \item{fit_type}{One of \code{"jaccard"}, \code{"overlap"},
 \code{"weighted_jaccard"}, \code{"weighted_overlap"}, \code{"identity"}.}
 
-\item{algorithm}{Community detection algorithm: \code{"louvain"} or
-\code{"leiden"}.}
+\item{algorithm}{Community detection algorithm: \code{"leiden"} (default)
+or \code{"louvain"}.}
 
 \item{n_boot}{Number of bootstrap replicates.}
 
@@ -38,7 +42,20 @@ bootstrap_multilayer(
 
 \item{seed}{Optional random seed for reproducibility.}
 
-\item{objective}{One of "cpm" or "modularity" for directed networks only}
+\item{objective}{Objective for the first-stage (per-layer) detection,
+passed to the fit function: \code{"modularity"} or \code{"cpm"} (Leiden only).
+Defaults to \code{"cpm"} for directed layers and \code{"modularity"} otherwise.}
+
+\item{tracking, repair_chains, repair_min_similarity}{Passed to the two-stage
+fit functions (see \code{\link{fit_multilayer_jaccard}}) so that every
+refit uses the same settings as the point estimate. Not available for
+\code{fit_type = "identity"}.}
+
+\item{allow_unequal_nodes}{Logical. If \code{TRUE}, layers may hold
+different node sets (nodes entering and leaving, with or without a change
+in layer size). Every layer must then carry vertex names; each layer is
+redrawn on its own nodes and every refit matches nodes by name. Default
+\code{FALSE}: all layers must share one node set.}
 }
 \value{
 A list of class \code{"multilayer_bootstrap"} with components:
@@ -74,7 +91,13 @@ estimated from the observed network using the point-estimate partition,
 and each replicate redraws the full edge set from those estimates. This
 reproduces the variability of fresh data, including which edges exist.
 
-Uncertainty is quantified on the cross-layer \emph{meta-communities}
+Since 1.4.0 the package uses the bootstrap only for the stability score
+\eqn{s} reported by \code{\link{partition_stability}}, which compares fits
+of the same network. The interval outputs of earlier versions
+(\code{co_assignment_ci()}, \code{community_est()}, the calibrated accuracy
+floor) were removed because their coverage was not reliable.
+
+Agreement is measured on the cross-layer \emph{meta-communities}
 (the tracked partition from the second-stage detection), not the
 independently-detected per-layer communities. Co-assignment therefore
 answers "do these two nodes belong to the same persistent community,"

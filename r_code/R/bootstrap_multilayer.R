@@ -1,4 +1,4 @@
-#' @title Bootstrap confidence intervals for multilayer community detection
+#' @title Parametric network bootstrap for the stability score
 #'
 #' @description Quantifies the uncertainty of multilayer community detection
 #' by refitting communities on \code{n_boot} resampled networks, using a
@@ -8,7 +8,13 @@
 #' and each replicate redraws the full edge set from those estimates. This
 #' reproduces the variability of fresh data, including which edges exist.
 #'
-#' Uncertainty is quantified on the cross-layer \emph{meta-communities}
+#' Since 1.4.0 the package uses the bootstrap only for the stability score
+#' \eqn{s} reported by \code{\link{partition_stability}}, which compares fits
+#' of the same network. The interval outputs of earlier versions
+#' (\code{co_assignment_ci()}, \code{community_est()}, the calibrated accuracy
+#' floor) were removed because their coverage was not reliable.
+#'
+#' Agreement is measured on the cross-layer \emph{meta-communities}
 #' (the tracked partition from the second-stage detection), not the
 #' independently-detected per-layer communities. Co-assignment therefore
 #' answers "do these two nodes belong to the same persistent community,"
@@ -26,8 +32,8 @@
 #' @param fit_type One of \code{"jaccard"}, \code{"overlap"},
 #' \code{"weighted_jaccard"}, \code{"weighted_overlap"}, \code{"identity"}.
 #'
-#' @param algorithm Community detection algorithm: \code{"louvain"} or
-#' \code{"leiden"}.
+#' @param algorithm Community detection algorithm: \code{"leiden"} (default)
+#' or \code{"louvain"}.
 #'
 #' @param n_boot Number of bootstrap replicates.
 #'
@@ -41,7 +47,20 @@
 #'
 #' @param seed Optional random seed for reproducibility.
 #'
-#' @param objective One of "cpm" or "modularity" for directed networks only
+#' @param tracking,repair_chains,repair_min_similarity Passed to the two-stage
+#' fit functions (see \code{\link{fit_multilayer_jaccard}}) so that every
+#' refit uses the same settings as the point estimate. Not available for
+#' \code{fit_type = "identity"}.
+#'
+#' @param allow_unequal_nodes Logical. If \code{TRUE}, layers may hold
+#' different node sets (nodes entering and leaving, with or without a change
+#' in layer size). Every layer must then carry vertex names; each layer is
+#' redrawn on its own nodes and every refit matches nodes by name. Default
+#' \code{FALSE}: all layers must share one node set.
+#'
+#' @param objective Objective for the first-stage (per-layer) detection,
+#' passed to the fit function: `"modularity"` or `"cpm"` (Leiden only).
+#' Defaults to `"cpm"` for directed layers and `"modularity"` otherwise.
 #'
 #' @return A list of class \code{"multilayer_bootstrap"} with components:
 #'   \describe{
@@ -95,19 +114,24 @@ bootstrap_multilayer <- function(
       "weighted_overlap",
       "identity"
     ),
-    algorithm = c("louvain", "leiden"),
+    algorithm = c("leiden", "louvain"),
     n_boot = 100,
     layer_links = NULL,
     min_similarity = 0,
     resolution_parameter = 1,
     directed = FALSE,
     seed = NULL,
-    objective = NULL
+    objective = NULL,
+    tracking = "smoothed",
+    repair_chains = FALSE,
+    repair_min_similarity = 0.2,
+    allow_unequal_nodes = FALSE
   ) {
 
   # check arguments ----
   fit_type <- match.arg(fit_type)
   algorithm <- match.arg(algorithm)
+  .check_repair_args(tracking, repair_chains, repair_min_similarity, seed)
 
   # assign seed unless a seed is provided ----
   if (!is.null(seed)) set.seed(seed)
@@ -133,7 +157,24 @@ bootstrap_multilayer <- function(
 
   # Assign layer and node counts ----
   n_layers <- length(mat_layers)
-  n_nodes <- nrow(mat_layers[[1]])
+  sizes <- vapply(mat_layers, nrow, integer(1))
+
+  # node identity is the vertex name, never the position (1.4.0): nodes can
+  # enter and leave with or without a change in layer size ----
+  layer_names <- lapply(mat_layers, rownames)
+  named <- !vapply(layer_names, is.null, logical(1))
+  same_sets <- all(named) && all(vapply(layer_names, function(n) setequal(n, layer_names[[1]]), logical(1)))
+  unequal <- FALSE
+  if (isTRUE(allow_unequal_nodes)) {
+    if (!all(named)) {
+      stop("allow_unequal_nodes = TRUE requires vertex names (igraph names or dimnames) on every layer.",
+           call. = FALSE)
+    }
+    unequal <- !same_sets
+  } else if (all(named) && !same_sets) {
+    stop("Layers have different node sets; pass allow_unequal_nodes = TRUE (with named vertices) ",
+         "to match nodes by name.", call. = FALSE)
+  }
 
   # assign fit arguments ----
   fit_args <- list(
@@ -147,7 +188,13 @@ bootstrap_multilayer <- function(
   if (fit_type != "identity") {
     fit_args$min_similarity <- min_similarity
     fit_args$resolution_parameter <- resolution_parameter
+    fit_args$tracking <- tracking
+    fit_args$repair_chains <- repair_chains
+    fit_args$repair_min_similarity <- repair_min_similarity
+  } else if (!identical(tracking, "smoothed") || repair_chains) {
+    stop("`tracking` and `repair_chains` apply to the two-stage fit types, not 'identity'.", call. = FALSE)
   }
+  if (unequal) fit_args$allow_unequal_nodes <- TRUE
 
   # execute multilayer fit for point estimate assignment ----
   point_estimate <- do.call(fit_fn, c(list(layers = mat_layers), fit_args))
@@ -159,6 +206,7 @@ bootstrap_multilayer <- function(
 
       ## observed adjacency, detected partition, dyad selector ----
       A <- mat_layers[[layer_idx]]
+      n_nodes <- nrow(A)
       mem <- point_estimate$layer_communities[[layer_idx]]$membership
       same <- outer(mem, mem, "==")
       sel <- if (directed) {
@@ -189,12 +237,12 @@ bootstrap_multilayer <- function(
 
   # initialize accumulator matrices ----
   co_assign_accum <- lapply(seq_len(n_layers), function(i) {
-    matrix(0, nrow = n_nodes, ncol = n_nodes)
+    matrix(0, nrow = sizes[i], ncol = sizes[i])
   })
 
   # initialize empty vectors of community assignments ----
   membership_records <- lapply(seq_len(n_layers), function(i) {
-    lapply(seq_len(n_nodes), function(j) integer(0))
+    lapply(seq_len(sizes[i]), function(j) integer(0))
   })
 
   # initialize additional variables ----
@@ -208,7 +256,7 @@ bootstrap_multilayer <- function(
   point_meta <- lapply(point_estimate$meta_communities, as.integer)
   nmi_samples <- matrix(numeric(0), nrow = 0, ncol = n_layers)
   ari_samples <- matrix(numeric(0), nrow = 0, ncol = n_layers)
-  node_jaccard_accum <- lapply(seq_len(n_layers), function(i) numeric(n_nodes))
+  node_jaccard_accum <- lapply(seq_len(n_layers), function(i) numeric(sizes[i]))
   node_jaccard_one <- function(mem_a, mem_b) {
     same_a <- outer(mem_a, mem_a, "=="); same_b <- outer(mem_b, mem_b, "==")
     rowSums(same_a & same_b) / rowSums(same_a | same_b)
@@ -223,6 +271,7 @@ bootstrap_multilayer <- function(
       idx <- which(em$sel)
       probs <- ifelse(em$same[idx], em$p_in, em$p_out)
       on <- idx[stats::rbinom(length(idx), 1, probs) == 1]
+      n_nodes <- sizes[layer_idx]
       M <- matrix(0, nrow = n_nodes, ncol = n_nodes)
       if (length(on) > 0) {
         same_on <- em$same[on]
@@ -237,6 +286,7 @@ bootstrap_multilayer <- function(
       }
       if (!directed) M <- M + t(M)
       diag(M) <- 0
+      if (unequal) dimnames(M) <- dimnames(mat_layers[[layer_idx]])
       return(M)
     })
 
@@ -319,7 +369,7 @@ bootstrap_multilayer <- function(
 
   # calculate node stabilities ----
   node_stability <- lapply(seq_len(n_layers), function(layer_idx) {
-    vapply(seq_len(n_nodes), function(node_idx) {
+    vapply(seq_len(sizes[layer_idx]), function(node_idx) {
       records <- membership_records[[layer_idx]][[node_idx]]
       if (length(records) == 0) return(0)
       return(max(tabulate(records)) / length(records))
@@ -355,133 +405,4 @@ bootstrap_multilayer <- function(
 
   # return multilayer bootstrap ----
   return(multilayer_bootstrap)
-}
-
-
-#' @title Summarize bootstrap community-count reproducibility (meta-communities)
-#'
-#' @description Reports, for each layer, the community count from the
-#' observed network together with its \emph{bootstrap reproducibility}: the
-#' proportion of bootstrap replicates in which the fitted number of
-#' communities equals the observed-network count. It also returns mean node
-#' stability, per-node stability, and the co-assignment matrices.
-#'
-#' @section Why this is not a confidence interval:
-#' Earlier versions returned a percentile \code{community_count_ci}. It was
-#' replaced in version 1.1.0 with a reproducibility summary because the
-#' interval's coverage is not robust to model misspecification. In a large
-#' simulation study the nominal 95 percent community-count interval covered
-#' the truth at or above the nominal level on well-specified
-#' planted-partition networks (about 0.99 for n >= 100 nodes), but coverage
-#' collapsed to about 0.62 when community sizes were strongly skewed, and no
-#' observable diagnostic reliably separated the trustworthy cases from the
-#' rest. Rather than ship an interval that silently undercovers, the
-#' function now reports how often the community count reproduces under
-#' resampling. This is a descriptive stability measure, not a calibrated
-#' interval: it makes no claim about the probability that any range contains
-#' the true community count. For a calibrated reliability measure use
-#' \code{\link{partition_stability}}, which bounds the accuracy of the tracked
-#' partition from below. The raw per-replicate community counts
-#' are intentionally not exposed anywhere in the package output; only this
-#' reproducibility summary is returned.
-#'
-#' @param boot_result Output from \code{\link{bootstrap_multilayer}}.
-#'
-#' @return A list with components:
-#'   \describe{
-#'     \item{community_count}{Data frame with columns layer, estimate (the
-#'       observed-network meta-community count), and reproducibility (share of
-#'       bootstrap replicates whose community count equals estimate, in
-#'       \[0, 1\]).}
-#'     \item{report}{Character vector, one plain-language sentence per layer.}
-#'     \item{mean_node_stability}{Data frame with columns layer, mean_stability.}
-#'     \item{node_stability}{Per-layer stability vectors.}
-#'     \item{co_assignment}{Per-layer co-assignment matrices.}
-#'   }
-#'
-#' @seealso \code{\link{partition_stability}} for the calibrated reliability
-#' score of the tracked partition.
-#'
-#' @examples
-#' set.seed(123)
-#' layers <- lapply(1:3, function(i) {
-#'   m <- matrix(rbinom(64, 1, 0.35), nrow = 8)
-#'   m <- pmax(m, t(m))
-#'   diag(m) <- 0
-#'   m
-#' })
-#' boot <- bootstrap_multilayer(
-#'   layers,
-#'   fit_type = "jaccard",
-#'   algorithm = "louvain",
-#'   n_boot = 5,
-#'   seed = 123
-#' )
-#' est <- community_est(boot)
-#' est$community_count
-#' est$report
-#'
-#' @export
-
-community_est <- function(boot_result) {
-
-  # check that completed bootstrap replicates are present ----
-  if (boot_result$n_boot == 0) {
-    stop("No completed bootstrap replicates.", call. = FALSE)
-  }
-
-  # gather point estimate and layer count ----
-  point <- boot_result$point_estimate
-  n_layers <- length(boot_result$modularity_samples)
-
-  # per-layer community count and bootstrap reproducibility ----
-  count_rows <- lapply(seq_len(n_layers), function(i) {
-
-    ## observed-network community count for this layer (the anchor) ----
-    est <- length(unique(point$meta_communities[[i]]))
-
-    ## reproducibility = share of bootstrap replicates whose community count
-    ## equals the observed-network count. Descriptive stability, not a
-    ## coverage claim. Precomputed in bootstrap_multilayer() from the raw
-    ## per-replicate counts, which are deliberately not exposed. ----
-    reproducibility <- boot_result$community_count_reproducibility[[i]]
-
-    ## compile row ----
-    data.frame(
-      layer = i,
-      estimate = est,
-      reproducibility = reproducibility,
-      stringsAsFactors = FALSE
-    )
-  })
-  community_count <- do.call(rbind, count_rows)
-
-  # one plain-language sentence per layer ----
-  report <- sprintf(
-    "Layer %d: community count (K = %d) reproduced in %d%% of bootstrap resamples.",
-    community_count$layer,
-    community_count$estimate,
-    round(100 * community_count$reproducibility)
-  )
-
-  # calculate mean node stability for each layer ----
-  stab_rows <- lapply(seq_len(n_layers), function(i) {
-    data.frame(
-      layer = i,
-      mean_stability = mean(boot_result$node_stability[[i]]),
-      stringsAsFactors = FALSE
-    )
-  })
-
-  # compile results ----
-  est_result <- list(
-    community_count = community_count,
-    report = report,
-    mean_node_stability = do.call(rbind, stab_rows),
-    node_stability = boot_result$node_stability,
-    co_assignment = boot_result$co_assignment
-  )
-
-  # return results ----
-  return(est_result)
 }

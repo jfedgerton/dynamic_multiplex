@@ -14,7 +14,7 @@
 #'
 #' @param layers List of \code{igraph} objects or square adjacency matrices.
 #'
-#' @param algorithm Community algorithm: \code{"louvain"} or \code{"leiden"}.
+#' @param algorithm Community algorithm: \code{"leiden"} (default) or \code{"louvain"}.
 #'
 #' @param resolution_parameter Leiden resolution parameter.
 #'
@@ -22,15 +22,22 @@
 #' matrices (collapsed to undirected for detection, as elsewhere in the
 #' package).
 #'
-#' @param objective One of \code{"cpm"} or \code{"modularity"} (directed
-#' networks only).
+#' @param objective Objective for the per-layer detection: \code{"modularity"}
+#' or \code{"cpm"} (Leiden only). Defaults to \code{"cpm"} for directed layers
+#' and \code{"modularity"} otherwise.
 #'
-#' @param seed Optional integer seed for reproducible community detection.
+#' @param seed Integer seed for reproducible community detection (default 123, as in
+#'   the Python package; pass NULL for unseeded detection).
 #' When supplied, the global RNG state is saved, the RNG is seeded for the
 #' duration of the call, and the previous state is restored on exit, so the
 #' caller's random number stream (e.g. bootstrap resampling) is unaffected.
 #' Defaults to `NULL` (detection inherits the caller's RNG stream, matching
 #' previous behavior; call `set.seed()` beforehand for reproducibility).
+#'
+#' @param allow_unequal_nodes Logical; if `TRUE`, layers may contain
+#' different node sets. Layers must then carry vertex names (or row names on
+#' the adjacency matrices); community overlap is counted on the nodes present
+#' in both layers of each consecutive pair. Defaults to `FALSE`.
 #'
 #' @return A list of class \code{"multilayer_community_fit"} with components:
 #'   \describe{
@@ -48,7 +55,9 @@
 #'   }
 #'
 #' @details Matching is sequential: layer \eqn{t} is aligned to layer
-#' \eqn{t-1}. For each adjacent pair the community overlap matrix is completed
+#' \eqn{t-1}. Nodes are matched across layers by vertex name when names are
+#' present (by position otherwise), so the order in which vertices are stored
+#' does not affect the result. For each adjacent pair the community overlap matrix is completed
 #' to a square cost matrix and \code{\link[clue]{solve_LSAP}} maximises total
 #' overlap; unmatched current communities receive fresh labels. The result is a
 #' consistently-labelled sequence suitable for \code{\link{extract_meta_membership}},
@@ -71,11 +80,12 @@
 
 fit_multilayer_hungarian <- function(
     layers,
-    algorithm = c("louvain", "leiden"),
+    algorithm = c("leiden", "louvain"),
     resolution_parameter = 1,
     directed = FALSE,
     objective = NULL,
-    seed = NULL
+    seed = 123,
+    allow_unequal_nodes = FALSE
   ) {
 
   algorithm <- match.arg(algorithm)
@@ -88,7 +98,11 @@ fit_multilayer_hungarian <- function(
   }
 
   # Prepare graph layers ----
-  graph_layers <- prepare_multilayer_graphs(layers, directed = directed)
+  graph_layers <- prepare_multilayer_graphs(
+    layers,
+    directed = directed,
+    require_same_nodes = !allow_unequal_nodes
+  )
   links <- make_layer_links(length(graph_layers), NULL)
 
   # Stage 1: independent per-layer community detection ----
@@ -101,7 +115,15 @@ fit_multilayer_hungarian <- function(
   )
 
   # Stage 2: Hungarian label matching across consecutive layers ----
-  memberships <- lapply(fit, function(x) as.integer(x$membership))
+  # memberships are keyed by vertex name (position when unnamed), so layers
+  # whose vertices are stored in different orders, or that hold different
+  # node sets, are matched actor by actor ----
+  memberships <- lapply(seq_along(fit), function(t) {
+    m <- as.integer(fit[[t]]$membership)
+    nm <- igraph::V(graph_layers[[t]])$name
+    names(m) <- if (is.null(nm)) as.character(seq_along(m)) else as.character(nm)
+    m
+  })
   meta <- match_communities_hungarian(memberships)
 
   # Compile multilayer community fit object ----
@@ -125,25 +147,38 @@ fit_multilayer_hungarian <- function(
 
 # Internal: align a sequence of per-layer memberships by Hungarian matching of
 # consecutive layers on the community overlap matrix (maximise total overlap).
+# Each membership is an integer vector named by node id; overlap is counted on
+# the node ids present in both layers. Returns unnamed vectors in each layer's
+# own node order.
 match_communities_hungarian <- function(memberships) {
 
-  out <- vector("list", length(memberships))
-  out[[1L]] <- as.integer(memberships[[1L]])
+  keyed <- lapply(memberships, function(m) {
+    k <- as.integer(m)
+    names(k) <- if (is.null(names(m))) as.character(seq_along(m)) else names(m)
+    k
+  })
+
+  out <- vector("list", length(keyed))
+  out[[1L]] <- keyed[[1L]]
   next_free <- max(c(out[[1L]], 0L)) + 1L
 
-  if (length(memberships) >= 2L) {
-    for (t in 2:length(memberships)) {
+  if (length(keyed) >= 2L) {
+    for (t in 2:length(keyed)) {
 
       prev <- out[[t - 1L]]
-      cur  <- as.integer(memberships[[t]])
+      cur  <- keyed[[t]]
       cl   <- sort(unique(cur))
       pl   <- sort(unique(prev))
 
-      # community overlap (contingency) matrix ----
+      # community overlap (contingency) matrix on shared node ids ----
+      shared <- intersect(names(cur), names(prev))
       overlap <- matrix(0L, nrow = length(cl), ncol = length(pl))
-      for (i in seq_along(cl)) {
-        for (j in seq_along(pl)) {
-          overlap[i, j] <- sum(cur == cl[i] & prev == pl[j])
+      if (length(shared) > 0L) {
+        cs <- cur[shared]; ps <- prev[shared]
+        for (i in seq_along(cl)) {
+          for (j in seq_along(pl)) {
+            overlap[i, j] <- sum(cs == cl[i] & ps == pl[j])
+          }
         }
       }
 
@@ -168,9 +203,9 @@ match_communities_hungarian <- function(memberships) {
       next_free <- max(next_free, max(relabel) + 1L)
 
       names(relabel) <- as.character(cl)
-      out[[t]] <- unname(relabel[as.character(cur)])
+      out[[t]] <- stats::setNames(unname(relabel[as.character(cur)]), names(cur))
     }
   }
 
-  lapply(out, as.integer)
+  lapply(out, function(x) as.integer(unname(x)))
 }
